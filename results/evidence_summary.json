@@ -1,0 +1,135 @@
+{
+  "as_of": "2026-07-11",
+  "repository": "https://github.com/1838904818/Class-IL",
+  "method_name": "OFRA",
+  "decision_level_silent_drift": {
+    "criterion": {
+      "accuracy_change_gt": -0.05,
+      "top15_jaccard_lt": 0.70
+    },
+    "seeds": [0, 1, 2, 3, 42],
+    "complete_runs_only": true,
+    "datasets": {
+      "NSL-KDD": {
+        "events": 2,
+        "accuracy_preserved_transitions": 36,
+        "rate": 0.05555555555555555
+      },
+      "UNSW-NB15": {
+        "events": 0,
+        "accuracy_preserved_transitions": 80,
+        "rate": 0.0
+      },
+      "CIC-IDS-2017": {
+        "events": 3,
+        "accuracy_preserved_transitions": 48,
+        "rate": 0.0625
+      },
+      "CIC-IDS-2018": {
+        "events": 0,
+        "accuracy_preserved_transitions": 51,
+        "rate": 0.0
+      },
+      "NF-ToN-IoT-v2": {
+        "events": 1,
+        "accuracy_preserved_transitions": 83,
+        "rate": 0.012048192771084338
+      }
+    },
+    "pooled": {
+      "runs": 25,
+      "events": 6,
+      "accuracy_preserved_transitions": 298,
+      "rate": 0.020134228187919462,
+      "reported_percent": 2.0
+    },
+    "isolated_path": {
+      "events": 0,
+      "accuracy_preserved_transitions": 299,
+      "reported_percent": 0.0
+    },
+    "source_glob": "results/decision_stability_*_seed*.json",
+    "implementation_note": "The stored joint-score wrapper is not yet a bit-exact reproduction of deployed NumPy standardisation."
+  },
+  "forgetting_comparisons": {
+    "formal_protocol": {
+      "encoder": "two-layer MLP",
+      "d_model": 128,
+      "task0_supervised_pretrain_epochs": 8,
+      "incremental_epochs": 10,
+      "seeds": [0, 1, 2, 3, 42]
+    },
+    "datasets": {
+      "NSL-KDD": {
+        "comparator": "Replay-DPMeans",
+        "ofra_mean": 0.01876014466302038,
+        "comparator_mean": 0.12362978396149245,
+        "reduction": 6.590022954630461,
+        "holm_p": 0.008510001478301369,
+        "accuracy_cost_pp": -16.03423292586888
+      },
+      "UNSW-NB15": {
+        "comparator": "iCaRL",
+        "ofra_mean": 0.09986620290998027,
+        "comparator_mean": 0.352516408698423,
+        "reduction": 3.5298869730351363,
+        "holm_p": 8.356406737919259e-06,
+        "accuracy_cost_pp": -7.651258679885364
+      },
+      "CIC-IDS-2017": {
+        "comparator": "Replay-DPMeans",
+        "ofra_mean": 0.019409363163840263,
+        "comparator_mean": 0.056462078658419665,
+        "reduction": 2.909012427754909,
+        "holm_p": 0.026738699618946215,
+        "accuracy_cost_pp": -10.56364262836047
+      },
+      "CIC-IDS-2018": {
+        "comparator": "iCaRL",
+        "ofra_mean": 0.09021675305975524,
+        "comparator_mean": 0.11810805091956281,
+        "reduction": 1.3091587417398376,
+        "holm_p": 0.10189703094229019,
+        "significant_after_holm": false,
+        "accuracy_cost_pp": -7.809085509522862
+      }
+    },
+    "geometric_mean_reduction": 3.0679367614471547,
+    "source": "results/pilora_ttest_v2.json",
+    "nf_ton_legacy": {
+      "status": "excluded_from_formal_table",
+      "legacy_comparator": "iCaRL",
+      "legacy_ofra_mean": 0.05615350135024306,
+      "legacy_comparator_mean": 0.1306858613939224,
+      "legacy_reduction": 2.3272967537710767,
+      "legacy_protocol": {
+        "encoder": "Transformer",
+        "d_model": 64,
+        "masked_feature_pretrain_epochs": 5
+      },
+      "reason": "The legacy configuration does not match the formal MLP OFRA protocol."
+    }
+  },
+  "etg_proof_of_concept": {
+    "integrated_with_ofra": false,
+    "complete_ledger_seed": 42,
+    "certified_families": 34,
+    "evaluated_families": 39,
+    "refused_families": 5,
+    "candidate_alarms_suppressed": 2,
+    "escalation_events": 10,
+    "unique_escalated_dataset_family_pairs": 9,
+    "mass_only_recertifications": 3,
+    "demotions": 0,
+    "five_seed_scope": "admission only",
+    "attribution_engine_admission_changes": 19,
+    "interpretation": "State-machine transition counts on a separate shared MLP; not ground-truth drift or human-study outcomes."
+  },
+  "evidence_boundaries": [
+    "Three datasets use capped majority classes.",
+    "Preprocessing uses the complete training partition before the task stream.",
+    "CIC-IDS-2017 has an unused WebAttack label slot; seven non-empty families are evaluated.",
+    "Baseline replay and OFRA exemplar budgets are not memory matched.",
+    "Full-data Kaggle outputs and CIC-IoT-2023 are excluded from current claims."
+  ]
+}
