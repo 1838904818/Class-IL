@@ -89,6 +89,20 @@ re-certifications. The underlying NIDS alerts remain unchanged. These are
 state-machine transitions, not ground-truth drift labels or human-study
 outcomes.
 
+## MalayaNetwork_GT external validation
+
+The repository now includes a separate uncapped streaming protocol for the
+[MalayaNetwork_GT](https://huggingface.co/datasets/Afifhaziq/MalayaNetwork_GT)
+flow dataset. It uses ten application/service labels, a frozen capture-level
+holdout, 77 numeric flow features, and generic multiclass metrics. It is an
+external Class-IL and non-IID transfer benchmark, not a benign-versus-attack
+NIDS benchmark; binary detection metrics are deliberately unavailable.
+
+The source revision, 31-file SHA256 contract, split assignment, and exact
+cross-split feature-overlap audit are fixed by
+[`MALAYA_NETWORK_GT_PROTOCOL.md`](MALAYA_NETWORK_GT_PROTOCOL.md). Build and run
+instructions are in [`FULL_CACHE_README.md`](FULL_CACHE_README.md).
+
 ## Evidence boundaries
 
 - CIC-IDS-2017, CIC-IDS-2018, and NF-ToN-IoT-v2 use capped majority classes;
