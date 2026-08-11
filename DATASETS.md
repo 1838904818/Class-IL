@@ -16,9 +16,9 @@ schema, split contract, and task schedule are dataset-specific.
 | MalayaNetwork_GT | 31 public derived-flow CSVs at revision `384a59278f98490ee6e93aae017e748078d29b6a` | https://huggingface.co/datasets/Afifhaziq/MalayaNetwork_GT/tree/384a59278f98490ee6e93aae017e748078d29b6a |
 
 The public Kaggle distribution is available at
-https://www.kaggle.com/datasets/wuliqiang/leon-nids-classil. Large files that
-remain at an authoritative public source are listed in the Kaggle manifest
-with their exact upstream paths.
+https://www.kaggle.com/datasets/wuliqiang/leon-nids-classil. The distribution
+records the exact upstream source, byte size, and SHA-256 digest of the large
+CSE-CIC-IDS2018 Tuesday file.
 
 ## Preprocessing boundary
 

@@ -28,6 +28,10 @@ The detailed metrics, per-seed files, and hashes are in
 [`results/README.md`](results/README.md) and
 [`results/aggregate_4seed.json`](results/aggregate_4seed.json).
 
+A consolidated description of the architecture, preprocessing contracts,
+training protocol, SHAP analysis, ETG logic, results, and evidence boundaries
+is available in [`TECHNICAL_DOCUMENTATION.md`](TECHNICAL_DOCUMENTATION.md).
+
 ## Four-seed headline results
 
 Values below are mean +/- sample standard deviation across seeds 1-4.

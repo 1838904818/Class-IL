@@ -1,64 +1,71 @@
-# OFRA deterministic reproduction protocol
+# Current deterministic run protocol
 
-This directory is the frozen code snapshot for the 14 July 2026 local
-reproducibility check. Run from this directory with the exact local dataset
-tree supplied through `CLASS_IL_DATA_DIR`.
+This protocol applies to the FT-Transformer 512x12 evidence published in this
+repository. It supersedes earlier MLP pilot commands.
 
-## Required process environment
+## Inputs
 
-```powershell
-$env:PYTHONHASHSEED = "0"
-$env:CUBLAS_WORKSPACE_CONFIG = ":4096:8"
-$env:OMP_NUM_THREADS = "1"
-$env:MKL_NUM_THREADS = "1"
-$env:FULL_DATA = "1"
-$env:MAX_PER_CLASS = "50000"
-$env:CLASS_IL_DATA_DIR = "C:\path\to\datasets"
-$env:CLASS_IL_RESULTS_DIR = "<output-directory>"
+Build one cache at a time. Datasets are never concatenated.
+
+```bash
+python -m fullcache \
+  --data-root /path/to/datasets \
+  --output-root /path/to/cache \
+  --dataset nsl-kdd
 ```
 
-Example single-dataset command:
+Replace `nsl-kdd` with another registered dataset identifier when building a
+different cache. The generated `streaming_manifest.json` binds raw-file hashes,
+processed-shard hashes, feature order, class order, task order, split contract,
+and row accounting.
 
-```powershell
-python -X utf8 -u -m src_v2.multi_seed_ofra `
-  --datasets "NSL-KDD" `
-  --seeds "42" `
-  --pretrain-epochs 8 `
-  --epochs-per-task 10 `
-  --exemplar-capacity 50 `
-  --lora-rank 8 `
-  --encoder-type mlp `
-  --loss-fn focal `
-  --n-layers 2 `
-  --d-model 128 `
-  --device cuda `
-  --router-fit-max-samples 3000 `
-  --out-suffix "nsl_repeat_a"
+## Model run
+
+```bash
+python -m streaming_full \
+  --manifest /path/to/cache/nsl-kdd/streaming_manifest.json \
+  --output-dir /path/to/output/nsl-kdd/seed-1 \
+  --seeds 1 \
+  --config-json configs/ft_transformer_512x12_a100_formal.json \
+  --device cuda:0
 ```
 
-## Reproduction evidence stored in each JSON
+Repeat the command independently for each registered seed and dataset. The
+completed public seed set is `1, 2, 3, 4`; it is not a five-seed result.
 
-- semantic protocol hash, excluding output name, verbosity, and elapsed time;
-- SHA-256 manifest for all Python source files used by the run;
-- SHA-256 for every raw dataset file read by the loader;
-- dtype, shape, and SHA-256 for the processed train/test feature and label arrays;
-- Python, package, CUDA, cuDNN, driver, GPU, and deterministic-kernel settings;
-- a deterministic result SHA-256 covering metrics, accuracy matrices, router
-  sample counts, protocol, and provenance while excluding runtime.
+## Determinism and integrity
 
-Two repeated runs pass only when their `run_fingerprint_sha256`, processed
-input hashes, accuracy matrices, and `deterministic_result_sha256` are equal.
+- deterministic PyTorch execution is enabled;
+- processed-shard SHA-256 verification is mandatory;
+- the result stores a semantic protocol hash and deterministic result hash;
+- checkpoint recovery validates the recovery payload before resuming;
+- W&B is an experiment-recording destination, not the source of record;
+- the JSON result and its hashes remain the authoritative evidence.
 
-## Scope limitations
+The exact source binding used by the completed large-model runs is recorded in
+`reproducibility/ft512x12_training_runtime.sha256`.
 
-- This is a seed-42 reproducibility check, not a multi-seed final paper table.
-- NSL-KDD and UNSW-NB15 use their complete fixed splits.
-- CIC-IDS-2017 uses all local rows when `FULL_DATA=1`.
-- CIC-IDS-2018 and NF-ToN-IoT-v2 use `MAX_PER_CLASS=50000`.
-- CIC-IoT-2023 reads all 169 files, then retains Normal up to 100,000 and each
-  attack family up to 50,000 under its current loader.
-- The local CIC-IDS-2018 collection has nine traffic CSVs and is not the
-  official ten-day complete mirror.
-- The current CIC-IDS-2017 random row split has known exact train/test duplicate
-  overlap. These runs are reproducibility pilots; the split must be revised
-  before a final paper-grade multi-seed experiment.
+## Explanation and ETG
+
+The completed ETG evidence is an offline analysis of MalayaNetwork_GT seed 1:
+
+```bash
+python formal_v2_explanation_etg/analyze.py --help
+```
+
+The analyzer validates its input bindings, reconstructs the registered
+`joint_cap3000` decision, computes SHAP expected-gradient explanations on fixed
+probes, evaluates explanation drift, and emits a simulated ETG governance
+ledger. The analyzer does not retrain the model or change predictions. The
+published analysis is bound to completed DICC Job `389896`.
+
+## Evidence boundary
+
+- MalayaNetwork_GT and NSL-KDD: four completed 512x12 seeds;
+- MalayaNetwork_GT explanation/ETG: one completed seed;
+- CSE-CIC-IDS2018: capacity profile only;
+- CIC-IDS-2017 and UNSW-NB15: implementation present, but no new 512x12 formal
+  result in this release.
+
+Do not use capacity results as accuracy evidence and do not describe the
+four-seed aggregate as a final five-seed statistical result.
