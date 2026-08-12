@@ -153,3 +153,11 @@ export PYTHONPATH="$OFRA_PROJECT_DIR/formal_v2_explanation_etg:$OFRA_PROJECT_DIR
 `SHA256SUMS.txt` is generated from the published LF-normalised files. The
 runtime manifests in `reproducibility/` bind the current code to the completed
 training and analysis evidence.
+
+## Manuscript and cited papers
+
+The current supervisor-revision manuscript is under [`paper/`](paper/). A
+complete linked library of every cited paper, together with a reusable BibTeX
+file and redistribution notes, is under [`references/`](references/REFERENCES.md).
+Publisher PDFs are not mirrored when redistribution permission has not been
+established.
