@@ -130,6 +130,8 @@ class RunConfig:
     ft_attn_dropout: float = 0.1
     ft_ff_dropout: float = 0.1
     ft_num_residual_streams: int = 1
+    tabm_k: int = 16
+    tabm_dropout: float = 0.1
     lora_rank: int = 8
     lora_alpha: float = 16.0
     loss_fn: str = "focal"
@@ -162,6 +164,7 @@ class RunConfig:
             "router_lambda_quantile",
             "ft_attn_dropout",
             "ft_ff_dropout",
+            "tabm_dropout",
         ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -179,6 +182,7 @@ class RunConfig:
             "ft_heads": self.ft_heads,
             "ft_dim_head": self.ft_dim_head,
             "ft_num_residual_streams": self.ft_num_residual_streams,
+            "tabm_k": self.tabm_k,
             "lora_rank": self.lora_rank,
             "negative_ratio": self.negative_ratio,
             "router_cap_samples": self.router_cap_samples,
@@ -208,6 +212,7 @@ class RunConfig:
         for name, value in (
             ("ft_attn_dropout", self.ft_attn_dropout),
             ("ft_ff_dropout", self.ft_ff_dropout),
+            ("tabm_dropout", self.tabm_dropout),
         ):
             if not 0.0 <= value < 1.0:
                 raise ValueError(f"{name} must be in [0, 1)")
@@ -222,6 +227,12 @@ def _resolve_device(requested: str) -> torch.device:
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
     return device
+
+
+def _cuda_index(device: torch.device) -> int:
+    if device.type != "cuda":
+        raise ValueError("CUDA index requested for a non-CUDA device")
+    return device.index if device.index is not None else torch.cuda.current_device()
 
 
 def _seed_process(seed: int, deterministic: bool) -> None:
@@ -507,6 +518,8 @@ class StreamingOFRA:
             ft_attn_dropout=config.ft_attn_dropout,
             ft_ff_dropout=config.ft_ff_dropout,
             ft_num_residual_streams=config.ft_num_residual_streams,
+            tabm_k=config.tabm_k,
+            tabm_dropout=config.tabm_dropout,
         ).to(device)
         self.heads = nn.ModuleDict()
         self.exemplars: dict[int, np.ndarray] = {}
@@ -1884,8 +1897,9 @@ def run_seed(
     _seed_process(seed, config.deterministic)
     device = _resolve_device(config.device)
     if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
-        torch.cuda.synchronize(device)
+        torch.cuda.set_device(_cuda_index(device))
+        torch.cuda.reset_peak_memory_stats(_cuda_index(device))
+        torch.cuda.synchronize(_cuda_index(device))
     run_started = time.perf_counter()
     agent = StreamingOFRA(
         manifest, config, seed, device, evaluation_views=evaluation_views
@@ -2116,10 +2130,10 @@ def run_seed(
             resources=(
                 {
                     "cuda_peak_allocated_bytes": int(
-                        torch.cuda.max_memory_allocated(device)
+                        torch.cuda.max_memory_allocated(_cuda_index(device))
                     ),
                     "cuda_peak_reserved_bytes": int(
-                        torch.cuda.max_memory_reserved(device)
+                        torch.cuda.max_memory_reserved(_cuda_index(device))
                     ),
                 }
                 if device.type == "cuda"
@@ -2146,7 +2160,7 @@ def run_seed(
             )
     summary = _summarise_checkpoints(checkpoints, len(manifest.tasks))
     if device.type == "cuda":
-        torch.cuda.synchronize(device)
+        torch.cuda.synchronize(_cuda_index(device))
     agent.timing["total_seconds"] = time.perf_counter() - run_started
     training_rows = _training_rows_processed(pretrain, training_history)
     official_evaluation_rows = sum(
@@ -2162,17 +2176,18 @@ def run_seed(
         ),
     }
     if device.type == "cuda":
-        properties = torch.cuda.get_device_properties(device)
+        device_index = _cuda_index(device)
+        properties = torch.cuda.get_device_properties(device_index)
         agent.timing["cuda"] = {
-            "device_name": torch.cuda.get_device_name(device),
+            "device_name": torch.cuda.get_device_name(device_index),
             "device_total_memory_bytes": int(properties.total_memory),
-            "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(device)),
-            "peak_reserved_bytes": int(torch.cuda.max_memory_reserved(device)),
+            "peak_allocated_bytes": int(torch.cuda.max_memory_allocated(device_index)),
+            "peak_reserved_bytes": int(torch.cuda.max_memory_reserved(device_index)),
             "peak_allocated_fraction": float(
-                torch.cuda.max_memory_allocated(device) / properties.total_memory
+                torch.cuda.max_memory_allocated(device_index) / properties.total_memory
             ),
             "peak_reserved_fraction": float(
-                torch.cuda.max_memory_reserved(device) / properties.total_memory
+                torch.cuda.max_memory_reserved(device_index) / properties.total_memory
             ),
         }
     exposure_records = {
@@ -2412,6 +2427,8 @@ def _protocol(
             ft_attn_dropout=config.ft_attn_dropout,
             ft_ff_dropout=config.ft_ff_dropout,
             ft_num_residual_streams=config.ft_num_residual_streams,
+            tabm_k=config.tabm_k,
+            tabm_dropout=config.tabm_dropout,
         ),
         "normalization_scope": "Task-0 train shards only; frozen before Task-0 pretraining",
         "prediction_arms": ARMS,
