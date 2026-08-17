@@ -26,6 +26,35 @@ training rows from classes seen so far. CatBoost improves final classification
 metrics but has greater checkpoint-to-checkpoint forgetting under the same
 metric definition.
 
+## TabM mean-embedding OFRA arm
+
+TabM was also integrated as a mean-embedding encoder inside the unchanged OFRA
+prediction pipeline. This is distinct from the cumulative TabM row above. The
+adapter averages 16 member embeddings to one 256-dimensional representation;
+the existing family heads, replay budget, DP-Means routers, joint weight, and
+cap-3,000 protocol remain unchanged.
+
+Values are mean +/- sample standard deviation over seeds `1,2,3,4,42`.
+
+| Official OFRA arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
+|---|---:|---:|---:|---:|
+| Head only | 56.17 +/- 1.79% | 11.11 +/- 1.99% | 14.43 +/- 2.35% | 0.61 +/- 0.46 pp |
+| Router only, cap 3,000 | 40.15 +/- 3.49% | 17.44 +/- 1.44% | 19.29 +/- 1.11% | 12.75 +/- 1.89 pp |
+| Joint, cap 3,000 | 57.99 +/- 3.93% | 20.46 +/- 1.19% | 21.60 +/- 1.70% | 4.39 +/- 2.56 pp |
+| Joint, uncapped | 57.93 +/- 3.84% | 20.34 +/- 1.31% | 21.48 +/- 1.87% | 4.33 +/- 2.39 pp |
+
+For the four seeds shared with FT-Transformer 512x12, TabM-OFRA joint-cap
+accuracy is 59.59% rather than 54.37% (+5.23 percentage points). Macro-F1
+changes by +0.15 points, balanced accuracy by -0.64 points, and forgetting by
+-0.01 points. BitTorrent constitutes 53.39% of the test set and its recall
+improves by 10.54 points, while recall declines for Steam, TeamViewer, Discord,
+and Webex. The supported interpretation is therefore an aggregate-accuracy
+gain rather than a uniform class-balanced improvement.
+
+This TabM-OFRA campaign covers prediction only. It does not contain a TabM SHAP
+or ETG analysis and must not be described as a completed TabM explanation-
+governance chain.
+
 ## Role-separated OFRA context
 
 These rows use the full OFRA family-head, router and memory pipeline and are
@@ -54,6 +83,7 @@ decision components account for part of the remaining performance gap.
   400-versus-500 sensitivity comparison. The five-seed run is exploratory and
   must not be described as an unbiased confirmatory superiority test.
 - FT-Transformer 512x12 currently has four registered Malaya seeds, not five.
+- TabM-OFRA has five Malaya prediction seeds but no TabM SHAP/ETG run.
 - Runtime comparisons are not reported because CatBoost ran on a local CPU,
   while FT-Transformer OFRA ran on an A100 and includes additional pipeline
   work.
@@ -76,3 +106,9 @@ decision components account for part of the remaining performance gap.
   `dfde6af447e43b669d59d37e3e002016657628c7f22b58472125da5f0450be4d`
 - FT-Transformer 512x12 seed-1 protocol SHA-256:
   `b7e94a1d6cb78b9e003f0e984467d260e996c9060b996f8ff745fb454ca9b48a`
+- TabM-OFRA campaign protocol SHA-256:
+  `4a13a26d66b751c2f90e041298041c4f20468bd0d354b2a53934f73b93095ddb`
+- TabM-OFRA `protocol.json` SHA-256:
+  `6458bba71ff5e2ae0b2e3ee0d9d820bf3a60ce28640b68acd3a686f64717bd20`
+- TabM-OFRA `summary.json` SHA-256:
+  `1f56cc6751b6829a0268433ec9a07b4dff464c2d8550db50203ff9f07e772d10`

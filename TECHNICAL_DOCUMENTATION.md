@@ -32,7 +32,9 @@ Dataset-specific preprocessing contract
   - class/split shards and overlap audit
     |
     v
-FT-Transformer encoder, 512-dimensional representation, 12 layers
+Registered encoder arm
+  - reported FT-Transformer: 512 dimensions, 12 layers
+  - additive TabM comparison: 16 member embeddings averaged to 256 dimensions
     |
     +--------------------+----------------------+
     |                    |                      |
@@ -98,7 +100,21 @@ stage. More epochs provide more optimization steps but can also increase
 overfitting or forgetting; eight and ten are protocol settings, not universal
 optimal values.
 
-### 4.2 Family-specific low-rank heads
+### 4.2 Additive TabM encoder comparison
+
+TabM is evaluated as an additional encoder arm rather than a replacement for
+the registered OFRA method. The adapter produces 16 member embeddings with
+shape `(batch, 16, 256)` and averages them across the member dimension to
+obtain the single `(batch, 256)` representation required by the existing OFRA
+interface. The family heads, exemplar budget, DP-Means routers, joint-score
+weight, task schedule, and evaluation definitions remain unchanged.
+
+This is a deliberately narrow integration. It tests whether a different
+tabular representation improves the existing prediction pipeline without
+introducing a new router or governance rule. It must be described as a
+mean-embedding TabM adapter, not as a full member-wise redesign of OFRA.
+
+### 4.3 Family-specific low-rank heads
 
 Each seen class has a binary positive-versus-negative decision head. The head
 uses a rank-8 low-rank adaptation with scaling parameter 16. For class `c`, the
@@ -106,14 +122,14 @@ head outputs probability `p(c,x)`. Family-specific heads allow a new class to
 receive a new decision component without rebuilding a single fixed multiclass
 output layer.
 
-### 4.3 Bounded exemplar memory
+### 4.4 Bounded exemplar memory
 
 The learner retains at most 50 exemplars per class from a candidate pool of at
 most 5,000. Replay mixes selected older examples with the current task to
 reduce catastrophic forgetting. This is a fixed study budget and does not
 imply that 50 is generally optimal.
 
-### 4.4 DP-Means router
+### 4.5 DP-Means router
 
 The router maintains one or more centroids for each seen class in encoder space.
 DP-Means can create an additional centroid when an embedding is sufficiently
@@ -130,7 +146,7 @@ the uncapped router uses all eligible samples. The cap controls router fitting
 cost and prevents large classes from dominating centroid estimation. It does
 not limit the number of test rows.
 
-### 4.5 Registered decision arms
+### 4.6 Registered decision arms
 
 The experiment evaluates matched views of the same trained model:
 
@@ -143,6 +159,17 @@ The experiment evaluates matched views of the same trained model:
 The predicted class is `argmax_c s(c,x)`, meaning the class with the largest
 score among all classes seen at that checkpoint. The joint weight 0.5, cap
 3,000, quantile 0.3, and centroid limit 32 are registered project settings.
+
+### 4.7 CatBoost cumulative diagnostic
+
+CatBoost is used only as a cumulative multiclass diagnostic. At each
+checkpoint it trains a fresh classifier on all training rows belonging to the
+classes seen so far. It therefore estimates classification headroom in the
+fixed Malaya feature representation, but it does not use OFRA family heads,
+bounded exemplar replay, DP-Means routing, or the cap-3,000 budget. Its native
+feature attribution is not the registered routed-margin SHAP target and is not
+entered into the ETG ledger. A CatBoost-OFRA hybrid would constitute a new
+method and is outside the frozen protocol.
 
 ## 5. Training and evaluation protocol
 
@@ -236,12 +263,50 @@ events among 17 eligible transitions (70.59%). ETG recorded six certified
 admissions, four refused admissions, four escalations, one strict
 recertification, and two strict-recertification failures.
 
+### 8.1 Additive classifier comparisons on MalayaNetwork_GT
+
+The TabM mean-embedding adapter has completed the full OFRA prediction
+pipeline for seeds `1, 2, 3, 4, 42`. The table reports the official test view;
+all values are mean +/- sample standard deviation.
+
+| TabM-OFRA arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
+|---|---:|---:|---:|---:|
+| Head only | 56.17% +/- 1.79 | 11.11% +/- 1.99 | 14.43% +/- 2.35 | 0.61 +/- 0.46 pp |
+| Router only, cap 3,000 | 40.15% +/- 3.49 | 17.44% +/- 1.44 | 19.29% +/- 1.11 | 12.75 +/- 1.89 pp |
+| Joint, cap 3,000 | 57.99% +/- 3.93 | 20.46% +/- 1.19 | 21.60% +/- 1.70 | 4.39 +/- 2.56 pp |
+| Joint, uncapped | 57.93% +/- 3.84 | 20.34% +/- 1.31 | 21.48% +/- 1.87 | 4.33 +/- 2.39 pp |
+
+The existing FT-Transformer 512x12 result contains only seeds `1-4`, so the
+matched comparison uses those four common seeds. For `joint_cap3000`, TabM
+raises accuracy from 54.37% to 59.59% (+5.23 percentage points) and Macro-F1
+from 20.70% to 20.85% (+0.15 points), while balanced accuracy changes from
+22.70% to 22.06% (-0.64 points) and forgetting is essentially unchanged
+(3.79 versus 3.78 points). The gain is therefore mainly aggregate accuracy,
+not broad class-balanced improvement.
+
+The class audit explains this result. BitTorrent accounts for 5,537 of 10,370
+test rows (53.39%), and its mean recall over the four common seeds rises by
+10.54 points with TabM. Recall falls for Steam (-21.25 points), TeamViewer
+(-11.57), Discord (-6.83), and Webex (-3.79). The five-seed TabM result cannot
+be summarized as an across-the-board improvement.
+
+Matched cumulative multiclass diagnostics over seeds `1, 2, 3, 4, 42` give
+CatBoost 66.50% +/- 0.44 accuracy, 34.76% +/- 0.69 Macro-F1, 39.10% +/- 0.73
+balanced accuracy, and 15.34 +/- 0.73 points of forgetting. The corresponding
+cumulative TabM values are 65.01% +/- 0.96, 32.66% +/- 1.31, 34.41% +/- 1.51,
+and 9.43 +/- 1.80 points. These cumulative results are classifier-capacity
+diagnostics and are not matched OFRA comparisons.
+
 ## 9. What is complete and what remains open
 
 Completed in this release:
 
 - large-model MalayaNetwork_GT seeds 1-4;
 - large-model NSL-KDD seeds 1-4;
+- TabM mean-embedding OFRA prediction results on MalayaNetwork_GT for seeds
+  `1, 2, 3, 4, 42`;
+- matched cumulative CatBoost and TabM diagnostics on MalayaNetwork_GT for the
+  same five seeds;
 - Malaya seed-1 SHAP and ETG analysis from completed DICC Job 389896;
 - CSE-CIC-IDS2018 A100 capacity evidence;
 - executable preprocessing contracts for the five-dataset suite;
@@ -249,9 +314,12 @@ Completed in this release:
 
 Not yet complete:
 
-- the fifth registered seed;
+- the fifth registered FT-Transformer 512x12 seed for MalayaNetwork_GT and
+  NSL-KDD;
 - new FT-Transformer 512x12 formal results for CIC-IDS-2017, UNSW-NB15, and
   CSE-CIC-IDS2018;
+- SHAP and ETG analysis for the TabM arm; the current TabM result covers the
+  prediction pipeline only;
 - multi-seed SHAP and ETG estimates;
 - inferential tests supporting superiority claims;
 - a deployed feedback loop in which ETG decisions alter future OFRA routing or
@@ -270,6 +338,10 @@ presented as a complete final-paper result table.
 - `formal_v2_explanation_etg/`: SHAP and ETG analyzer;
 - `results/`: per-seed JSON, four-seed aggregate, ETG tables, and capacity
   profile;
+- `results/classifier_comparisons/`: bounded classifier-comparison summaries
+  and their interpretation limits;
+- `EXPERIMENT_SCOPE_FREEZE_20260813.md`: the frozen distinction between the
+  primary method, additive comparisons, and changes requiring a new protocol;
 - `reproducibility/`: exact runtime and analysis bindings;
 - `SHA256SUMS.txt`: SHA-256 for every published file other than the manifest
   itself.
