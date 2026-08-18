@@ -19,11 +19,14 @@ produce an offline governance ledger; it does not alter classifier predictions.
 | MalayaNetwork_GT | FT-Transformer 512x12, seeds 1-4 | Four-seed descriptive result |
 | NSL-KDD | FT-Transformer 512x12, seeds 1-4 | Four-seed descriptive result |
 | Malaya explanation and ETG | Seed 1, completed DICC Job 389896 | Single-seed partial analysis |
-| CSE-CIC-IDS2018 | A100 throughput and memory profile, Job 390164 | Capacity evidence only |
+| Malaya attribution robustness | Expected Gradients, feature ablation, and Gradient x Input on seed 1 | Source-bound single-seed pilot |
+| CSE-CIC-IDS2018 | FT-Transformer 256x4, seeds 1, 2, 3, 4, and 42, plus A100 profile | Protocol-separated five-seed closure |
 | CIC-IDS-2017 and UNSW-NB15 | Preprocessing and training implementation | No new 512x12 formal result in this snapshot |
 
-The completed seed set is `1, 2, 3, 4`. It is not a five-seed result. The fifth
-registered seed and the remaining large-model dataset runs are still pending.
+The main FT-Transformer 512x12 aggregate uses `1, 2, 3, 4`; it is not a
+five-seed result. The CIC-IDS-2018 closure uses `1, 2, 3, 4, 42`, but its
+FT256x4 model and 1+1-epoch schedule are not pooled with the main result. The
+fifth main-protocol seed and remaining large-model dataset runs are pending.
 The detailed metrics, per-seed files, and hashes are in
 [`results/README.md`](results/README.md) and
 [`results/aggregate_4seed.json`](results/aggregate_4seed.json).
@@ -75,6 +78,17 @@ escalations, one strict recertification, and two strict recertification
 failures. These are simulated explanation-governance outcomes, not completed
 human reviews. The public analysis and ledger are under
 `results/malaya-network-gt/etg-seed1/`.
+
+The attribution robustness pilot compares Expected Gradients with
+single-feature ablation and Gradient x Input on the same 30 checkpoint-class
+rows. Integrated Gradients were attempted but failed their completeness check
+on the piecewise routed score; they are retained as a diagnostic and excluded
+from the primary agreement claim. Exact agreement values and source hashes are
+under `results/malaya-network-gt/attribution-robustness-seed1/`.
+
+The no-look-ahead audit confirms Task-0-only numerical scaling. It also finds
+bounded future-category schema exposure in NSL-KDD and UNSW-NB15, affecting
+about 0.9% of later-task rows. See `audits/NO_LOOKAHEAD_AUDIT_2026-08-19.md`.
 
 ## Repository layout
 
@@ -156,7 +170,8 @@ training and analysis evidence.
 
 ## Manuscript and cited papers
 
-The current supervisor-revision manuscript is under [`paper/`](paper/). A
+The current v2.2 supervisor-response manuscript and the itemized response to
+review findings 1--9 are under [`paper/`](paper/). A
 complete linked library of every cited paper, together with a reusable BibTeX
 file and redistribution notes, is under [`references/`](references/REFERENCES.md).
 Publisher PDFs are not mirrored when redistribution permission has not been

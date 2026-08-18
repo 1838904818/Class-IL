@@ -20,7 +20,6 @@ import numpy as np
 import torch
 
 from src.config import DATA_DIR, RESULTS_DIR, SEED, seed_all
-from src.data import DATASET_LOADERS
 from src.methods.base import make_task_split
 from src_v2.methods.ofra import (
     DEFAULT_PREDICTION_ARMS,
@@ -57,6 +56,10 @@ def parse_prediction_arms(value: str) -> dict[str, dict[str, float]]:
 
 
 def main():
+    # Dataset loaders are needed only for an actual benchmark run. Keep this
+    # optional data-layer import out of prediction-arm and diagnostic utilities.
+    from src.data import DATASET_LOADERS
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets",
                         default="NSL-KDD,UNSW-NB15,CIC-IDS-2017,CIC-IDS-2018,NF-ToN-IoT-v2")

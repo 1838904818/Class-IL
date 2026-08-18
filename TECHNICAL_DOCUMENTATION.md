@@ -85,6 +85,32 @@ and test. Malaya uses a capture-level split instead because rows from the same
 capture are correlated; a row-level random split would leak capture-specific
 structure into evaluation.
 
+### 3.1 No-look-ahead preprocessing audit
+
+The numerical normalization path passes a strict temporal audit. The
+`FrozenTask0Stats` accumulator reads only Task-0 training shards, is frozen
+before Task-0 pretraining, and rejects later updates. It uses float64 population
+variance and never reads official-test rows.
+
+The categorical schema is more limited. NSL-KDD and UNSW-NB15 fit one-hot
+vocabularies on their complete official training partitions before the
+class-incremental stream begins. Relative to a Task-0-only vocabulary:
+
+- NSL-KDD contains six future-only columns (`service`: `aol`, `harvest`,
+  `http_2784`, `http_8001`, `pm_dump`; `flag`: `RSTOS0`). They affect 115 of
+  12,703 later-task rows (0.905%).
+- UNSW-NB15 contains eight future-only columns (`proto`: `argus`, `bbn-rcc`,
+  `crtp`, `egp`, `hmp`, `netblt`, `rdp`; `service`: `irc`). They affect 712 of
+  79,341 later-task rows (0.897%).
+
+This is bounded transductive schema information, not official-test leakage and
+not future-label training. Nevertheless, the complete preprocessing pipeline
+is not strictly no-look-ahead for those two datasets. CIC-IDS-2017,
+CSE-CIC-IDS2018, and MalayaNetwork_GT use numerical model inputs and have no
+data-derived categorical vocabulary. A strict repair requires rebuilding
+NSL-KDD and UNSW-NB15 with a Task-0-only or externally fixed vocabulary and
+rerunning the affected experiments.
+
 ## 4. Model and continual-learning components
 
 ### 4.1 FT-Transformer encoder
@@ -219,6 +245,33 @@ beyond the explanation threshold. The thresholds, including a 0.7 rule used
 in the registered analysis, are study-defined governance settings and are not
 claimed as universal standards.
 
+### 6.1 Attribution-method robustness
+
+The registered explanation is Expected Gradients. A source-bound Malaya seed-1
+pilot also evaluates two alternative rankings against the same frozen
+`joint_cap3000` class margin, probes, checkpoints, top-15 rule, random-control
+admission threshold, and ETG state machine:
+
+- single-feature ablation replaces one input at a time with the frozen
+  checkpoint mean and measures the resulting margin decrease;
+- Gradient x Input multiplies each raw input by the local margin gradient.
+
+Across the 30 common checkpoint-class rows, all three primary methods agree on
+the admission decision for 40.0% and the ETG state for 43.3%. Across the 20
+common adjacent class transitions, all three agree on the silent-drift
+conclusion for 20.0%. Pairwise mean top-15 Jaccard is 0.567 for Expected
+Gradients versus feature ablation, 0.380 for Expected Gradients versus Gradient
+x Input, and 0.405 for feature ablation versus Gradient x Input. The associated
+silent-drift counts are 12/17, 0/17, and 7/17, respectively. ETG outcomes are
+therefore method-conditioned.
+
+Integrated Gradients were also attempted with the mean Task-0 background and
+16-point Gauss-Legendre quadrature. Its completeness check failed on this
+piecewise routed score (mean row-level error 11.58; maximum 373.72), so it is
+retained as a numerical diagnostic and excluded from primary agreement claims.
+This failure is evidence that an attribution method suitable for a smooth
+encoder is not automatically valid for the complete routed scorer.
+
 ## 7. ETG: Explanation Trust Graph
 
 ETG is the project's offline explanation-governance layer. Its evidence unit is
@@ -297,6 +350,26 @@ cumulative TabM values are 65.01% +/- 0.96, 32.66% +/- 1.31, 34.41% +/- 1.51,
 and 9.43 +/- 1.80 points. These cumulative results are classifier-capacity
 diagnostics and are not matched OFRA comparisons.
 
+### 8.2 CIC-IDS-2018 FT256x4 five-seed closure
+
+A separate FT256x4 campaign with one Task-0 epoch and one epoch per later task
+completed seeds `1`, `2`, `3`, `4`, and `42` (DICC jobs 395350, 399060, 399246,
+399313, and 399593). Because its model and schedule differ from the FT512x12
+8/10-epoch campaign, it is reported separately.
+
+| Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
+|---|---:|---:|---:|---:|
+| Head only | 69.27% +/- 20.34 | 21.81% +/- 8.82 | 25.67% +/- 6.35 | 7.62 +/- 7.54 pp |
+| Router only, cap 3,000 | 41.01% +/- 6.08 | 31.88% +/- 6.06 | 58.50% +/- 5.03 | 19.13 +/- 6.01 pp |
+| Joint, cap 3,000 | 52.55% +/- 5.79 | 34.05% +/- 7.54 | 53.93% +/- 7.79 | 19.03 +/- 8.62 pp |
+| Joint, uncapped | 53.52% +/- 8.36 | 34.33% +/- 8.05 | 53.94% +/- 8.08 | 18.09 +/- 11.08 pp |
+
+Relative to head-only inference, joint cap-3,000 increases Macro-F1 by 12.24
+points and balanced accuracy by 28.26 points, but reduces overall accuracy by
+16.72 points and increases forgetting by 11.41 points. The cap has little mean
+effect relative to joint uncapped. This is a class-balance trade-off rather
+than a universal gain.
+
 ## 9. What is complete and what remains open
 
 Completed in this release:
@@ -308,6 +381,10 @@ Completed in this release:
 - matched cumulative CatBoost and TabM diagnostics on MalayaNetwork_GT for the
   same five seeds;
 - Malaya seed-1 SHAP and ETG analysis from completed DICC Job 389896;
+- a source-bound three-method attribution robustness pilot, with the failed
+  Integrated-Gradients completeness diagnostic retained separately;
+- a preprocessing no-look-ahead code/data audit;
+- the protocol-separated CSE-CIC-IDS2018 FT256x4 five-seed closure campaign;
 - CSE-CIC-IDS2018 A100 capacity evidence;
 - executable preprocessing contracts for the five-dataset suite;
 - deterministic result, source-binding, and publication hashes.
@@ -321,6 +398,9 @@ Not yet complete:
 - SHAP and ETG analysis for the TabM arm; the current TabM result covers the
   prediction pipeline only;
 - multi-seed SHAP and ETG estimates;
+- multi-seed attribution-method robustness estimates;
+- a strict Task-0-only or externally fixed categorical vocabulary rebuild and
+  rerun for NSL-KDD and UNSW-NB15;
 - inferential tests supporting superiority claims;
 - a deployed feedback loop in which ETG decisions alter future OFRA routing or
   training.

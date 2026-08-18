@@ -1,6 +1,8 @@
 # Validated result index
 
-This directory contains the completed FT-Transformer 512x12 results available on 11 August 2026. Each dataset was trained and evaluated independently.
+This directory contains the completed, source-bound results available on 19
+August 2026. Each dataset was trained and evaluated independently. Results
+from different model sizes or training schedules remain protocol-separated.
 
 ## Four-seed descriptive aggregate
 
@@ -25,6 +27,18 @@ Values are mean +/- sample standard deviation across the four completed seeds. T
 
 The completed MalayaNetwork_GT seed-1 analysis is under `malaya-network-gt/etg-seed1/`. Its primary silent explanation-drift rate is 12/17 class-by-adjacent-checkpoint transitions (70.59%). This is not a packet, flow, sample, or real-world incident rate. ETG actions are simulated governance outcomes, not completed human reviews.
 
+The source-bound attribution robustness pilot is under
+`malaya-network-gt/attribution-robustness-seed1/`. Its primary comparison uses
+Expected Gradients, feature ablation, and Gradient x Input on the same frozen
+seed-1 evidence. Integrated Gradients failed their completeness diagnostic and
+are excluded from the primary agreement statistics.
+
 ## CSE-CIC-IDS2018 status
 
-`cic-ids-2018/capacity_profile.json` is a non-reportable throughput and memory measurement used for resource planning. Formal CSE-CIC-IDS2018 model training was not complete at this release and no performance claim is made from the capacity profile.
+`cic-ids-2018/ft256x4-1plus1-five-seed/summary.json` records a completed
+FT256x4 closure campaign over seeds `1`, `2`, `3`, `4`, and `42`. Its one
+Task-0 epoch plus one epoch per later task schedule differs from the main
+FT512x12 8/10-epoch protocol and must not be pooled with it. The joint cap-3000
+view reports 52.55% +/- 5.79 accuracy, 34.05% +/- 7.54 Macro-F1, 53.93% +/-
+7.79 balanced accuracy, and 19.03 +/- 8.62 points of forgetting. The existing
+`capacity_profile.json` remains resource-planning evidence only.
