@@ -115,16 +115,18 @@ rerunning the affected experiments.
 
 ### 4.1 FT-Transformer encoder
 
-The current formal configuration uses a 512-dimensional FT-Transformer with 12
+The Malaya formal configuration uses a 512-dimensional FT-Transformer with 12
 layers, 16 attention heads, head dimension 32, and 0.1 attention/feed-forward
-dropout. The encoder maps a numerical traffic row `x` to representation
-`h(x)`. The large encoder is shared by all classes within one dataset run.
+dropout. Its initial task is trained for eight epochs and each later task for
+ten epochs. The current NSL-KDD, UNSW-NB15, and CIC-IDS-2017 formal rows use the
+smaller FT256x4 protocol recorded in their bound artifacts. Model capacity is
+therefore disclosed per dataset and is not silently pooled. In every case the
+encoder maps a numerical traffic row `x` to representation `h(x)` and is shared
+by all classes within that dataset run.
 
-The initial task is trained for eight epochs. Each later task is trained for
-ten epochs. An epoch is one pass over the training data selected for that
-stage. More epochs provide more optimization steps but can also increase
-overfitting or forgetting; eight and ten are protocol settings, not universal
-optimal values.
+An epoch is one pass over the training data selected for that stage. More
+epochs provide more optimization steps but can also increase overfitting or
+forgetting; all epoch counts are protocol settings, not universal optima.
 
 ### 4.2 Additive TabM encoder comparison
 
@@ -296,27 +298,81 @@ or training.
 
 ## 8. Current completed evidence
 
-All values below are mean +/- sample standard deviation across seeds 1-4.
+### 8.1 Current five-seed prediction evidence
 
-| Dataset | Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
-|---|---|---:|---:|---:|---:|
-| MalayaNetwork_GT | Joint full | 56.14% +/- 3.00 | 21.04% +/- 3.85 | 22.89% +/- 3.92 | 3.23 +/- 0.88 pp |
-| MalayaNetwork_GT | Joint cap 3,000 | 54.37% +/- 3.02 | 20.70% +/- 3.72 | 22.70% +/- 3.86 | 3.79 +/- 0.64 pp |
-| NSL-KDD | Joint full | 68.51% +/- 2.87 | 38.32% +/- 2.97 | 40.44% +/- 2.83 | 2.60 +/- 1.15 pp |
-| NSL-KDD | Joint cap 3,000 | 69.07% +/- 3.38 | 38.81% +/- 3.04 | 40.87% +/- 2.96 | 2.38 +/- 1.34 pp |
+The current strict table uses seeds `1, 2, 3, 4, 42`. Each dataset was trained
+and evaluated independently. NSL-KDD, UNSW-NB15, and CIC-IDS-2017 use the
+FT-Transformer 256x4 protocol; MalayaNetwork_GT uses FT-Transformer 512x12.
+The table is therefore a dataset-by-dataset audit, not a capacity-matched pooled
+superiority test.
 
-The low Malaya Macro-F1 and balanced accuracy show that its moderate overall
-accuracy is driven by uneven class performance. The result must not be
-summarized by overall accuracy alone. The high between-seed variability in the
-NSL head-only arm also shows that conclusions must be based on paired,
-multi-seed comparisons rather than one favorable run.
+| Dataset | Model | Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
+|---|---|---|---:|---:|---:|---:|
+| NSL-KDD | FT256x4 | Head only | 56.29% | 31.08% | 36.48% | 8.14 pp |
+| NSL-KDD | FT256x4 | Joint cap 3,000 | 71.56% | 41.46% | 42.25% | 1.60 pp |
+| UNSW-NB15 | FT256x4 | Head only | 68.78% | 21.16% | 23.52% | 2.68 pp |
+| UNSW-NB15 | FT256x4 | Joint cap 3,000 | 61.95% | 23.50% | 28.45% | 8.97 pp |
+| CIC-IDS-2017 | FT256x4 | Head only | 64.59% | 21.25% | 25.91% | 9.04 pp |
+| CIC-IDS-2017 | FT256x4 | Joint cap 3,000 | 72.57% | 36.95% | 63.13% | 9.63 pp |
+| MalayaNetwork_GT | FT512x12 | Head only | 56.03% | 11.77% | 15.05% | 3.16 pp |
+| MalayaNetwork_GT | FT512x12 | Joint cap 3,000 | 54.68% | 21.15% | 23.03% | 3.55 pp |
 
-The completed Malaya seed-1 explanation analysis reported 12 silent-drift
-events among 17 eligible transitions (70.59%). ETG recorded six certified
-admissions, four refused admissions, four escalations, one strict
-recertification, and two strict-recertification failures.
+The results are heterogeneous. Joint cap 3,000 improves all four displayed
+metrics on NSL-KDD. On UNSW-NB15 it improves class-balanced metrics but lowers
+overall accuracy and increases forgetting. On CIC-IDS-2017 it improves
+accuracy and class-balanced metrics but does not reduce forgetting. On Malaya
+it improves minority-class coverage while its accuracy and forgetting effects
+remain uncertain. No universal-superiority claim is supported by this table.
 
-### 8.1 Additive classifier comparisons on MalayaNetwork_GT
+For Malaya FT512x12, the mean +/- sample standard deviation is:
+
+| Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
+|---|---:|---:|---:|---:|
+| Head only | 56.03% +/- 0.45 | 11.77% +/- 0.81 | 15.05% +/- 0.55 | 3.16 +/- 4.39 pp |
+| Joint cap 3,000 | 54.68% +/- 2.71 | 21.15% +/- 3.37 | 23.03% +/- 3.42 | 3.55 +/- 0.77 pp |
+
+The paired joint-minus-head mean differences are -1.34 percentage points for
+accuracy (95% CI -4.71 to +2.02), +9.37 points for Macro-F1 (95% CI +4.70 to
++14.04), +7.97 points for balanced accuracy (95% CI +3.72 to +12.23), and
++0.39 points for forgetting (95% CI -5.75 to +6.54; negative would favour the
+joint arm). The result supports a class-balance improvement, not a stable
+forgetting reduction. Pooled per-class results further show that joint cap
+3,000 produces non-zero recall for every Malaya class, while head-only has zero
+recall for six of ten classes; several minority recalls nevertheless remain
+low.
+
+### 8.2 Explanation drift and offline ETG evidence
+
+The completed source-bound explanation analysis currently covers Malaya seed
+1. The registered primary rule uses Expected Gradients, the actual
+`joint_cap3000` class margin, top-15 features, a Jaccard drift threshold of 0.7,
+and an allowed class-recall drop of 5 percentage points. It reports 12 silent
+explanation-drift events among 17 eligible class-by-adjacent-checkpoint
+transitions (70.59%). This is not a packet, flow, sample, or production-incident
+rate.
+
+ETG records six certified admissions, four refused admissions, four
+escalations, one strict recertification, and two strict-recertification
+failures. These are simulated offline governance outcomes over stored OFRA
+evidence. They do not mean that a human review occurred or that ETG changed
+future routing, replay, training, or predictions.
+
+The sensitivity grid varies top-k over {10, 15, 20}, the Jaccard threshold over
+{0.6, 0.7, 0.8}, and the allowed class-recall drop over {2, 5, 10} percentage
+points. It confirms that the reported rate is threshold-sensitive. The third
+dimension must not be called an overall-accuracy tolerance. Because the grid is
+single-seed, it bounds the registered decision rule but does not identify a
+universal operating threshold.
+
+The attribution-method robustness pilot is also bounded to Malaya seed 1.
+Expected Gradients, single-feature ablation, and Gradient x Input agree on all
+admission decisions for 40.0% of the evaluated cases, on ETG state for 43.3%,
+and on the silent-drift conclusion for 20.0%. Integrated Gradients failed the
+recorded completeness diagnostic and is excluded from the primary comparison.
+The governance conclusion is therefore method-sensitive and must be reported
+with this limitation.
+
+### 8.3 Additive classifier comparisons on MalayaNetwork_GT
 
 The TabM mean-embedding adapter has completed the full OFRA prediction
 pipeline for seeds `1, 2, 3, 4, 42`. The table reports the official test view;
@@ -329,19 +385,12 @@ all values are mean +/- sample standard deviation.
 | Joint, cap 3,000 | 57.99% +/- 3.93 | 20.46% +/- 1.19 | 21.60% +/- 1.70 | 4.39 +/- 2.56 pp |
 | Joint, uncapped | 57.93% +/- 3.84 | 20.34% +/- 1.31 | 21.48% +/- 1.87 | 4.33 +/- 2.39 pp |
 
-The existing FT-Transformer 512x12 result contains only seeds `1-4`, so the
-matched comparison uses those four common seeds. For `joint_cap3000`, TabM
-raises accuracy from 54.37% to 59.59% (+5.23 percentage points) and Macro-F1
-from 20.70% to 20.85% (+0.15 points), while balanced accuracy changes from
-22.70% to 22.06% (-0.64 points) and forgetting is essentially unchanged
-(3.79 versus 3.78 points). The gain is therefore mainly aggregate accuracy,
-not broad class-balanced improvement.
-
-The class audit explains this result. BitTorrent accounts for 5,537 of 10,370
-test rows (53.39%), and its mean recall over the four common seeds rises by
-10.54 points with TabM. Recall falls for Steam (-21.25 points), TeamViewer
-(-11.57), Discord (-6.83), and Webex (-3.79). The five-seed TabM result cannot
-be summarized as an across-the-board improvement.
+The earlier four-common-seed FT-versus-TabM diagnostic remains an additive
+classifier comparison rather than a primary OFRA claim. It suggested that the
+TabM gain was mainly aggregate accuracy rather than broad class-balanced
+improvement. The now-complete five-seed FT512x12 result is the authoritative
+FT prediction record; the historical four-seed comparison remains useful only
+for tracing how the capacity experiment was developed.
 
 Matched cumulative multiclass diagnostics over seeds `1, 2, 3, 4, 42` give
 CatBoost 66.50% +/- 0.44 accuracy, 34.76% +/- 0.69 Macro-F1, 39.10% +/- 0.73
@@ -350,7 +399,7 @@ cumulative TabM values are 65.01% +/- 0.96, 32.66% +/- 1.31, 34.41% +/- 1.51,
 and 9.43 +/- 1.80 points. These cumulative results are classifier-capacity
 diagnostics and are not matched OFRA comparisons.
 
-### 8.2 CIC-IDS-2018 FT256x4 five-seed closure
+### 8.4 CIC-IDS-2018 protocol boundary
 
 A separate FT256x4 campaign with one Task-0 epoch and one epoch per later task
 completed seeds `1`, `2`, `3`, `4`, and `42` (DICC jobs 395350, 399060, 399246,
@@ -370,12 +419,17 @@ points and balanced accuracy by 28.26 points, but reduces overall accuracy by
 effect relative to joint uncapped. This is a class-balance trade-off rather
 than a universal gain.
 
+The older FT256x4 one-plus-one-epoch closure remains valid under its own
+protocol. A stricter FT256x4 five-seed campaign with the current formal
+schedule is still running on DICC and is excluded from the current
+four-dataset table until all seeds, hashes, and protected outputs are complete.
+
 ## 9. What is complete and what remains open
 
 Completed in this release:
 
-- large-model MalayaNetwork_GT seeds 1-4;
-- large-model NSL-KDD seeds 1-4;
+- MalayaNetwork_GT FT512x12 seeds `1, 2, 3, 4, 42`;
+- NSL-KDD, UNSW-NB15, and CIC-IDS-2017 FT256x4 five-seed formal results;
 - TabM mean-embedding OFRA prediction results on MalayaNetwork_GT for seeds
   `1, 2, 3, 4, 42`;
 - matched cumulative CatBoost and TabM diagnostics on MalayaNetwork_GT for the
@@ -384,17 +438,14 @@ Completed in this release:
 - a source-bound three-method attribution robustness pilot, with the failed
   Integrated-Gradients completeness diagnostic retained separately;
 - a preprocessing no-look-ahead code/data audit;
-- the protocol-separated CSE-CIC-IDS2018 FT256x4 five-seed closure campaign;
+- the protocol-separated CSE-CIC-IDS2018 FT256x4 one-plus-one-epoch closure;
 - CSE-CIC-IDS2018 A100 capacity evidence;
 - executable preprocessing contracts for the five-dataset suite;
 - deterministic result, source-binding, and publication hashes.
 
 Not yet complete:
 
-- the fifth registered FT-Transformer 512x12 seed for MalayaNetwork_GT and
-  NSL-KDD;
-- new FT-Transformer 512x12 formal results for CIC-IDS-2017, UNSW-NB15, and
-  CSE-CIC-IDS2018;
+- the currently running stricter CSE-CIC-IDS2018 FT256x4 five-seed campaign;
 - SHAP and ETG analysis for the TabM arm; the current TabM result covers the
   prediction pipeline only;
 - multi-seed SHAP and ETG estimates;
@@ -405,9 +456,10 @@ Not yet complete:
 - a deployed feedback loop in which ETG decisions alter future OFRA routing or
   training.
 
-The available four-seed values are descriptive intermediate evidence. They are
-appropriate for progress reporting and reproducibility review, but they are not
-presented as a complete final-paper result table.
+The current prediction table is a completed descriptive five-seed record for
+four datasets. The fifth dataset, multi-seed explanation/ETG estimates, and the
+strict categorical-vocabulary reruns remain open, so the project is not yet a
+complete final-paper evidence package.
 
 ## 10. Reproducibility and file map
 
@@ -416,8 +468,8 @@ presented as a complete final-paper result table.
   recovery;
 - `ofra_encoders/`: FT-Transformer integration;
 - `formal_v2_explanation_etg/`: SHAP and ETG analyzer;
-- `results/`: per-seed JSON, four-seed aggregate, ETG tables, and capacity
-  profile;
+- `results/`: per-seed JSON, current five-seed aggregate, paired and per-class
+  tables, ETG records, sensitivity analysis, and capacity profile;
 - `results/classifier_comparisons/`: bounded classifier-comparison summaries
   and their interpretation limits;
 - `EXPERIMENT_SCOPE_FREEZE_20260813.md`: the frozen distinction between the

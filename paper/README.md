@@ -1,19 +1,20 @@
 # Manuscript status
 
-The v2.2 supervisor-response manuscript is aligned with the validated evidence
-available on 19 August 2026. Earlier v2.0 and v2.1 files are retained as
+The v2.4 current-evidence manuscript is aligned with the validated evidence
+available on 24 August 2026. Earlier v2.0 through v2.3 files are retained as
 immutable revision snapshots.
 
 The current paper reports:
 
-- four-seed descriptive FT-Transformer 512x12 results for MalayaNetwork_GT and
-  NSL-KDD;
+- strict five-seed prediction evidence for NSL-KDD, UNSW-NB15,
+  CIC-IDS-2017, and MalayaNetwork_GT, with capacity disclosed per dataset;
 - five-seed Malaya TabM mean-embedding results in the unchanged OFRA
   prediction pipeline;
 - five-seed cumulative CatBoost and TabM classifier-capacity diagnostics,
   explicitly separated from OFRA and ETG claims;
-- a separate five-seed CSE-CIC-IDS2018 FT-Transformer 256x4 closure under the
-  one-Task-0-epoch plus one-later-task-epoch protocol;
+- a separate historical five-seed CSE-CIC-IDS2018 FT-Transformer 256x4 closure
+  under the one-Task-0-epoch plus one-later-task-epoch protocol, while the
+  stricter current campaign remains in progress;
 - the MalayaNetwork_GT seed-1 explanation analysis of the registered
   `joint_cap3000` class margin;
 - a same-probe three-method attribution robustness pilot using Expected
@@ -27,15 +28,24 @@ The present single-seed explanation result is `12/17` eligible
 class-by-adjacent-checkpoint transitions and must not be interpreted as a
 packet, flow, sample, or production-incident rate.
 
+The threshold-sensitivity grid varies top-k over `10, 15, 20`, Jaccard over
+`0.6, 0.7, 0.8`, and allowed class-recall drop over `2, 5, 10` percentage
+points. This third dimension is class recall, not overall accuracy.
+
 The attribution conclusion is method-sensitive. Across the three valid methods,
 all-method agreement is 40.0% for admission, 43.3% for ETG state, and 20.0% for
 the silent-drift conclusion. Integrated Gradients was attempted but excluded
 from the primary comparison after failing the recorded completeness check.
 
-The manuscript is a supervisor response, not a final submission-ready claim of
-superiority. In particular, the TabM accuracy gain is not accompanied by a
-matched balanced-accuracy improvement, and the cumulative CatBoost result is
-not a continual-learning comparison. Strict Task-0-only categorical vocabulary
-rebuilds and affected reruns remain open. The current validated result index is
-under `results/`, and the itemized response is in
-`SUPERVISOR_RESPONSE_2026-08-19.md`.
+The manuscript is a supervisor-facing evidence revision, not a final claim of
+superiority. On Malaya, joint cap improves Macro-F1 and balanced accuracy but
+does not establish an accuracy or forgetting gain. The TabM accuracy gain is
+not accompanied by improved class-balanced or retention metrics, and the
+cumulative CatBoost result is not a continual-learning comparison. Strict
+Task-0-only categorical vocabulary rebuilds, multi-seed explanation/ETG, the
+current CIC-IDS-2018 closure, and stronger matched baselines remain open. The
+current validated result index is under `results/formal-five-seed-20260824/`.
+
+The additional Malaya explanation/ETG seed attempt did not pass the complete
+source-bound validation workflow, so it is not promoted into v2.4. The paper
+continues to report only the validated seed-1 explanation and ETG evidence.
