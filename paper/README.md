@@ -1,20 +1,21 @@
 # Manuscript status
 
-The v2.4 current-evidence manuscript is aligned with the validated evidence
-available on 24 August 2026. Earlier v2.0 through v2.3 files are retained as
+The v2.5 five-dataset closure manuscript is aligned with the validated evidence
+available on 25 August 2026. Earlier v2.0 through v2.4 files are retained as
 immutable revision snapshots.
 
 The current paper reports:
 
 - strict five-seed prediction evidence for NSL-KDD, UNSW-NB15,
-  CIC-IDS-2017, and MalayaNetwork_GT, with capacity disclosed per dataset;
+  CIC-IDS-2017, CSE-CIC-IDS2018, and MalayaNetwork_GT, with capacity disclosed
+  per dataset;
 - five-seed Malaya TabM mean-embedding results in the unchanged OFRA
   prediction pipeline;
 - five-seed cumulative CatBoost and TabM classifier-capacity diagnostics,
   explicitly separated from OFRA and ETG claims;
-- a separate historical five-seed CSE-CIC-IDS2018 FT-Transformer 256x4 closure
-  under the one-Task-0-epoch plus one-later-task-epoch protocol, while the
-  stricter current campaign remains in progress;
+- the strict CSE-CIC-IDS2018 FT-Transformer 256x4, 8+10-epoch closure from
+  DICC Job 402073, with the earlier 1+1-epoch result retained only as a
+  protocol-separated historical result;
 - the MalayaNetwork_GT seed-1 explanation analysis of the registered
   `joint_cap3000` class margin;
 - a same-probe three-method attribution robustness pilot using Expected
@@ -42,10 +43,10 @@ superiority. On Malaya, joint cap improves Macro-F1 and balanced accuracy but
 does not establish an accuracy or forgetting gain. The TabM accuracy gain is
 not accompanied by improved class-balanced or retention metrics, and the
 cumulative CatBoost result is not a continual-learning comparison. Strict
-Task-0-only categorical vocabulary rebuilds, multi-seed explanation/ETG, the
-current CIC-IDS-2018 closure, and stronger matched baselines remain open. The
+Task-0-only categorical vocabulary rebuilds, multi-seed explanation/ETG, and
+stronger matched baselines remain open. The
 current validated result index is under `results/formal-five-seed-20260824/`.
 
 The additional Malaya explanation/ETG seed attempt did not pass the complete
-source-bound validation workflow, so it is not promoted into v2.4. The paper
+source-bound validation workflow, so it is not promoted into v2.5. The paper
 continues to report only the validated seed-1 explanation and ETG evidence.
