@@ -1,7 +1,9 @@
 # Manuscript status
 
-The v2.5 five-dataset closure manuscript is aligned with the validated evidence
-available on 25 August 2026. Earlier v2.0 through v2.4 files are retained as
+The v2.6 manuscript aligns the research questions, objectives, methods, and
+results around prediction/retention (RQ1), explanation stability (RQ2), and
+non-suppressing governance (RQ3). It retains the validated five-dataset evidence
+available on 25 August 2026. Earlier v2.0 through v2.5 files are retained as
 immutable revision snapshots.
 
 The current paper reports:
@@ -48,5 +50,5 @@ stronger matched baselines remain open. The
 current validated result index is under `results/formal-five-seed-20260824/`.
 
 The additional Malaya explanation/ETG seed attempt did not pass the complete
-source-bound validation workflow, so it is not promoted into v2.5. The paper
+source-bound validation workflow, so it is not promoted into v2.6. The paper
 continues to report only the validated seed-1 explanation and ETG evidence.
