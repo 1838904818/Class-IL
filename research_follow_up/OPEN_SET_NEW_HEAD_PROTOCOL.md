@@ -101,3 +101,21 @@ SOUL provides a close precedent: it combines model confidence with similarity
 to replay-buffer exemplars, accepts only high-confidence agreement, and still
 uses analyst labels for uncertain novel data. Our pilot adapts that principle to
 OFRA's multiclass family heads and DP-Means centroids.
+
+## Seed-42 pilot outcome
+
+DICC Job `414686` completed the first hash-bound O1 evaluation with
+FTP-Patator held out until the final labelled increment. The test set was not
+used to set thresholds. All four registered rejection rules produced 0%
+unknown recall. The primary conservative rule rejected 509 known rows and zero
+FTP-Patator rows, giving a 0.225% known false-unknown rate but no useful unknown
+detection. The best continuous AUROC was 0.5303 and the OSCR-style AUC was
+0.4699. The candidate buffer was therefore ineligible for analyst review.
+
+After the FTP-Patator label was supplied at the declared task boundary, the
+ordinary supervised OFRA update achieved 82.30% new-class recall. Old-class
+accuracy changed from 87.28% to 87.01% (-0.27 percentage points). This pilot
+supports labelled adaptation but not autonomous unknown discovery. It did not
+create a semantic head from unlabelled traffic. The result remains a single-
+seed expected-contract reconstruction and requires rotated held-out classes and
+multiple seeds before any general claim.

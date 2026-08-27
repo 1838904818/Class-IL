@@ -150,7 +150,8 @@ export PYTHONPATH="$OFRA_PROJECT_DIR/formal_v2_explanation_etg:$OFRA_PROJECT_DIR
   test_analyze.py test_publish_wandb.py test_verify_submission_bindings.py)
 ```
 
-`SHA256SUMS.txt` is generated from the published LF-normalised files. The
+`SHA256SUMS.txt` covers the complete published tree except the manifest itself.
+Text files are LF-normalised and binary documents are hashed byte-for-byte. The
 runtime manifests in `reproducibility/` bind the current code to the completed
 training and analysis evidence.
 
@@ -166,6 +167,8 @@ established.
 
 The reproducible protocols for training-set capping, ReplayIDS-guided tuning,
 and unseen-attack rejection/new-head adaptation are under
-[`research_follow_up/`](research_follow_up/README.md). These are planned or
-in-progress experiments and do not replace the completed headline results
-until their hash-bound outputs are published.
+[`research_follow_up/`](research_follow_up/README.md). The first hash-bound O1
+open-set evaluation is complete and recorded under
+[`results/replayids-o1-open-set-seed42/`](results/replayids-o1-open-set-seed42/README.md).
+It is a single-seed negative result for autonomous discovery and does not
+replace the completed five-dataset headline results.

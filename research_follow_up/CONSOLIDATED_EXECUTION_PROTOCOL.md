@@ -50,8 +50,11 @@ rules. It therefore remains a separate CPU job.
 
 ## Current evidence boundary
 
-- Literature analysis, protocols, builder and evaluator are ready.
-- Local v3 A1/O1 derivations and tests are complete.
-- No new A1/O1 model result exists yet.
-- Existing paper numbers remain unchanged until immutable DICC outputs are
-  collected and validated.
+- Literature analysis, protocols, builder and evaluator are complete.
+- The A1/O1 derivation and the required O1 checkpoints are hash-bound.
+- CPU Job `414686` completed the first O1 evaluation.
+- Every registered unknown gate had 0% FTP-Patator recall. After its label was
+  supplied, supervised adaptation achieved 82.30% new-class recall with a
+  0.27-percentage-point old-class accuracy reduction.
+- This is a single-seed diagnostic result and does not support autonomous head
+  creation.

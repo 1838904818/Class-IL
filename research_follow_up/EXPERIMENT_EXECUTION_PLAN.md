@@ -3,8 +3,10 @@
 ## Current data readiness
 
 The research protocols and deterministic builders are ready. DICC Job `414596`
-completed the A1/O1 data derivation on 2026-08-27. This is data-preparation
-evidence only: no new accuracy, forgetting or open-set result is claimed.
+completed the A1/O1 data derivation on 2026-08-27. The later hash-bound training
+produced the O1 checkpoints, and CPU Job `414686` completed the first open-set
+evaluation. All registered pre-label gates had 0% FTP-Patator recall; the
+post-label supervised head achieved 82.30% recall.
 
 ### Derived data candidates
 
@@ -71,10 +73,10 @@ The completed and remaining dependency stages are:
    as DICC Job `414596`;
 2. completed: verify the two manifests, audits, copied test-shard invariants and
    protected metadata checksum list;
-3. next: render the GPU training script against the exact hashes above and send
-   that new script through the independent review gate;
-4. after immutable O1 checkpoints exist, review and run the CPU-only open-set
-   evaluator.
+3. completed: hash-bound O1 checkpoint production;
+4. completed: reviewed CPU-only open-set evaluation as DICC Job `414686`;
+5. next: redesign the unknown gate, rotate held-out classes, and expand only a
+   frozen selected rule to multiple seeds.
 
 A GPU script drafted before stage 2 is only a template. It is not an exact,
 hash-bound submission candidate and must not be submitted.

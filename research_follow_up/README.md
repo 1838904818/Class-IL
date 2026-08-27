@@ -19,6 +19,8 @@ evidence. Nothing here changes or replaces the five-dataset, five-seed results.
    Slurm submissions while keeping A1/O1 evidence and resource types separate.
 7. `DICC_DERIVATION_EVIDENCE.md` records the completed, hash-bound A1/O1 data
    derivation that subsequent training candidates must use.
+8. `../results/replayids-o1-open-set-seed42/` records the completed, sanitised
+   seed-42 O1 evaluator result and immutable evidence hashes.
 
 ## Evidence boundary
 
@@ -27,7 +29,12 @@ evidence. Nothing here changes or replaces the five-dataset, five-seed results.
   output directories, new hashes and new run identifiers.
 - A seed-42 pilot is diagnostic only. Publication claims require the agreed
   five seeds and the same frozen protocol.
-- DICC Job `414596` completed the A1/O1 data derivation only. It did not train a
-  model and does not provide accuracy, forgetting or open-set results.
+- DICC Job `414596` completed the A1/O1 data derivation only. The later
+  hash-bound training produced the required O1 checkpoints, and CPU Job
+  `414686` completed the open-set evaluation.
+- In Job `414686`, all registered gates had 0% FTP-Patator unknown recall. The
+  post-label supervised update reached 82.30% new-class recall with a 0.27-
+  percentage-point reduction in old-class accuracy. This is a negative result
+  for autonomous discovery and a positive diagnostic for labelled adaptation.
 - Every subsequent training or evaluation job still requires a fresh,
   independent hash-bound DICC review and one matching user confirmation.

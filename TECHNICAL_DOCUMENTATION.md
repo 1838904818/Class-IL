@@ -216,50 +216,80 @@ or training.
 
 ## 8. Current completed evidence
 
-All values below are mean +/- sample standard deviation across seeds 1-4.
+### 8.1 Strict five-seed prediction evidence
 
-| Dataset | Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
-|---|---|---:|---:|---:|---:|
-| MalayaNetwork_GT | Joint full | 56.14% +/- 3.00 | 21.04% +/- 3.85 | 22.89% +/- 3.92 | 3.23 +/- 0.88 pp |
-| MalayaNetwork_GT | Joint cap 3,000 | 54.37% +/- 3.02 | 20.70% +/- 3.72 | 22.70% +/- 3.86 | 3.79 +/- 0.64 pp |
-| NSL-KDD | Joint full | 68.51% +/- 2.87 | 38.32% +/- 2.97 | 40.44% +/- 2.83 | 2.60 +/- 1.15 pp |
-| NSL-KDD | Joint cap 3,000 | 69.07% +/- 3.38 | 38.81% +/- 3.04 | 40.87% +/- 2.96 | 2.38 +/- 1.34 pp |
+The table reports means across seeds 1, 2, 3, 4, and 42. Each dataset is an
+independent experiment; model capacities are disclosed and are not pooled.
 
-The low Malaya Macro-F1 and balanced accuracy show that its moderate overall
-accuracy is driven by uneven class performance. The result must not be
-summarized by overall accuracy alone. The high between-seed variability in the
-NSL head-only arm also shows that conclusions must be based on paired,
-multi-seed comparisons rather than one favorable run.
+| Dataset | Model | Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
+|---|---|---|---:|---:|---:|---:|
+| NSL-KDD | FT256x4 | Head only | 56.29% | 31.08% | 36.48% | 8.14 pp |
+| NSL-KDD | FT256x4 | Joint cap 3,000 | 71.56% | 41.46% | 42.25% | 1.60 pp |
+| UNSW-NB15 | FT256x4 | Head only | 68.78% | 21.16% | 23.52% | 2.68 pp |
+| UNSW-NB15 | FT256x4 | Joint cap 3,000 | 61.95% | 23.50% | 28.45% | 8.97 pp |
+| CIC-IDS-2017 | FT256x4 | Head only | 64.59% | 21.25% | 25.91% | 9.04 pp |
+| CIC-IDS-2017 | FT256x4 | Joint cap 3,000 | 72.57% | 36.95% | 63.13% | 9.63 pp |
+| CSE-CIC-IDS2018 | FT256x4 | Head only | 79.21% | 19.06% | 21.15% | 2.00 pp |
+| CSE-CIC-IDS2018 | FT256x4 | Joint cap 3,000 | 50.16% | 33.55% | 52.15% | 19.07 pp |
+| MalayaNetwork_GT | FT512x12 | Head only | 56.03% | 11.77% | 15.05% | 3.16 pp |
+| MalayaNetwork_GT | FT512x12 | Joint cap 3,000 | 54.68% | 21.15% | 23.03% | 3.55 pp |
+
+Routing is therefore dataset-dependent. It is favourable across all four
+displayed metrics on NSL-KDD, improves class-balanced coverage at a cost on
+UNSW-NB15, improves coverage without reducing forgetting on CIC-IDS-2017, and
+produces an operationally severe false-positive and retention trade-off on
+CSE-CIC-IDS2018. Malaya remains strongly imbalanced, so overall accuracy alone
+is not an adequate summary.
+
+### 8.2 Explanation and governance evidence
 
 The completed Malaya seed-1 explanation analysis reported 12 silent-drift
 events among 17 eligible transitions (70.59%). ETG recorded six certified
 admissions, four refused admissions, four escalations, one strict
 recertification, and two strict-recertification failures.
 
+### 8.3 Seed-42 open-set and labelled-head pilot
+
+The ReplayIDS expected-contract O1 pilot held FTP-Patator out until the final
+labelled increment. Known-only calibration did not use the test set. Before the
+label arrived, confidence-only, centroid-distance-only, conservative joint, and
+empirical-joint gates all produced 0% unknown recall. The best AUROC was 0.5303,
+the OSCR-style AUC was 0.4699, and the primary candidate buffer contained 509
+known rows and no FTP-Patator rows. The current gate therefore failed as an
+unknown-discovery mechanism.
+
+After the label was supplied, the normal supervised OFRA update achieved
+82.30% FTP-Patator recall. Old-class accuracy changed from 87.28% to 87.01%, a
+reduction of 0.27 percentage points. The experiment did not create a head
+automatically. It supports labelled adaptation only and remains a single-seed,
+single-held-out-class diagnostic.
+
 ## 9. What is complete and what remains open
 
 Completed in this release:
 
-- large-model MalayaNetwork_GT seeds 1-4;
-- large-model NSL-KDD seeds 1-4;
+- strict five-seed prediction evidence for all five independently processed
+  datasets;
 - Malaya seed-1 SHAP and ETG analysis from completed DICC Job 389896;
-- CSE-CIC-IDS2018 A100 capacity evidence;
+- three-method attribution-sensitivity pilot on the same routed score;
+- CSE-CIC-IDS2018 strict 8+10-epoch five-seed campaign;
+- seed-42 FTP-Patator open-set and post-label head diagnostic from DICC Job
+  414686;
 - executable preprocessing contracts for the five-dataset suite;
 - deterministic result, source-binding, and publication hashes.
 
 Not yet complete:
 
-- the fifth registered seed;
-- new FT-Transformer 512x12 formal results for CIC-IDS-2017, UNSW-NB15, and
-  CSE-CIC-IDS2018;
 - multi-seed SHAP and ETG estimates;
+- rotated held-out-class and multi-seed open-set evaluation;
+- a successful unknown gate or evidence supporting automatic head creation;
 - inferential tests supporting superiority claims;
 - a deployed feedback loop in which ETG decisions alter future OFRA routing or
   training.
 
-The available four-seed values are descriptive intermediate evidence. They are
-appropriate for progress reporting and reproducibility review, but they are not
-presented as a complete final-paper result table.
+The prediction table is a completed descriptive five-seed record. The open-set
+result is diagnostic and negative for autonomous discovery; it must not be
+promoted to a general open-world claim.
 
 ## 10. Reproducibility and file map
 
@@ -268,8 +298,8 @@ presented as a complete final-paper result table.
   recovery;
 - `ofra_encoders/`: FT-Transformer integration;
 - `formal_v2_explanation_etg/`: SHAP and ETG analyzer;
-- `results/`: per-seed JSON, four-seed aggregate, ETG tables, and capacity
-  profile;
+- `results/`: per-seed JSON, five-seed aggregates, ETG tables, classifier
+  comparisons, and the sanitised open-set pilot binding;
 - `reproducibility/`: exact runtime and analysis bindings;
 - `SHA256SUMS.txt`: SHA-256 for every published file other than the manifest
   itself.

@@ -25,6 +25,15 @@ Values are mean +/- sample standard deviation across the four completed seeds. T
 
 The completed MalayaNetwork_GT seed-1 analysis is under `malaya-network-gt/etg-seed1/`. Its primary silent explanation-drift rate is 12/17 class-by-adjacent-checkpoint transitions (70.59%). This is not a packet, flow, sample, or real-world incident rate. ETG actions are simulated governance outcomes, not completed human reviews.
 
+## ReplayIDS O1 open-set pilot
+
+`replayids-o1-open-set-seed42/` contains a path-sanitised binding for completed
+DICC Job `414686`. All registered pre-label unknown gates missed the held-out
+FTP-Patator class (0% unknown recall). After its label was supplied, the normal
+supervised OFRA update achieved 82.30% new-class recall while old-class accuracy
+fell by 0.27 percentage points. This is single-seed diagnostic evidence and does
+not establish autonomous new-head creation.
+
 ## CSE-CIC-IDS2018 status
 
 `cic-ids-2018/capacity_profile.json` is a non-reportable throughput and memory measurement used for resource planning. Formal CSE-CIC-IDS2018 model training was not complete at this release and no performance claim is made from the capacity profile.
