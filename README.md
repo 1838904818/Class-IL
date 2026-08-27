@@ -161,3 +161,11 @@ complete linked library of every cited paper, together with a reusable BibTeX
 file and redistribution notes, is under [`references/`](references/REFERENCES.md).
 Publisher PDFs are not mirrored when redistribution permission has not been
 established.
+
+## Follow-up experiments
+
+The reproducible protocols for training-set capping, ReplayIDS-guided tuning,
+and unseen-attack rejection/new-head adaptation are under
+[`research_follow_up/`](research_follow_up/README.md). These are planned or
+in-progress experiments and do not replace the completed headline results
+until their hash-bound outputs are published.
