@@ -1,24 +1,26 @@
 # OFRA three-direction execution plan
 
-## Current local readiness
+## Current data readiness
 
-The research protocols and deterministic builders are ready. No new result is
-claimed and no DICC job has been submitted.
+The research protocols and deterministic builders are ready. DICC Job `414596`
+completed the A1/O1 data derivation on 2026-08-27. This is data-preparation
+evidence only: no new accuracy, forgetting or open-set result is claimed.
 
 ### Derived data candidates
 
 | Candidate | Purpose | Fit-train rows | Calibration rows | Official test rows | Manifest SHA-256 | Audit SHA-256 |
 |---|---|---:|---:|---:|---|---|
-| `derived_replayids_cap50k_seed42_v3` | Isolate the 50k/class training-cap effect while preserving the original task order | 119,137 | 68,313 | 227,723 | `7e49feaa79f34caf041f41ef6bdcce2d59f277b428cfd2aa5a1d9600c129c26a` | `a8830d2979935f93ca7db89d9e17a2b91c245b9c138f45b46f6856eff4101524` |
-| `derived_replayids_cap50k_unknown5_seed42_v3` | Hold FTP-Patator until a singleton final labelled task for reject-then-new-head evaluation | 119,137 | 68,313 | 227,723 | `7177bb6c7e08734aa078efdfad955c7c25f6e0b9f562b2e83601eccddbf44a03` | `4083daca10191ced3236bf56160c04cd76d29d66c7db5d20ed7c8b3fe6d2b1de` |
+| `A1 seed-42 capped training` | Isolate the 50k/class training-cap effect while preserving the original task order | 119,137 | 68,313 | 227,723 | `13527d6c3e58fbd1026509647f0c528ec7158a512d57145a9301f6ca8d03e1bd` | `77f4af3340d0342a5956ceb94e892c768c709a7f5336a74aa2a6f1caedfb0562` |
+| `O1 seed-42 FTP held out` | Hold FTP-Patator until a singleton final labelled task for reject-then-new-head evaluation | 119,137 | 68,313 | 227,723 | `7913f826ec8667f7556d8930a7d07ce80e72ad5dbac0c7d213e1b88f27424749` | `0f9f9780713f874cd97e51a062df15678ebbb71483944fc5e89740f2bb8f7efc` |
 
 The 68,313 calibration rows are removed from fit-training. Benign and DoS Hulk
 are the only fit-training classes capped at 50,000 in this ReplayIDS contract.
-All test shards retain their original hashes. The v3 builder creates the output
-directory exclusively, validates each test shard against the source manifest
-before and after materialisation, and verifies hardlink device/inode identity.
-The unversioned and v2 local drafts are superseded and must not be used for a
-DICC candidate.
+All test shards retain their original hashes. The builder creates each output
+directory exclusively and validates every test shard against the source
+manifest before and after materialisation. Local development artifacts may use
+hard links, but the reviewed DICC derivation uses byte copies because BeeGFS
+rejects cross-directory hard links. Each copied shard is verified against the
+same manifest SHA-256. Unversioned and v2 local drafts remain superseded.
 
 ## Dependency order
 
@@ -58,20 +60,21 @@ submission.
 
 ## DICC boundary
 
-The local hard links are storage-efficient local artifacts, not uploadable
-training evidence by themselves. DICC should derive the same arrays from the
-already hash-bound source cache inside a scheduled job or a separately reviewed
-preprocessing job. The resulting remote manifest and audit must be hashed before
-the training job is reviewed.
+Local hard links are storage-efficient development artifacts, not DICC training
+evidence. The reviewed DICC job derived the same arrays from the hash-bound
+source cache using verified byte copies. The resulting manifest and audit
+hashes above are now the required input bindings for the training job.
 
-This creates a mandatory two-stage dependency for the first DICC execution:
+The completed and remaining dependency stages are:
 
-1. review and run one lightweight CPU batch job that derives A1 and O1 from the
-   already bound remote source cache;
-2. collect the remote `streaming_manifest.json`, `sampling_audit.json`, builder
-   hash and test-shard invariants;
-3. only then render the GPU training scripts with those exact remote hashes and
-   send each script through the independent review gate.
+1. completed: independently review and run the lightweight CPU A1/O1 derivation
+   as DICC Job `414596`;
+2. completed: verify the two manifests, audits, copied test-shard invariants and
+   protected metadata checksum list;
+3. next: render the GPU training script against the exact hashes above and send
+   that new script through the independent review gate;
+4. after immutable O1 checkpoints exist, review and run the CPU-only open-set
+   evaluator.
 
 A GPU script drafted before stage 2 is only a template. It is not an exact,
 hash-bound submission candidate and must not be submitted.
@@ -96,7 +99,7 @@ As of 2026-08-27 (Asia/Kuala_Lumpur):
   hash, and checkpoint resume accepts only the validated result;
 - the smoke test is synthetic and does not constitute A1 or O1 evidence.
 
-The complete local A1 derivation was also measured at 1.217 seconds elapsed,
-188.77 MiB peak working set and 525.83 MiB peak paged memory. This supports a
-one-CPU, 1 GiB, 10-minute DICC derivation candidate while retaining margin for
-networked scratch I/O. The remote job still requires `seff` validation.
+The complete local copy-mode A1/O1 derivation was measured at 2.663 seconds and
+approximately 188.6 MiB peak working set per arm. DICC Job `414596` completed in
+12 seconds with one allocated CPU, one GiB and no GPU. `seff` reported 33.33%
+CPU efficiency; stderr was empty. All protected metadata checksums passed.

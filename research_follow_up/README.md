@@ -17,6 +17,8 @@ evidence. Nothing here changes or replaces the five-dataset, five-seed results.
    unknown rejection from an OFRA monitoring checkpoint.
 6. `CONSOLIDATED_EXECUTION_PROTOCOL.md` reduces the campaign to three reviewed
    Slurm submissions while keeping A1/O1 evidence and resource types separate.
+7. `DICC_DERIVATION_EVIDENCE.md` records the completed, hash-bound A1/O1 data
+   derivation that subsequent training candidates must use.
 
 ## Evidence boundary
 
@@ -25,5 +27,7 @@ evidence. Nothing here changes or replaces the five-dataset, five-seed results.
   output directories, new hashes and new run identifiers.
 - A seed-42 pilot is diagnostic only. Publication claims require the agreed
   five seeds and the same frozen protocol.
-- No DICC job is submitted by these files. A future job must pass the project's
-  independent hash-bound DICC review and user confirmation gate.
+- DICC Job `414596` completed the A1/O1 data derivation only. It did not train a
+  model and does not provide accuracy, forgetting or open-set results.
+- Every subsequent training or evaluation job still requires a fresh,
+  independent hash-bound DICC review and one matching user confirmation.
