@@ -173,7 +173,7 @@ open-set evaluation is complete and recorded under
 It is a single-seed negative result for autonomous discovery and does not
 replace the completed five-dataset headline results.
 
-The next registered candidates are an adaptive normal-only training cap and a
-seed-42 replay-size screen at 500 and 3,000 exemplars per class. Their builders,
-contracts and configurations are published for review, but they are not
-reported as experimental results until hash-bound DICC jobs complete.
+The adaptive normal-only data derivation completed as reviewed DICC Job
+`414907`. The seed-42 replay-size screen at 500 and 3,000 exemplars per class
+was submitted independently as Job `414908`; no model result is reported until
+that job completes and its protected artifacts pass verification.

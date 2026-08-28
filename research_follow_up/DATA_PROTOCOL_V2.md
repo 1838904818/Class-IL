@@ -23,9 +23,13 @@ preserves every attack row available after the training-only calibration split.
    training begins.
 
 For the current ReplayIDS expected-contract source, `C` is 124,780 (DoS Hulk).
-The resulting seed-42 candidate contains 268,697 fit rows, 68,313 disjoint
-training-only calibration rows and all 227,723 official test rows. Only Benign
-is capped; no attack class is reduced.
+DICC Job `414907` completed the reviewed seed-42 derivation on 2026-08-28. It
+contains 268,697 fit rows, 68,313 disjoint training-only calibration rows and
+all 227,723 official test rows. Only Benign is capped; no attack class is
+reduced. The DICC manifest SHA-256 is
+`6d6e467ed0687ff6eb2d171c9799c74ee16af3c5b65bea2e662fa569bc3d5e1b` and
+the sampling-audit SHA-256 is
+`697750d599f448ba1120ba60decac98abb607204eec1a431073673cc3b124b9b`.
 
 ## Comparison and decision rule
 

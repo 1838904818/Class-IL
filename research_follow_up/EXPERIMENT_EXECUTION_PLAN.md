@@ -16,11 +16,12 @@ forgetting decreased from 10.70% to 3.52%. However, Macro-F1 fell from 50.02%
 to 44.71% and balanced accuracy from 68.62% to 51.02%. The fixed 50,000-row cap
 therefore does not pass the registered minority-performance decision rule.
 
-Protocol D2 is the next data candidate. It keeps every attack fit row and caps
-only Benign to the largest attack fit pool. The local real-manifest derivation
-produced 268,697 fit rows, 68,313 disjoint calibration rows and all 227,723
-official test rows. These local hashes are implementation evidence only; a
-reviewed DICC derivation is still required.
+Protocol D2 keeps every attack fit row and caps only Benign to the largest
+attack fit pool. Reviewed DICC Job `414907` completed the seed-42 derivation in
+11 seconds with empty stderr and all registered invariants passing. It produced
+268,697 fit rows, 68,313 disjoint calibration rows and all 227,723 official test
+rows. The protected metadata checksum-registry SHA-256 is
+`8d164306e0e153ef661882133083d3520e07557c0fd839bc98eb8b1f684db8f7`.
 
 ### Derived data candidates
 
@@ -28,6 +29,7 @@ reviewed DICC derivation is still required.
 |---|---|---:|---:|---:|---|---|
 | `A1 seed-42 capped training` | Isolate the 50k/class training-cap effect while preserving the original task order | 119,137 | 68,313 | 227,723 | `13527d6c3e58fbd1026509647f0c528ec7158a512d57145a9301f6ca8d03e1bd` | `77f4af3340d0342a5956ceb94e892c768c709a7f5336a74aa2a6f1caedfb0562` |
 | `O1 seed-42 FTP held out` | Hold FTP-Patator until a singleton final labelled task for reject-then-new-head evaluation | 119,137 | 68,313 | 227,723 | `7913f826ec8667f7556d8930a7d07ce80e72ad5dbac0c7d213e1b88f27424749` | `0f9f9780713f874cd97e51a062df15678ebbb71483944fc5e89740f2bb8f7efc` |
+| `D2 adaptive normal-only cap` | Reduce Benign dominance without discarding any attack fit rows | 268,697 | 68,313 | 227,723 | `6d6e467ed0687ff6eb2d171c9799c74ee16af3c5b65bea2e662fa569bc3d5e1b` | `697750d599f448ba1120ba60decac98abb607204eec1a431073673cc3b124b9b` |
 
 The 68,313 calibration rows are removed from fit-training. Benign and DoS Hulk
 are the only fit-training classes capped at 50,000 in this ReplayIDS contract.
@@ -90,9 +92,10 @@ The completed and remaining dependency stages are:
    protected metadata checksum list;
 3. completed: hash-bound O1 checkpoint production;
 4. completed: reviewed CPU-only open-set evaluation as DICC Job `414686`;
-5. prepared locally, not submitted: derive D2 on DICC and run the sequential
-   replay-500/replay-3000 seed-42 screen;
-6. next after those diagnostics: redesign the unknown gate, rotate held-out
+5. completed: reviewed D2 derivation as DICC Job `414907`;
+6. submitted, result pending: sequential replay-500/replay-3000 seed-42 screen
+   as DICC Job `414908`;
+7. next after those diagnostics: redesign the unknown gate, rotate held-out
    classes, and expand only frozen selected rules to multiple seeds.
 
 A GPU script drafted before stage 2 is only a template. It is not an exact,
@@ -108,10 +111,10 @@ Every DICC candidate remains subject to:
 
 ## Local validation status
 
-As of 2026-08-27 (Asia/Kuala_Lumpur):
+As of 2026-08-28 (Asia/Kuala_Lumpur):
 
 - `ruff` passes for the research package;
-- all seven unit tests pass;
+- all 10 follow-up unit tests pass;
 - both Python entry points compile;
 - the formal `streaming_full.smoke_test` exits with code 0;
 - repeated seed/protocol smoke runs reproduce the same deterministic result

@@ -9,20 +9,20 @@ evaluation are complete. DICC Job `414686` produced a verified single-seed
 open-set result. That result is negative for autonomous unknown discovery but
 positive for supervised adaptation after a legitimate labelled increment.
 
-Two next-stage candidates have also passed local implementation validation:
-an adaptive normal-only data protocol and a replay-capacity screen at 500 and
-3,000 exemplars per class. These are registered candidates, not completed
-experimental results.
+The adaptive normal-only data derivation is now complete as reviewed DICC Job
+`414907`. The replay-capacity screen at 500 and 3,000 exemplars per class was
+submitted separately as Job `414908`; it has no result yet.
 
 ## Candidate implementation validation
 
-The adaptive data builder was exercised twice against the real ReplayIDS
-expected-contract manifest and produced identical row selections. It reserves
-a deterministic 10% training-only calibration split, caps only Benign to the
-largest attack fit pool, retains every attack fit row, and keeps all official
-test shards byte-identical. The derived candidate has 268,697 fit rows, 68,313
-calibration rows and 227,723 official test rows. The normal-class cap is
-124,780 rows, determined by the DoS Hulk fit pool.
+The adaptive data builder was exercised locally and on DICC against the same
+ReplayIDS expected-contract manifest. It reserves a deterministic 10%
+training-only calibration split, caps only Benign to the largest attack fit
+pool, retains every attack fit row, and keeps all official test shards
+byte-identical. The derived dataset has 268,697 fit rows, 68,313 calibration
+rows and 227,723 official test rows. The normal-class cap is 124,780 rows,
+determined by the DoS Hulk fit pool. Job `414907` completed in 11 seconds with
+exit code 0, empty stderr and `ADAPTIVE_DERIVATION_INVARIANTS=PASS`.
 
 The model screen changes only `exemplar_capacity`: the immutable control uses
 50, while the registered candidates use 500 and 3,000. Architecture, data,
@@ -34,8 +34,12 @@ memory.
 Local validation completed with 10 unit tests, Ruff checks, Python bytecode
 compilation, a deterministic synthetic streaming smoke test, and the DICC
 static preflight. Local real-manifest hashes are deliberately not promoted as
-DICC evidence. Each candidate still requires fresh remote hashes, independent
-review, a separately confirmed submission and protected result verification.
+DICC evidence. The D2 remote manifest, audit and protected-registry SHA-256
+values are respectively
+`6d6e467ed0687ff6eb2d171c9799c74ee16af3c5b65bea2e662fa569bc3d5e1b`,
+`697750d599f448ba1120ba60decac98abb607204eec1a431073673cc3b124b9b`
+and `8d164306e0e153ef661882133083d3520e07557c0fd839bc98eb8b1f684db8f7`.
+The replay screen still requires completed protected-result verification.
 
 ## Data and execution bindings
 
@@ -74,8 +78,9 @@ boundary.
 
 ## Remaining validation work
 
-1. Complete the reviewed DICC derivation for the adaptive normal-only protocol.
-2. Run the seed-42 replay 500/3,000 screen against the replay-50 reference.
+1. Complete and verify Job `414908`, the seed-42 replay 500/3,000 screen against
+   the replay-50 reference.
+2. Train the selected data protocol only after the replay diagnostic is read.
 3. Rotate the held-out class to DoS Slowhttptest and DoS slowloris.
 4. Redesign or learn the unknown score because the registered gate provides no
    separation for FTP-Patator.
