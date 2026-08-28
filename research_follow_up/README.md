@@ -43,5 +43,9 @@ evidence. Nothing here changes or replaces the five-dataset, five-seed results.
   for autonomous discovery and a positive diagnostic for labelled adaptation.
 - Every subsequent training or evaluation job still requires a fresh,
   independent hash-bound DICC review and one matching user confirmation.
-- The adaptive data protocol and replay-500/replay-3000 configurations are new
-  candidates. They are not results until their reviewed jobs complete.
+- The adaptive data derivation completed as Job `414907`; it has not yet been
+  used for model training.
+- The replay-500/replay-3000 seed-42 diagnostic completed as Job `414908`.
+  Larger replay improved final accuracy and Benign false-positive rate but
+  weakened class-balanced performance, so replay 50 remains the reference for
+  the next controlled stage.

@@ -175,5 +175,9 @@ replace the completed five-dataset headline results.
 
 The adaptive normal-only data derivation completed as reviewed DICC Job
 `414907`. The seed-42 replay-size screen at 500 and 3,000 exemplars per class
-was submitted independently as Job `414908`; no model result is reported until
-that job completes and its protected artifacts pass verification.
+completed as DICC Job `414908`. Larger replay improved final overall accuracy
+and Benign false-positive rate, but reduced Macro-F1, balanced accuracy, attack
+recall, and average task accuracy. Replay 50 therefore remains the reference
+for the next controlled stage; this single-seed diagnostic is not a five-seed
+publication claim. The exact comparison and evidence hashes are recorded in
+[`results/replayids-replay-capacity-seed42/`](results/replayids-replay-capacity-seed42/README.md).

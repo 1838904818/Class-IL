@@ -9,9 +9,10 @@ evaluation are complete. DICC Job `414686` produced a verified single-seed
 open-set result. That result is negative for autonomous unknown discovery but
 positive for supervised adaptation after a legitimate labelled increment.
 
-The adaptive normal-only data derivation is now complete as reviewed DICC Job
-`414907`. The replay-capacity screen at 500 and 3,000 exemplars per class was
-submitted separately as Job `414908`; it has no result yet.
+The adaptive normal-only data derivation is complete as reviewed DICC Job
+`414907`. The replay-capacity screen at 500 and 3,000 exemplars per class also
+completed as reviewed DICC Job `414908`. Both protected candidate outputs and
+their checksum registry passed verification.
 
 ## Candidate implementation validation
 
@@ -39,7 +40,35 @@ values are respectively
 `6d6e467ed0687ff6eb2d171c9799c74ee16af3c5b65bea2e662fa569bc3d5e1b`,
 `697750d599f448ba1120ba60decac98abb607204eec1a431073673cc3b124b9b`
 and `8d164306e0e153ef661882133083d3520e07557c0fd839bc98eb8b1f684db8f7`.
-The replay screen still requires completed protected-result verification.
+The replay screen's protected checksum registry has SHA-256
+`a088ce4d77daea4ec597f9da0c39059283627bab6a8a70974447909cb9b171f3`.
+
+## Replay-capacity outcome
+
+The registered comparison uses the official `joint_cap3000` scoring view.
+`joint_cap3000` fixes the DP-Means router sample cap at 3,000; it is independent
+of the replay capacity being tested.
+
+| Replay capacity | Average task accuracy | Forgetting | Final accuracy | Macro-F1 | Balanced accuracy | Benign FPR | Attack recall |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 50 | 76.49% | 10.70% | 83.62% | 50.02% | 68.62% | 9.24% | 61.06% |
+| 500 | 51.86% | 9.26% | 87.08% | 49.18% | 52.07% | 3.81% | 58.31% |
+| 3,000 | 48.39% | 9.43% | 87.62% | 41.77% | 42.76% | 2.47% | 55.46% |
+
+Increasing replay improved final accuracy, Benign false-positive rate and
+forgetting, but materially weakened class-balanced performance. Replay 500 was
+less damaging than replay 3,000, yet neither candidate passed the registered
+minority-performance selection rule. Replay 50 remains the reference for the
+next stage. The result is a seed-42 diagnostic and is not a five-seed claim.
+
+Job `414908` completed with exit code 0 in 1 hour 4 minutes 55 seconds. It used
+one A100 GPU, two CPUs and an 8-GiB memory request. Maximum measured memory was
+7.82 GiB, so the request was adequate but tight. The deterministic result
+SHA-256 values are
+`1af720f57da30fb9585a2459112bbd3737c2f477f4e22eba5cb76abe72dfb946`
+for replay 500 and
+`2305d75cb6638fe45452a2a04c5276819335471cc5a80c57785128b7bccc829b`
+for replay 3,000.
 
 ## Data and execution bindings
 
@@ -78,9 +107,10 @@ boundary.
 
 ## Remaining validation work
 
-1. Complete and verify Job `414908`, the seed-42 replay 500/3,000 screen against
-   the replay-50 reference.
-2. Train the selected data protocol only after the replay diagnostic is read.
+1. Train the adaptive normal-only data protocol with replay 50 as the frozen
+   replay reference.
+2. Continue the controlled Benign-anchoring, loss and optimiser stages without
+   changing several factors at once.
 3. Rotate the held-out class to DoS Slowhttptest and DoS slowloris.
 4. Redesign or learn the unknown score because the registered gate provides no
    separation for FTP-Patator.

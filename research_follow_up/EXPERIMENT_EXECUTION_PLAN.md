@@ -93,10 +93,13 @@ The completed and remaining dependency stages are:
 3. completed: hash-bound O1 checkpoint production;
 4. completed: reviewed CPU-only open-set evaluation as DICC Job `414686`;
 5. completed: reviewed D2 derivation as DICC Job `414907`;
-6. submitted, result pending: sequential replay-500/replay-3000 seed-42 screen
-   as DICC Job `414908`;
-7. next after those diagnostics: redesign the unknown gate, rotate held-out
-   classes, and expand only frozen selected rules to multiple seeds.
+6. completed: sequential replay-500/replay-3000 seed-42 screen as DICC Job
+   `414908`; neither larger replay candidate passed the registered
+   minority-performance selection rule;
+7. next: retain replay 50, train the D2 adaptive normal-only data protocol,
+   continue the controlled model-tuning stages, redesign the unknown gate,
+   rotate held-out classes, and expand only frozen selected rules to multiple
+   seeds.
 
 A GPU script drafted before stage 2 is only a template. It is not an exact,
 hash-bound submission candidate and must not be submitted.

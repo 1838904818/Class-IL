@@ -20,9 +20,9 @@ settings are held fixed:
 - the same DP-Means router and joint-score evaluation views;
 - seed 42, deterministic execution and verified input shards.
 
-The run order is replay 500 followed by replay 3,000 in one sequential Slurm
-job. Each arm has a separate result directory, recovery directory, W&B run and
-protected checksum registry. The two arms do not run concurrently.
+The run order was replay 500 followed by replay 3,000 in one sequential Slurm
+job. Each arm had a separate result directory, recovery directory, W&B run and
+protected checksum registry. The two arms did not run concurrently.
 
 ## Metrics and selection
 
@@ -35,6 +35,19 @@ A candidate is retained only if it lies on a useful performance-cost frontier.
 An accuracy improvement does not compensate automatically for a material loss
 in minority-class metrics. A larger replay buffer must also justify its memory
 and runtime cost.
+
+## Stage M1 result
+
+DICC Job `414908` completed both candidates for seed 42. Under the registered
+official `joint_cap3000` scoring view, replay 500 and replay 3,000 raised final
+overall accuracy and reduced Benign false-positive rate relative to replay 50.
+Both candidates, however, reduced average task accuracy, balanced accuracy and
+attack recall. Replay 3,000 also reduced Macro-F1 by 8.25 percentage points.
+
+Replay 50 therefore remains the reference for the next controlled stage. This
+is a diagnostic decision from one seed, not evidence that replay 50 is a
+universally optimal memory size. `joint_cap3000` refers to the separate router
+sample cap and must not be confused with exemplar capacity 3,000.
 
 ## Later stages
 
@@ -52,6 +65,7 @@ configuration is expanded to seeds `{1,2,3,4,42}`.
 
 ## Evidence boundary
 
-The configurations and local preflight are complete. Replay 500 and replay
-3,000 are not results until the exact DICC job has passed independent review,
-completed, and produced verified protected outputs.
+The configurations, review, execution and protected-output verification are
+complete for seed 42. The protected checksum registry has SHA-256
+`a088ce4d77daea4ec597f9da0c39059283627bab6a8a70974447909cb9b171f3`.
+Multi-seed confirmation and later tuning stages remain incomplete.

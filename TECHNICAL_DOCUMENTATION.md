@@ -110,8 +110,12 @@ output layer.
 
 The learner retains at most 50 exemplars per class from a candidate pool of at
 most 5,000. Replay mixes selected older examples with the current task to
-reduce catastrophic forgetting. This is a fixed study budget and does not
-imply that 50 is generally optimal.
+reduce catastrophic forgetting. A controlled seed-42 diagnostic also tested
+capacities 500 and 3,000 while holding the model, data, epochs, optimiser,
+loss, router and seed fixed. The larger buffers improved final overall accuracy
+and Benign false-positive rate but weakened class-balanced metrics. Capacity 50
+therefore remains the reference for the next stage; the one-seed result does
+not imply that 50 is universally optimal.
 
 ### 4.4 DP-Means router
 
@@ -264,6 +268,21 @@ reduction of 0.27 percentage points. The experiment did not create a head
 automatically. It supports labelled adaptation only and remains a single-seed,
 single-held-out-class diagnostic.
 
+### 8.4 Seed-42 replay-capacity diagnostic
+
+DICC Job 414908 compared exemplar capacities 50, 500 and 3,000 under the same
+uncapped expected-contract data and `official/joint_cap3000` scoring view.
+Final accuracy increased from 83.62% at replay 50 to 87.08% and 87.62% at
+replay 500 and 3,000. Benign false-positive rate fell from 9.24% to 3.81% and
+2.47%. However, balanced accuracy fell from 68.62% to 52.07% and 42.76%, while
+attack recall fell from 61.06% to 58.31% and 55.46%. Replay 3,000 also reduced
+Macro-F1 from 50.02% to 41.77%.
+
+Neither larger buffer passed the registered minority-performance selection
+rule, so replay 50 remains the reference. `joint_cap3000` is the separate
+router sample cap; it is not the exemplar capacity being tuned. The diagnostic
+uses seed 42 only and does not establish a five-seed ranking.
+
 ## 9. What is complete and what remains open
 
 Completed in this release:
@@ -275,6 +294,8 @@ Completed in this release:
 - CSE-CIC-IDS2018 strict 8+10-epoch five-seed campaign;
 - seed-42 FTP-Patator open-set and post-label head diagnostic from DICC Job
   414686;
+- seed-42 replay-capacity diagnostic from DICC Job 414908, with replay 50
+  retained as the next-stage reference;
 - executable preprocessing contracts for the five-dataset suite;
 - deterministic result, source-binding, and publication hashes.
 
@@ -283,6 +304,8 @@ Not yet complete:
 - multi-seed SHAP and ETG estimates;
 - rotated held-out-class and multi-seed open-set evaluation;
 - a successful unknown gate or evidence supporting automatic head creation;
+- training and evaluation on the newly derived adaptive normal-only protocol;
+- multi-seed confirmation of any selected follow-up tuning configuration;
 - inferential tests supporting superiority claims;
 - a deployed feedback loop in which ETG decisions alter future OFRA routing or
   training.
