@@ -21,6 +21,11 @@ evidence. Nothing here changes or replaces the five-dataset, five-seed results.
    derivation that subsequent training candidates must use.
 8. `../results/replayids-o1-open-set-seed42/` records the completed, sanitised
    seed-42 O1 evaluator result and immutable evidence hashes.
+9. `DATA_PROTOCOL_V2.md` registers the adaptive normal-only training cap, and
+   `build_train_protocol_v2.py` implements it without sampling attack or test
+   rows.
+10. `MODEL_TUNING_PROTOCOL.md` defines the controlled replay-capacity screen,
+    its metrics and the order of later model-adjustment stages.
 
 ## Evidence boundary
 
@@ -38,3 +43,5 @@ evidence. Nothing here changes or replaces the five-dataset, five-seed results.
   for autonomous discovery and a positive diagnostic for labelled adaptation.
 - Every subsequent training or evaluation job still requires a fresh,
   independent hash-bound DICC review and one matching user confirmation.
+- The adaptive data protocol and replay-500/replay-3000 configurations are new
+  candidates. They are not results until their reviewed jobs complete.

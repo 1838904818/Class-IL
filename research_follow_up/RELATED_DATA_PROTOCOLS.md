@@ -65,6 +65,20 @@ This protocol answers a narrow question: **does majority-class training volume
 and imbalance explain part of OFRA's lower performance?** It does not claim that
 50,000 is optimal, and it does not make the test distribution balanced.
 
+## Adaptive successor after the fixed-cap pilot
+
+The fixed-cap seed-42 result improved overall accuracy and forgetting but
+reduced Macro-F1 and balanced accuracy. The successor protocol therefore does
+not apply one fixed cap to every class. It reserves the same training-only
+calibration split, derives the normal-class cap from the largest attack fit
+pool, retains every attack fit row, performs no oversampling and leaves the
+official test byte-identical. See `DATA_PROTOCOL_V2.md` and
+`build_train_protocol_v2.py`.
+
+For the ReplayIDS expected-contract source, the adaptive cap is 124,780 rows.
+Only Benign is reduced; DoS Hulk and all minority attacks are preserved. This
+is a registered candidate rather than a completed DICC result.
+
 ## Primary sources
 
 - Ariffin et al., ReplayIDS paper and implementation:

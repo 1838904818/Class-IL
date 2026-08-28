@@ -28,6 +28,22 @@ later stage is justified only if the earlier stage identifies headroom.
 | A5 optimiser/schedule | Best data/replay arm; same FT256x4 | Adam versus AdamW, `5e-4`, `1e-3`, scheduler, early stopping | small predeclared matrix | Use validation Macro-F1 with a fixed patience; never tune on official test |
 | A6 architecture | Best preceding protocol | backbone | MLP256-128, current FT256x4, Azizi-like TabTransformer/FT | Report parameters, time and memory; no claim that larger is better without five-seed evidence |
 
+## First executable model-adjustment stage
+
+The first model-adjustment screen keeps the uncapped A0 data, FT256x4
+architecture, optimiser, epochs, focal loss and router fixed. It changes only
+`exemplar_capacity` from `50` to `500` and `3000`. The registered configurations
+are:
+
+- `configs/ft_transformer_256x4_replayids_replay50_v1.json`;
+- `configs/ft_transformer_256x4_replayids_replay500_v1.json`;
+- `configs/ft_transformer_256x4_replayids_replay3000_v1.json`.
+
+The immutable completed replay-50 seed-42 run is the reference. Replay 500 and
+3000 remain candidates until hash-bound DICC results exist. The preferred arm
+must lie on a Macro-F1/forgetting Pareto frontier and must report memory cost;
+overall accuracy alone is insufficient.
+
 ## Why not copy a 10% ReplayIDS buffer directly?
 
 ReplayIDS defines memory as a percentage per class. On the OFRA/ReplayIDS

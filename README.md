@@ -172,3 +172,8 @@ open-set evaluation is complete and recorded under
 [`results/replayids-o1-open-set-seed42/`](results/replayids-o1-open-set-seed42/README.md).
 It is a single-seed negative result for autonomous discovery and does not
 replace the completed five-dataset headline results.
+
+The next registered candidates are an adaptive normal-only training cap and a
+seed-42 replay-size screen at 500 and 3,000 exemplars per class. Their builders,
+contracts and configurations are published for review, but they are not
+reported as experimental results until hash-bound DICC jobs complete.

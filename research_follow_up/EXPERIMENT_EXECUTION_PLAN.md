@@ -3,10 +3,24 @@
 ## Current data readiness
 
 The research protocols and deterministic builders are ready. DICC Job `414596`
-completed the A1/O1 data derivation on 2026-08-27. The later hash-bound training
-produced the O1 checkpoints, and CPU Job `414686` completed the first open-set
-evaluation. All registered pre-label gates had 0% FTP-Patator recall; the
-post-label supervised head achieved 82.30% recall.
+completed the A1/O1 data derivation on 2026-08-27. A1 training completed inside
+Job `414606` and was retained only after exact result/checkpoint hash checks; the
+outer job then failed before O1 because of a validator path error. Later
+hash-bound training produced the O1 checkpoints, and CPU Job `414686` completed
+the first open-set evaluation. All registered pre-label gates had 0%
+FTP-Patator recall; the post-label supervised head achieved 82.30% recall.
+
+The A1 fixed-cap seed-42 result is mixed. For joint-cap3000, relative to the
+uncapped seed-42 reference, accuracy increased from 83.62% to 87.87% and
+forgetting decreased from 10.70% to 3.52%. However, Macro-F1 fell from 50.02%
+to 44.71% and balanced accuracy from 68.62% to 51.02%. The fixed 50,000-row cap
+therefore does not pass the registered minority-performance decision rule.
+
+Protocol D2 is the next data candidate. It keeps every attack fit row and caps
+only Benign to the largest attack fit pool. The local real-manifest derivation
+produced 268,697 fit rows, 68,313 disjoint calibration rows and all 227,723
+official test rows. These local hashes are implementation evidence only; a
+reviewed DICC derivation is still required.
 
 ### Derived data candidates
 
@@ -38,10 +52,11 @@ submission.
    - compare with the existing uncapped seed-42 result;
    - estimated A100 runtime: roughly 15–25 minutes, to be replaced by measured
      runtime after the first approved run.
-2. **A2 replay pilot on the better data protocol**
-   - compare exemplar capacities `50`, `500`, `3000`;
-   - do not run this matrix until A1 identifies whether the capped protocol is
-     beneficial;
+2. **A2 replay pilot on the immutable uncapped protocol**
+   - compare the completed exemplar capacity `50` reference with candidates
+     `500` and `3000`;
+   - keep the dataset, FT256x4 model, epochs, optimiser, focal loss and router
+     fixed so only replay changes;
    - estimated A100 runtime: roughly 3 times A1, because these are separate
      matched runs.
 3. **A3 Benign-anchoring pilot**
@@ -75,8 +90,10 @@ The completed and remaining dependency stages are:
    protected metadata checksum list;
 3. completed: hash-bound O1 checkpoint production;
 4. completed: reviewed CPU-only open-set evaluation as DICC Job `414686`;
-5. next: redesign the unknown gate, rotate held-out classes, and expand only a
-   frozen selected rule to multiple seeds.
+5. prepared locally, not submitted: derive D2 on DICC and run the sequential
+   replay-500/replay-3000 seed-42 screen;
+6. next after those diagnostics: redesign the unknown gate, rotate held-out
+   classes, and expand only frozen selected rules to multiple seeds.
 
 A GPU script drafted before stage 2 is only a template. It is not an exact,
 hash-bound submission candidate and must not be submitted.
