@@ -49,6 +49,25 @@ is a diagnostic decision from one seed, not evidence that replay 50 is a
 universally optimal memory size. `joint_cap3000` refers to the separate router
 sample cap and must not be confused with exemplar capacity 3,000.
 
+## Stage M2 result: D2 AdamW recipe screen
+
+DICC Job `425182` compared the completed D2 Adam control with a candidate that
+changed the optimizer recipe to AdamW, learning rate `5e-4` and weight decay
+`1e-5`. The data, replay-50 budget, FT256x4 model, epoch budget, loss, router,
+seed and `official/joint_cap3000` view were fixed.
+
+The candidate increased final accuracy from 89.08% to 92.10%, increased
+Macro-F1 from 55.70% to 59.52%, reduced forgetting from 4.36% to 2.15%, and
+reduced Benign FPR from 10.46% to 6.23%. It also reduced average task accuracy
+from 91.45% to 81.17%, balanced accuracy from 91.46% to 71.45%, and attack
+recall from 96.18% to 87.08%. The candidate is therefore not selected.
+
+Because optimizer family, learning rate and weight decay changed together,
+this run does not isolate an AdamW main effect. The next registered diagnostic
+keeps Adam and zero weight decay while changing only the learning rate to
+`5e-4`. No optimizer arm is expanded to multiple seeds before this ambiguity
+is resolved.
+
 ## Later stages
 
 Only after M1 is measured will the study change optimiser, learning schedule,
@@ -65,7 +84,10 @@ configuration is expanded to seeds `{1,2,3,4,42}`.
 
 ## Evidence boundary
 
-The configurations, review, execution and protected-output verification are
-complete for seed 42. The protected checksum registry has SHA-256
-`a088ce4d77daea4ec597f9da0c39059283627bab6a8a70974447909cb9b171f3`.
-Multi-seed confirmation and later tuning stages remain incomplete.
+The replay-capacity and D2 optimizer-recipe screens are complete for seed 42.
+The AdamW result package has deterministic result SHA-256
+`67250b60ca5b9d2fb1362c9db2ec881c6c18c188bf5c3b7d505f32b5932e03b3`
+and protected checksum-registry SHA-256
+`92d273d30cf483cd39f2424f1213da3e675eed72ae7fa57fdfbfd84be48993dc`.
+The matched learning-rate diagnostic, multi-seed confirmation and later tuning
+stages remain incomplete.

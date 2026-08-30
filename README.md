@@ -181,3 +181,10 @@ recall, and average task accuracy. Replay 50 therefore remains the reference
 for the next controlled stage; this single-seed diagnostic is not a five-seed
 publication claim. The exact comparison and evidence hashes are recorded in
 [`results/replayids-replay-capacity-seed42/`](results/replayids-replay-capacity-seed42/README.md).
+
+The subsequent D2 optimizer-recipe screen completed as DICC Job `425182`.
+AdamW with learning rate `5e-4` and weight decay `1e-5` improved final accuracy,
+Macro-F1, forgetting and Benign FPR, but reduced balanced accuracy, attack
+recall and average task accuracy. It is not selected as a replacement for the
+Adam control. The single-seed comparison, decision and integrity hashes are in
+[`results/replayids-d2-optimizer-seed42/`](results/replayids-d2-optimizer-seed42/README.md).

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 import torch
@@ -86,6 +87,46 @@ class TrainingRecoveryTests(unittest.TestCase):
 
     def test_resume_after_family_epoch_matches_uninterrupted(self) -> None:
         self._exercise_pause(pause_after=5)
+
+    def test_adamw_resume_after_pretrain_epoch_matches_uninterrupted(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="ofra_adamw_recovery_") as temporary:
+            root = Path(temporary)
+            cache = root / "cache"
+            cache.mkdir()
+            manifest = _make_synthetic_manifest(cache)
+            config = replace(
+                _config(),
+                optimizer_name="adamw",
+                learning_rate=5e-4,
+                weight_decay=1e-5,
+            )
+            uninterrupted = run_manifest(
+                manifest,
+                seeds=[47],
+                output_dir=root / "uninterrupted",
+                config=config,
+            )
+            resumed_dir = root / "resumed"
+            paused = run_manifest(
+                manifest,
+                seeds=[47],
+                output_dir=resumed_dir,
+                config=config,
+                recovery_enabled=True,
+                recovery_pause_after_checkpoints=2,
+            )
+            self.assertIsNotNone(paused["paused"])
+            resumed = run_manifest(
+                manifest,
+                seeds=[47],
+                output_dir=resumed_dir,
+                config=config,
+                recovery_enabled=True,
+            )
+            self.assertEqual(
+                uninterrupted["results"][0]["deterministic_result_sha256"],
+                resumed["results"][0]["deterministic_result_sha256"],
+            )
 
     def test_tampered_recovery_payload_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory(prefix="ofra_training_recovery_tamper_") as temporary:

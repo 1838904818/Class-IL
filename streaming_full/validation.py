@@ -121,7 +121,9 @@ class RunConfig:
     gradient_accumulation_steps: int = 1
     eval_batch_size: int = 4096
     shuffle_block_rows: int = 4096
+    optimizer_name: str = "adam"
     learning_rate: float = 1e-3
+    weight_decay: float = 0.0
     encoder_type: str = "mlp"
     d_model: int = 128
     n_layers: int = 2
@@ -156,6 +158,7 @@ class RunConfig:
         # hashes do not depend on the producing JSON serializer.
         for name in (
             "learning_rate",
+            "weight_decay",
             "lora_alpha",
             "focal_gamma",
             "focal_alpha",
@@ -191,6 +194,12 @@ class RunConfig:
                 raise ValueError(f"{name} must be positive")
         if self.pretrain_epochs < 0 or self.epochs_per_task < 0:
             raise ValueError("epoch counts must be non-negative")
+        if self.optimizer_name not in {"adam", "adamw"}:
+            raise ValueError("optimizer_name must be adam or adamw")
+        if self.learning_rate <= 0.0:
+            raise ValueError("learning_rate must be positive")
+        if self.weight_decay < 0.0:
+            raise ValueError("weight_decay must be non-negative")
         if not isinstance(self.monitor_enabled, bool):
             raise TypeError("monitor_enabled must be a JSON boolean")
         if self.batch_size < self.negative_ratio + 1:
@@ -222,6 +231,23 @@ def _resolve_device(requested: str) -> torch.device:
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
     return device
+
+
+def _build_optimizer(
+    parameters: Iterable[nn.Parameter], config: RunConfig
+) -> torch.optim.Optimizer:
+    values = list(parameters)
+    if not values:
+        raise ValueError("optimizer requires at least one parameter")
+    optimizer_type = {
+        "adam": torch.optim.Adam,
+        "adamw": torch.optim.AdamW,
+    }[config.optimizer_name]
+    return optimizer_type(
+        values,
+        lr=config.learning_rate,
+        weight_decay=config.weight_decay,
+    )
 
 
 def _seed_process(seed: int, deterministic: bool) -> None:
@@ -560,9 +586,9 @@ class StreamingOFRA:
         class_rows = np.asarray([len(self.train[class_id]) for class_id in class_ids], dtype=np.int64)
         total_rows = int(class_rows.sum())
         temporary_head = nn.Linear(self.config.d_model, len(self.manifest.classes)).to(self.device)
-        optimizer = torch.optim.Adam(
+        optimizer = _build_optimizer(
             [*self.encoder.parameters(), *temporary_head.parameters()],
-            lr=self.config.learning_rate,
+            self.config,
         )
         history: list[dict] = []
         start_epoch = 0
@@ -806,7 +832,7 @@ class StreamingOFRA:
             initial_head_sha256 = str(resume["initial_head_state_sha256"])
             for parameter in head.parameters():
                 parameter.requires_grad = True
-        optimizer = torch.optim.Adam(head.parameters(), lr=self.config.learning_rate)
+        optimizer = _build_optimizer(head.parameters(), self.config)
         positive = self.train[class_id]
         raw_negative_ids = [int(value) for value in task_classes if value != class_id]
         old_exemplar_ids = sorted(self.exemplars)
