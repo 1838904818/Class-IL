@@ -96,12 +96,15 @@ The completed and remaining dependency stages are:
 6. completed: sequential replay-500/replay-3000 seed-42 screen as DICC Job
    `414908`; neither larger replay candidate passed the registered
    minority-performance selection rule;
-7. completed: D2 replay-50 Adam control as DICC Job `414989` and the matched
-   D2 AdamW recipe screen as DICC Job `425182`; the AdamW recipe produced a
-   mixed trade-off and was not selected;
-8. next: run the predeclared Adam learning-rate control at `5e-4` with zero
-   weight decay, then introduce validation-governed scheduling or early
-   stopping before the small architecture comparison;
+7. completed: D2 replay-50 Adam control as DICC Job `414989`, the D2 AdamW
+   recipe screen as DICC Job `425182`, and the isolated Adam learning-rate
+   diagnostic as DICC Job `425382`; Adam at `5e-4` reproduced the AdamW
+   recipe's registered scalar metrics, so the trade-off is attributed to the
+   lower learning rate rather than an additional AdamW effect;
+8. next: retain Adam at `1e-3` and zero weight decay, then introduce exactly
+   one validation-governed training control only after confirming that its
+   calibration rows contain current seen classes only and never the official
+   test set;
 9. remaining: redesign the unknown gate, rotate held-out classes, and expand
    only frozen selected rules to multiple seeds.
 

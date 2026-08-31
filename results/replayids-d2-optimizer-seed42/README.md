@@ -1,15 +1,16 @@
 # ReplayIDS D2 optimizer-recipe diagnostic, seed 42
 
-This directory records the public-safe comparison between the completed D2
-Adam control (DICC Job `414989`) and the D2 AdamW recipe candidate (DICC Job
-`425182`). The data protocol, replay capacity, FT-Transformer architecture,
-epoch budget, focal loss, router settings, evaluation view and seed were held
-fixed.
+This directory records the public-safe comparison among the completed D2 Adam
+control (DICC Job `414989`), the D2 AdamW recipe candidate (DICC Job `425182`),
+and the matched lower-learning-rate Adam diagnostic (DICC Job `425382`). The
+data protocol, replay capacity, FT-Transformer architecture, epoch budget,
+focal loss, router settings, evaluation view and seed were held fixed.
 
 The candidate changed the complete optimizer recipe from Adam with learning
 rate `1e-3` and zero weight decay to AdamW with learning rate `5e-4` and weight
-decay `1e-5`. It is therefore an optimizer-recipe screen, not an isolated
-estimate of an Adam-versus-AdamW main effect.
+decay `1e-5`. The follow-up then kept Adam and zero weight decay and changed
+only the learning rate from `1e-3` to `5e-4`. Together, the two runs separate
+the learning-rate effect from the earlier bundled optimizer recipe.
 
 ## Registered result
 
@@ -20,13 +21,16 @@ are better; the other metrics are better when higher.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Adam, lr `1e-3`, wd `0` | 91.45% | 4.36% | 89.08% | 55.70% | 91.46% | 10.46% | 96.18% |
 | AdamW, lr `5e-4`, wd `1e-5` | 81.17% | 2.15% | 92.10% | 59.52% | 71.45% | 6.23% | 87.08% |
+| Adam, lr `5e-4`, wd `0` | 81.17% | 2.15% | 92.10% | 59.52% | 71.45% | 6.23% | 87.08% |
 
 AdamW improved final overall accuracy, Macro-F1, forgetting and Benign FPR,
 but materially reduced average task accuracy, balanced accuracy and attack
-recall. The candidate is not selected as a replacement for the Adam control.
-The next registered diagnostic is Adam with learning rate `5e-4` and zero
-weight decay, which separates the learning-rate effect from the optimizer and
-weight-decay changes.
+recall. Adam with learning rate `5e-4` reproduced the same seven registered
+metric values as the AdamW recipe. The result hashes differ, so this is not a
+claim that the trained models or predictions are bit-identical. It does show
+that the measured metric-level trade-off does not require AdamW or non-zero
+weight decay. The lower-learning-rate recipes are not selected as replacements
+for the Adam `1e-3` control and are not expanded to five seeds.
 
 This is a single-seed diagnostic. It does not establish statistical
 superiority and is not a five-seed publication result.
@@ -46,11 +50,19 @@ superiority and is not a five-seed publication result.
   `6e66dfe888799baf227c4d96ad32993efa076798e4d96941cae41e3f995768ab`
 - W&B run:
   `https://wandb.ai/csnet/ofra-etg-leon-hpc/runs/26c7891b16704095228c3d2e`
+- Learning-rate diagnostic job: `425382`, `COMPLETED`, exit code `0:0`
+- Learning-rate diagnostic runtime: 13 minutes 56 seconds
+- Learning-rate diagnostic allocation: one A100 GPU, two CPUs and 12 GiB memory
+- Learning-rate diagnostic deterministic result SHA-256:
+  `bb7e29c98dcdd3808cdf196d01235132e81158f21e3dac8a8fa23245ebaf1861`
+- Learning-rate diagnostic protected checksum-registry SHA-256:
+  `a11e8e55e32e3b11bb3b77bc23198e14af890c6870ef650a8f593f77627bf8c8`
+- Learning-rate diagnostic W&B run:
+  `https://wandb.ai/csnet/ofra-etg-leon-hpc/runs/0b3a545aa832bdc4942a297e`
 
-The protected result package and all 23 listed files pass local and remote
-SHA-256 verification. Four checkpoint monitoring records are present. W&B
-created the run, stored the final summary and table references, and closed the
-stream; its final internal log also records a context-cancelled run-files
-metadata request. The protected JSON and checksum registry are authoritative.
+Both protected result packages pass their complete SHA-256 registries. The
+learning-rate package contains 22 verified files and four checkpoint monitoring
+records. W&B stored and closed both aggregate runs. The protected JSON and
+checksum registries are authoritative.
 
 SHAP and ETG were intentionally not computed in this optimizer screen.

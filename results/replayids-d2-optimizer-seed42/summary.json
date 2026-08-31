@@ -4,7 +4,7 @@
   "task_semantics": "class_incremental",
   "seed": 42,
   "registered_view": "official/joint_cap3000",
-  "evidence_scope": "single_seed_optimizer_recipe_screen",
+  "evidence_scope": "single_seed_optimizer_and_learning_rate_diagnostics",
   "fixed_protocol": {
     "data": "D2_adaptive_normal_to_largest_attack",
     "exemplar_capacity_per_class": 50,
@@ -46,6 +46,23 @@
       "deterministic_result_sha256": "67250b60ca5b9d2fb1362c9db2ec881c6c18c188bf5c3b7d505f32b5932e03b3",
       "protected_checksum_registry_sha256": "92d273d30cf483cd39f2424f1213da3e675eed72ae7fa57fdfbfd84be48993dc",
       "wandb_run_path": "csnet/ofra-etg-leon-hpc/26c7891b16704095228c3d2e"
+    },
+    {
+      "role": "learning_rate_control",
+      "dicc_job_id": 425382,
+      "optimizer": "adam",
+      "learning_rate": 0.0005,
+      "weight_decay": 0.0,
+      "average_task_accuracy": 0.8116582156709305,
+      "average_forgetting": 0.021514672885960245,
+      "final_overall_accuracy": 0.9209653833824427,
+      "final_macro_f1": 0.5951914847855814,
+      "final_balanced_accuracy": 0.7144593816921045,
+      "final_benign_false_positive_rate": 0.06229754444705626,
+      "final_attack_detection_recall": 0.8707928407939665,
+      "deterministic_result_sha256": "bb7e29c98dcdd3808cdf196d01235132e81158f21e3dac8a8fa23245ebaf1861",
+      "protected_checksum_registry_sha256": "a11e8e55e32e3b11bb3b77bc23198e14af890c6870ef650a8f593f77627bf8c8",
+      "wandb_run_path": "csnet/ofra-etg-leon-hpc/0b3a545aa832bdc4942a297e"
     }
   ],
   "candidate_minus_control": {
@@ -58,10 +75,23 @@
     "final_attack_detection_recall": -0.0910472402536489
   },
   "decision": {
-    "status": "candidate_not_selected",
-    "reason": "Balanced accuracy, attack recall and average task accuracy declined materially despite gains in final accuracy, Macro-F1, forgetting and Benign FPR.",
-    "next_registered_arm": "adam_lr5e-4_weight_decay0",
+    "status": "lower_learning_rate_not_selected",
+    "reason": "Adam at learning rate 5e-4 reproduced the AdamW candidate's seven registered metric values. This attributes the measured trade-off to the lower learning rate rather than establishing an additional AdamW or weight-decay benefit. Balanced accuracy, attack recall and average task accuracy declined materially despite gains in final accuracy, Macro-F1, forgetting and Benign FPR.",
+    "selected_reference": "adam_lr1e-3_weight_decay0",
+    "next_registered_arm": "validation_governed_training_control_pending_code_audit",
     "multi_seed_expansion": false
+  },
+  "cross_candidate_check": {
+    "adam_lr5e-4_minus_adamw_lr5e-4_registered_metrics": {
+      "average_task_accuracy": 0.0,
+      "average_forgetting": 0.0,
+      "final_overall_accuracy": 0.0,
+      "final_macro_f1": 0.0,
+      "final_balanced_accuracy": 0.0,
+      "final_benign_false_positive_rate": 0.0,
+      "final_attack_detection_recall": 0.0
+    },
+    "interpretation": "The registered scalar metrics are exactly equal, but result hashes differ; this is not a claim of bit-identical models or predictions."
   },
   "governance": {
     "shap_status": "not_computed",

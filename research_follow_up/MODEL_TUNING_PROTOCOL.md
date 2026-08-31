@@ -68,14 +68,30 @@ keeps Adam and zero weight decay while changing only the learning rate to
 `5e-4`. No optimizer arm is expanded to multiple seeds before this ambiguity
 is resolved.
 
+## Stage M3 result: isolated learning-rate diagnostic
+
+DICC Job `425382` kept Adam, zero weight decay and every registered control
+setting while changing only the learning rate from `1e-3` to `5e-4`. Its seven
+registered `official/joint_cap3000` metric values exactly matched the AdamW
+recipe screen: 81.17% average task accuracy, 2.15% forgetting, 92.10% final
+accuracy, 59.52% Macro-F1, 71.45% balanced accuracy, 6.23% Benign FPR and
+87.08% attack recall.
+
+The deterministic result hashes differ, so the models and prediction arrays
+must not be described as bit-identical. The matched scalar result nevertheless
+resolves the original attribution problem: the observed metric-level trade-off
+is explained by lowering the learning rate, without evidence of an additional
+AdamW or weight-decay benefit. The lower-learning-rate candidate is not
+selected and is not expanded to multiple seeds. Adam at `1e-3` with zero
+weight decay remains the reference for the next single-variable stage.
+
 ## Later stages
 
-Only after M1 is measured will the study change optimiser, learning schedule,
-loss weighting or architecture. The intended order is:
+The remaining intended order is:
 
 1. replay capacity;
 2. Benign anchoring and class-aware sampling;
-3. loss and optimiser schedule;
+3. validation-governed training control, after a no-look-ahead code audit;
 4. a small, matched architecture comparison.
 
 Each stage freezes the selected preceding protocol. This prevents a result
@@ -84,10 +100,15 @@ configuration is expanded to seeds `{1,2,3,4,42}`.
 
 ## Evidence boundary
 
-The replay-capacity and D2 optimizer-recipe screens are complete for seed 42.
+The replay-capacity, D2 optimizer-recipe and isolated learning-rate screens are
+complete for seed 42.
 The AdamW result package has deterministic result SHA-256
 `67250b60ca5b9d2fb1362c9db2ec881c6c18c188bf5c3b7d505f32b5932e03b3`
 and protected checksum-registry SHA-256
 `92d273d30cf483cd39f2424f1213da3e675eed72ae7fa57fdfbfd84be48993dc`.
-The matched learning-rate diagnostic, multi-seed confirmation and later tuning
+The learning-rate result package has deterministic result SHA-256
+`bb7e29c98dcdd3808cdf196d01235132e81158f21e3dac8a8fa23245ebaf1861`
+and protected checksum-registry SHA-256
+`a11e8e55e32e3b11bb3b77bc23198e14af890c6870ef650a8f593f77627bf8c8`.
+Validation-governed training control, multi-seed confirmation and later tuning
 stages remain incomplete.
