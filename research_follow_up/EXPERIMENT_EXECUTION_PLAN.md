@@ -101,10 +101,12 @@ The completed and remaining dependency stages are:
    diagnostic as DICC Job `425382`; Adam at `5e-4` reproduced the AdamW
    recipe's registered scalar metrics, so the trade-off is attributed to the
    lower learning rate rather than an additional AdamW effect;
-8. next: retain Adam at `1e-3` and zero weight decay, then introduce exactly
-   one validation-governed training control only after confirming that its
-   calibration rows contain current seen classes only and never the official
-   test set;
+8. locally validated and pending DICC review/execution: retain Adam at `1e-3`
+   and zero weight decay, train the same ten family epochs, and select the
+   earliest best epoch by balanced binary Macro-F1 on disjoint training-only
+   calibration rows. The runtime binds the audit to the primary manifest,
+   rejects future classes and official-test substitution, records model/RNG
+   non-mutation, and falls back to the last epoch below 32 rows per label;
 9. remaining: redesign the unknown gate, rotate held-out classes, and expand
    only frozen selected rules to multiple seeds.
 

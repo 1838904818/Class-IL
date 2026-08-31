@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import math
 import os
 import platform
@@ -18,21 +18,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .data import (
+    GENERIC_METRIC_PROFILE,
+    NIDS_METRIC_PROFILE,
     BlockShuffleSampler,
     ClassShards,
     DatasetManifest,
     EvaluationView,
     FrozenTask0Stats,
-    GENERIC_METRIC_PROFILE,
-    MatrixReservoir,
-    NIDS_METRIC_PROFILE,
     IndexBlock,
+    MatrixReservoir,
+    TrainingCalibration,
     array_sha256,
     canonical_sha256,
-    derived_seed,
     dataset_logical_fingerprints,
+    derived_seed,
     load_evaluation_view,
     load_manifest,
+    load_training_calibration_audit,
     sha256_file,
 )
 from .models import (
@@ -47,6 +49,12 @@ from .monitoring import (
     persist_checkpoint,
     validate_monitoring_result,
 )
+from .recovery import (
+    RecoveryController,
+    RecoveryPause,
+    restore_agent_state,
+    restore_rng_state,
+)
 from .routers import (
     DualRouter,
     OnePassBudgetRouter,
@@ -54,13 +62,6 @@ from .routers import (
     matched_cap_state,
     uncapped_state,
 )
-from .recovery import (
-    RecoveryController,
-    RecoveryPause,
-    restore_agent_state,
-    restore_rng_state,
-)
-
 
 RESULT_SCHEMA_VERSION = 2
 EXPOSURE_PRIOR_FORMULA_REGISTRY = {
@@ -151,6 +152,9 @@ class RunConfig:
     monitor_enabled: bool = False
     monitor_official_test_per_class: int = 128
     monitor_task0_background_per_class: int = 128
+    family_checkpoint_selection: str = "last"
+    family_validation_cap_per_label: int = 5000
+    family_validation_min_per_label: int = 32
 
     def __post_init__(self) -> None:
         # JSON writers may emit integral-valued floats such as 16.0 as 16.
@@ -188,6 +192,8 @@ class RunConfig:
             "router_max_centroids": self.router_max_centroids,
             "monitor_official_test_per_class": self.monitor_official_test_per_class,
             "monitor_task0_background_per_class": self.monitor_task0_background_per_class,
+            "family_validation_cap_per_label": self.family_validation_cap_per_label,
+            "family_validation_min_per_label": self.family_validation_min_per_label,
         }
         for name, value in integer_positive.items():
             if value <= 0:
@@ -202,6 +208,18 @@ class RunConfig:
             raise ValueError("weight_decay must be non-negative")
         if not isinstance(self.monitor_enabled, bool):
             raise TypeError("monitor_enabled must be a JSON boolean")
+        if self.family_checkpoint_selection not in {
+            "last",
+            "training_only_calibration_macro_f1",
+        }:
+            raise ValueError("family_checkpoint_selection is unsupported")
+        if (
+            self.family_checkpoint_selection != "last"
+            and self.epochs_per_task <= 0
+        ):
+            raise ValueError("family checkpoint selection requires positive task epochs")
+        if self.family_validation_min_per_label > self.family_validation_cap_per_label:
+            raise ValueError("family validation minimum cannot exceed its cap")
         if self.batch_size < self.negative_ratio + 1:
             raise ValueError("batch_size must be at least negative_ratio + 1")
         if self.exemplar_capacity < 0:
@@ -358,6 +376,71 @@ def _module_state_sha256(module: nn.Module) -> str:
     return canonical_sha256(records)
 
 
+def _cpu_module_state(module: nn.Module) -> dict[str, torch.Tensor]:
+    return {
+        name: tensor.detach().cpu().clone()
+        for name, tensor in module.state_dict().items()
+    }
+
+
+def _balanced_capacity_allocation(
+    capacities: Sequence[int], total_rows: int
+) -> list[int]:
+    """Allocate a bounded row budget as evenly as possible across classes."""
+
+    values = [int(value) for value in capacities]
+    if any(value < 0 for value in values) or not 0 <= total_rows <= sum(values):
+        raise ValueError("invalid balanced-capacity allocation")
+    allocated = [0 for _ in values]
+    remaining = int(total_rows)
+    while remaining:
+        available = [
+            index for index, capacity in enumerate(values) if allocated[index] < capacity
+        ]
+        if not available:
+            raise RuntimeError("balanced-capacity allocation exhausted early")
+        share = max(1, remaining // len(available))
+        progressed = 0
+        for index in available:
+            take = min(share, values[index] - allocated[index], remaining)
+            allocated[index] += take
+            remaining -= take
+            progressed += take
+            if not remaining:
+                break
+        if not progressed:
+            raise RuntimeError("balanced-capacity allocation made no progress")
+    return allocated
+
+
+def _binary_macro_f1(confusion: np.ndarray) -> float:
+    matrix = np.asarray(confusion, dtype=np.int64)
+    if matrix.shape != (2, 2) or np.any(matrix < 0):
+        raise ValueError("binary confusion matrix must be non-negative 2x2")
+    support = matrix.sum(axis=1)
+    predicted = matrix.sum(axis=0)
+    true_positive = np.diag(matrix)
+    precision = np.divide(
+        true_positive,
+        predicted,
+        out=np.zeros(2, dtype=np.float64),
+        where=predicted > 0,
+    )
+    recall = np.divide(
+        true_positive,
+        support,
+        out=np.zeros(2, dtype=np.float64),
+        where=support > 0,
+    )
+    f1 = np.divide(
+        2.0 * precision * recall,
+        precision + recall,
+        out=np.zeros(2, dtype=np.float64),
+        where=(precision + recall) > 0,
+    )
+    return float(f1.mean())
+
+
 def _update_index_digest(digest: "hashlib._Hash", indices: np.ndarray) -> None:
     values = np.ascontiguousarray(indices, dtype="<i8")
     digest.update(len(values).to_bytes(8, "little"))
@@ -503,6 +586,7 @@ class StreamingOFRA:
         seed: int,
         device: torch.device,
         evaluation_views: Sequence[EvaluationView] = (),
+        training_calibration: TrainingCalibration | None = None,
     ):
         self.manifest = manifest
         self.config = config
@@ -516,6 +600,15 @@ class StreamingOFRA:
             record.class_id: ClassShards(record.test, manifest.feature_dim)
             for record in manifest.classes
         }
+        self.training_calibration = training_calibration
+        self.calibration = (
+            {
+                record.class_id: ClassShards(record.shards, manifest.feature_dim)
+                for record in training_calibration.classes
+            }
+            if training_calibration is not None
+            else {}
+        )
         self.evaluation_views = {
             view.name: view for view in sorted(evaluation_views, key=lambda item: item.name)
         }
@@ -550,7 +643,11 @@ class StreamingOFRA:
         }
 
     def close(self) -> None:
-        for source in (*self.train.values(), *self.test.values()):
+        for source in (
+            *self.train.values(),
+            *self.test.values(),
+            *self.calibration.values(),
+        ):
             source.close()
 
     def __del__(self) -> None:
@@ -800,11 +897,203 @@ class StreamingOFRA:
         self.heads[key] = head
         return head
 
+    def _sample_calibration_class(
+        self,
+        class_id: int,
+        sample_rows: int,
+        *,
+        task_index: int,
+        target_class_id: int,
+        label_role: str,
+    ) -> tuple[np.ndarray, dict[str, object]]:
+        source = self.calibration[class_id]
+        seed = derived_seed(
+            self.seed,
+            self.manifest.dataset,
+            "family_checkpoint_selection",
+            task_index,
+            target_class_id,
+            label_role,
+            class_id,
+        )
+        blocks, _ = source.index_blocks(self.config.shuffle_block_rows)
+        sampler = BlockShuffleSampler(
+            blocks,
+            population_rows=len(source),
+            sample_rows=sample_rows,
+            seed=seed,
+            block_rows=self.config.shuffle_block_rows,
+        )
+        digest = hashlib.sha256()
+        parts: list[np.ndarray] = []
+        for indices in sampler.iter_chunks(self.config.eval_batch_size):
+            _update_index_digest(digest, indices)
+            parts.append(source.take(indices))
+        if sum(len(part) for part in parts) != sample_rows:
+            raise RuntimeError("calibration sampler row accounting failed")
+        values = (
+            np.vstack(parts)
+            if parts
+            else np.empty((0, self.manifest.feature_dim), dtype=np.float32)
+        )
+        return self.stats.transform(values), {
+            "class_id": int(class_id),
+            "population_rows": len(source),
+            "sample_rows": int(sample_rows),
+            "index_stream_sha256": digest.hexdigest(),
+            "sampler": sampler.record(),
+        }
+
+    def _family_validation_pool(
+        self,
+        class_id: int,
+        validation_classes: Sequence[int],
+        task_index: int,
+    ) -> tuple[np.ndarray | None, np.ndarray | None, dict[str, object]]:
+        mode = self.config.family_checkpoint_selection
+        expected_classes = [
+            int(value)
+            for task in self.manifest.tasks[: task_index + 1]
+            for value in task
+        ]
+        actual_classes = [int(value) for value in validation_classes]
+        if actual_classes != expected_classes:
+            raise RuntimeError("family validation classes include a future or missing class")
+        if mode == "last":
+            return None, None, {
+                "mode": mode,
+                "applied": False,
+                "reason": "last_epoch_control",
+                "seen_classes": actual_classes,
+            }
+        if self.training_calibration is None or set(self.calibration) != set(
+            self.manifest.class_map
+        ):
+            raise RuntimeError("calibration checkpoint selection lacks a bound audit")
+        negative_classes = [value for value in actual_classes if value != class_id]
+        if class_id not in actual_classes or not negative_classes:
+            raise RuntimeError("family validation requires positive and negative classes")
+        positive_population = len(self.calibration[class_id])
+        negative_capacities = [len(self.calibration[value]) for value in negative_classes]
+        rows_per_label = min(
+            self.config.family_validation_cap_per_label,
+            positive_population,
+            sum(negative_capacities),
+        )
+        contract: dict[str, object] = {
+            "mode": mode,
+            "metric": "binary_macro_f1",
+            "tie_break": "earliest_epoch",
+            "official_test_used": False,
+            "future_classes_used": False,
+            "seen_classes": actual_classes,
+            "positive_class_id": int(class_id),
+            "negative_class_ids": negative_classes,
+            "cap_per_label": self.config.family_validation_cap_per_label,
+            "minimum_per_label": self.config.family_validation_min_per_label,
+            "rows_per_label": int(rows_per_label),
+            "calibration_audit_sha256": self.training_calibration.audit_sha256,
+            "calibration_algorithm": self.training_calibration.algorithm,
+            "calibration_fraction": self.training_calibration.calibration_fraction,
+        }
+        if rows_per_label < self.config.family_validation_min_per_label:
+            contract.update(
+                {
+                    "applied": False,
+                    "reason": "insufficient_training_only_calibration_support",
+                }
+            )
+            return None, None, contract
+
+        positive, positive_record = self._sample_calibration_class(
+            class_id,
+            rows_per_label,
+            task_index=task_index,
+            target_class_id=class_id,
+            label_role="positive",
+        )
+        allocations = _balanced_capacity_allocation(
+            negative_capacities, rows_per_label
+        )
+        negative_parts: list[np.ndarray] = []
+        negative_records: list[dict[str, object]] = []
+        for negative_class, sample_rows in zip(negative_classes, allocations):
+            if not sample_rows:
+                continue
+            values, record = self._sample_calibration_class(
+                negative_class,
+                sample_rows,
+                task_index=task_index,
+                target_class_id=class_id,
+                label_role="negative",
+            )
+            negative_parts.append(values)
+            negative_records.append(record)
+        negative = np.vstack(negative_parts)
+        if len(positive) != rows_per_label or len(negative) != rows_per_label:
+            raise RuntimeError("balanced calibration pool row accounting failed")
+        values = np.vstack([negative, positive])
+        labels = np.concatenate(
+            [
+                np.zeros(rows_per_label, dtype=np.int64),
+                np.ones(rows_per_label, dtype=np.int64),
+            ]
+        )
+        contract.update(
+            {
+                "applied": True,
+                "reason": "sufficient_training_only_calibration_support",
+                "positive_sample": positive_record,
+                "negative_samples": negative_records,
+                "values_sha256": array_sha256(values),
+                "labels_sha256": array_sha256(labels),
+            }
+        )
+        return values, labels, contract
+
+    def _evaluate_family_validation(
+        self,
+        head: FamilyHead,
+        values: np.ndarray,
+        labels: np.ndarray,
+    ) -> dict[str, object]:
+        state_before = _module_state_sha256(head)
+        rng_before = _rng_state_record()["canonical_sha256"]
+        was_training = bool(head.training)
+        head.eval()
+        confusion = np.zeros((2, 2), dtype=np.int64)
+        try:
+            with torch.no_grad():
+                for start in range(0, len(labels), self.config.eval_batch_size):
+                    tensor = torch.from_numpy(
+                        values[start : start + self.config.eval_batch_size]
+                    ).to(self.device)
+                    target = labels[start : start + self.config.eval_batch_size]
+                    predicted = (
+                        head(self.encoder(tensor)).argmax(dim=1).cpu().numpy()
+                    )
+                    np.add.at(confusion, (target, predicted), 1)
+        finally:
+            head.train(was_training)
+        state_after = _module_state_sha256(head)
+        rng_after = _rng_state_record()["canonical_sha256"]
+        if state_before != state_after or rng_before != rng_after:
+            raise RuntimeError("family calibration evaluation changed state or RNG")
+        return {
+            "rows": int(len(labels)),
+            "confusion_matrix": confusion.tolist(),
+            "accuracy": float(np.trace(confusion) / max(confusion.sum(), 1)),
+            "binary_macro_f1": _binary_macro_f1(confusion),
+            "state_unchanged": True,
+            "rng_unchanged": True,
+        }
+
     def train_family(
         self,
         class_id: int,
         task_classes: Sequence[int],
         task_index: int,
+        validation_classes: Sequence[int] | None = None,
         *,
         resume: dict[str, object] | None = None,
         recovery_callback: Callable[[dict[str, object], float], None] | None = None,
@@ -833,6 +1122,35 @@ class StreamingOFRA:
             for parameter in head.parameters():
                 parameter.requires_grad = True
         optimizer = _build_optimizer(head.parameters(), self.config)
+        if self.config.family_checkpoint_selection == "last":
+            validation_values = None
+            validation_labels = None
+            selection_contract: dict[str, object] = {
+                "mode": "last",
+                "applied": False,
+                "reason": "last_epoch_control",
+                "seen_classes": (
+                    [int(value) for value in validation_classes]
+                    if validation_classes is not None
+                    else []
+                ),
+            }
+        else:
+            if validation_classes is None:
+                raise RuntimeError(
+                    "calibration checkpoint selection requires seen-class context"
+                )
+            (
+                validation_values,
+                validation_labels,
+                selection_contract,
+            ) = self._family_validation_pool(
+                class_id, validation_classes, task_index
+            )
+        selection_applied = bool(selection_contract.get("applied"))
+        best_epoch: int | None = None
+        best_metric: float | None = None
+        best_head_state: dict[str, torch.Tensor] | None = None
         positive = self.train[class_id]
         raw_negative_ids = [int(value) for value in task_classes if value != class_id]
         old_exemplar_ids = sorted(self.exemplars)
@@ -886,6 +1204,39 @@ class StreamingOFRA:
             if negative_exposures.shape != (len(negative),):
                 raise RuntimeError("family recovery exposure counter shape mismatch")
             optimizer.load_state_dict(resume["optimizer_state"])
+            stored_contract = resume.get("selection_contract")
+            if canonical_sha256(stored_contract) != canonical_sha256(
+                selection_contract
+            ):
+                raise RuntimeError("family recovery selection-contract mismatch")
+            raw_best_epoch = resume.get("best_epoch")
+            raw_best_metric = resume.get("best_metric")
+            raw_best_state = resume.get("best_head_state")
+            if selection_applied:
+                if (
+                    isinstance(raw_best_epoch, bool)
+                    or not isinstance(raw_best_epoch, int)
+                    or not 1 <= raw_best_epoch <= start_epoch
+                    or isinstance(raw_best_metric, bool)
+                    or not isinstance(raw_best_metric, (int, float))
+                    or not isinstance(raw_best_state, dict)
+                    or not all(
+                        isinstance(value, torch.Tensor)
+                        for value in raw_best_state.values()
+                    )
+                ):
+                    raise RuntimeError("family recovery best-checkpoint state is invalid")
+                best_epoch = int(raw_best_epoch)
+                best_metric = float(raw_best_metric)
+                best_head_state = {
+                    name: value.detach().cpu().clone()
+                    for name, value in raw_best_state.items()
+                }
+            elif any(
+                value is not None
+                for value in (raw_best_epoch, raw_best_metric, raw_best_state)
+            ):
+                raise RuntimeError("family recovery contains an unexpected best checkpoint")
             rng_state = resume.get("rng_state")
             if not isinstance(rng_state, dict):
                 raise RuntimeError("family recovery checkpoint lacks RNG state")
@@ -1182,6 +1533,18 @@ class StreamingOFRA:
                     "batch_mix_seed": int(mix_seed),
                 }
             )
+            if selection_applied:
+                if validation_values is None or validation_labels is None:
+                    raise RuntimeError("applied checkpoint selection lacks validation rows")
+                validation_result = self._evaluate_family_validation(
+                    head, validation_values, validation_labels
+                )
+                history[-1]["training_only_calibration"] = validation_result
+                metric = float(validation_result["binary_macro_f1"])
+                if best_metric is None or metric > best_metric:
+                    best_epoch = epoch + 1
+                    best_metric = metric
+                    best_head_state = _cpu_module_state(head)
             unit_seconds = time.perf_counter() - epoch_started
             self.timing["head_training_seconds"][str(class_id)] = (
                 previous_seconds + time.perf_counter() - started
@@ -1201,9 +1564,36 @@ class StreamingOFRA:
                         ),
                         "initial_head_state_sha256": initial_head_sha256,
                         "optimizer_state": optimizer.state_dict(),
+                        "selection_contract": selection_contract,
+                        "best_epoch": best_epoch,
+                        "best_metric": best_metric,
+                        "best_head_state": best_head_state,
                     },
                     unit_seconds,
                 )
+        last_epoch_state_sha256 = _module_state_sha256(head)
+        if selection_applied:
+            if best_head_state is None or best_epoch is None or best_metric is None:
+                raise RuntimeError("checkpoint selection did not produce a best epoch")
+            head.load_state_dict(best_head_state, strict=True)
+        selected_state_sha256 = _module_state_sha256(head)
+        selection_record = {
+            **selection_contract,
+            "max_epochs": self.config.epochs_per_task,
+            "selected_epoch": (
+                int(best_epoch) if selection_applied and best_epoch is not None else self.config.epochs_per_task
+            ),
+            "selected_metric": (
+                float(best_metric) if selection_applied and best_metric is not None else None
+            ),
+            "last_epoch_state_sha256": last_epoch_state_sha256,
+            "selected_state_sha256": selected_state_sha256,
+            "restored_nonfinal_epoch": bool(
+                selection_applied and best_epoch != self.config.epochs_per_task
+            ),
+        }
+        if history:
+            history[-1]["checkpoint_selection"] = selection_record
         head.eval()
         for parameter in head.parameters():
             parameter.requires_grad = False
@@ -1252,6 +1642,8 @@ class StreamingOFRA:
             "negative_exposure_counter_capacity": int(np.iinfo(counter_dtype).max),
             "initial_head_state_sha256": initial_head_sha256,
             "final_head_state_sha256": _module_state_sha256(head),
+            "last_epoch_head_state_sha256": last_epoch_state_sha256,
+            "checkpoint_selection": selection_record,
         }
         self.training_prior_records[class_id] = {
             "algorithm": "binary_count_exposure_prior_offset_v1",
@@ -1901,6 +2293,7 @@ def run_seed(
     seed: int,
     protocol_sha256: str,
     evaluation_views: Sequence[EvaluationView] = (),
+    training_calibration: TrainingCalibration | None = None,
     *,
     output_base: Path | None = None,
     monitoring_protocol: dict[str, object] | None = None,
@@ -1914,7 +2307,12 @@ def run_seed(
         torch.cuda.synchronize(device)
     run_started = time.perf_counter()
     agent = StreamingOFRA(
-        manifest, config, seed, device, evaluation_views=evaluation_views
+        manifest,
+        config,
+        seed,
+        device,
+        evaluation_views=evaluation_views,
+        training_calibration=training_calibration,
     )
     monitor_enabled = bool(
         monitoring_protocol is not None and monitoring_protocol.get("enabled")
@@ -2078,6 +2476,7 @@ def run_seed(
                 class_id,
                 task,
                 task_index,
+                [*seen, *task],
                 resume=family_resume,
                 recovery_callback=(
                     family_recovery_callback if recovery is not None else None
@@ -2388,11 +2787,45 @@ def _evaluation_protocol(
     }
 
 
+def _training_calibration_protocol(
+    calibration: TrainingCalibration | None,
+) -> dict[str, object]:
+    if calibration is None:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "purpose": "family_checkpoint_selection_only",
+        "official_test_used": False,
+        "future_class_policy": "only classes seen through the current task",
+        "path": str(calibration.path),
+        "audit_sha256": calibration.audit_sha256,
+        "algorithm": calibration.algorithm,
+        "calibration_fraction": calibration.calibration_fraction,
+        "classes": [
+            {
+                "class_id": record.class_id,
+                "class_name": record.name,
+                "calibration_indices_sha256": record.calibration_indices_sha256,
+                "shards": [
+                    {
+                        "path": str(shard.path),
+                        "rows": shard.rows,
+                        "sha256": shard.sha256,
+                    }
+                    for shard in record.shards
+                ],
+            }
+            for record in calibration.classes
+        ],
+    }
+
+
 def _protocol(
     manifest: DatasetManifest,
     config: RunConfig,
     seeds: Sequence[int],
     evaluation_views: Sequence[EvaluationView] = (),
+    training_calibration: TrainingCalibration | None = None,
 ) -> dict:
     from .exposure_preflight import exposure_preflight_for_manifest
 
@@ -2453,6 +2886,9 @@ def _protocol(
         },
         "exposure_preflight": exposure_preflight_for_manifest(manifest, config),
         "evaluation": _evaluation_protocol(manifest, evaluation_views),
+        "training_calibration": _training_calibration_protocol(
+            training_calibration
+        ),
         "monitoring": monitoring_protocol_record(
             manifest,
             enabled=config.monitor_enabled,
@@ -2759,6 +3195,72 @@ def _validate_training_instrumentation(
                 != selected
             ):
                 raise RuntimeError(f"result class {class_id} epoch exposure accounting failed: {path}")
+        selection = exposure.get("checkpoint_selection")
+        if not isinstance(selection, dict):
+            raise RuntimeError(f"result class {class_id} lacks checkpoint selection: {path}")
+        if history and history[-1].get("checkpoint_selection") != selection:
+            raise RuntimeError(
+                f"result class {class_id} checkpoint-selection registry mismatch: {path}"
+            )
+        if (
+            selection.get("max_epochs") != epochs
+            or exposure.get("last_epoch_head_state_sha256")
+            != selection.get("last_epoch_state_sha256")
+            or exposure.get("final_head_state_sha256")
+            != selection.get("selected_state_sha256")
+        ):
+            raise RuntimeError(
+                f"result class {class_id} checkpoint-selection state binding failed: {path}"
+            )
+        if selection.get("applied") is True:
+            if (
+                selection.get("mode")
+                != "training_only_calibration_macro_f1"
+                or selection.get("metric") != "binary_macro_f1"
+                or selection.get("tie_break") != "earliest_epoch"
+                or selection.get("official_test_used") is not False
+                or selection.get("future_classes_used") is not False
+            ):
+                raise RuntimeError(
+                    f"result class {class_id} checkpoint-selection policy failed: {path}"
+                )
+            validation = [
+                epoch.get("training_only_calibration") for epoch in history
+            ]
+            if any(not isinstance(item, dict) for item in validation):
+                raise RuntimeError(
+                    f"result class {class_id} lacks per-epoch calibration: {path}"
+                )
+            metrics = [float(item["binary_macro_f1"]) for item in validation]
+            selected_index = max(range(len(metrics)), key=lambda index: metrics[index])
+            if (
+                selection.get("selected_epoch") != selected_index + 1
+                or not math.isclose(
+                    float(selection.get("selected_metric")),
+                    metrics[selected_index],
+                    rel_tol=0.0,
+                    abs_tol=0.0,
+                )
+                or selection.get("restored_nonfinal_epoch")
+                != (selected_index + 1 != epochs)
+                or any(
+                    item.get("state_unchanged") is not True
+                    or item.get("rng_unchanged") is not True
+                    for item in validation
+                )
+            ):
+                raise RuntimeError(
+                    f"result class {class_id} checkpoint-selection metric failed: {path}"
+                )
+        elif (
+            selection.get("selected_epoch") != epochs
+            or selection.get("selected_metric") is not None
+            or selection.get("restored_nonfinal_epoch") is not False
+            or any("training_only_calibration" in epoch for epoch in history)
+        ):
+            raise RuntimeError(
+                f"result class {class_id} fallback checkpoint selection failed: {path}"
+            )
         if expected_families is not None:
             planned = expected_families[class_id]
             planned_sources = [
@@ -3180,6 +3682,7 @@ def _run_manifest_transaction(
     output_dir: str | Path,
     config: RunConfig | None = None,
     evaluation_view_paths: Sequence[str | Path] = (),
+    training_calibration_audit_path: str | Path | None = None,
     event_sink: RunEventSink | None = None,
     recovery_enabled: bool = False,
     recovery_deadline_unix: float | None = None,
@@ -3195,6 +3698,24 @@ def _run_manifest_transaction(
     if recovery_enabled and len(seeds) != 1:
         raise ValueError("recovery mode requires exactly one seed per Slurm job")
     manifest = load_manifest(manifest_path, verify_hashes=config.verify_shard_hashes)
+    selection_uses_calibration = (
+        config.family_checkpoint_selection
+        == "training_only_calibration_macro_f1"
+    )
+    if selection_uses_calibration != (training_calibration_audit_path is not None):
+        raise ValueError(
+            "training calibration audit must be provided exactly when calibration "
+            "checkpoint selection is enabled"
+        )
+    training_calibration = (
+        load_training_calibration_audit(
+            training_calibration_audit_path,
+            manifest,
+            verify_hashes=config.verify_shard_hashes,
+        )
+        if training_calibration_audit_path is not None
+        else None
+    )
     evaluation_views = [
         load_evaluation_view(path, manifest, verify_hashes=config.verify_shard_hashes)
         for path in evaluation_view_paths
@@ -3207,7 +3728,13 @@ def _run_manifest_transaction(
     # Establish the requested numerical mode before recording the environment.
     # Each seed is reset again immediately before its training trajectory.
     _seed_process(seeds[0], config.deterministic)
-    protocol = _protocol(manifest, config, seeds, evaluation_views)
+    protocol = _protocol(
+        manifest,
+        config,
+        seeds,
+        evaluation_views,
+        training_calibration,
+    )
     protocol_sha256 = canonical_sha256(protocol)
     protocol["protocol_sha256"] = protocol_sha256
     protocol_path = output / "protocol.json"
@@ -3290,6 +3817,7 @@ def _run_manifest_transaction(
                     seed,
                     protocol_sha256,
                     evaluation_views=evaluation_views,
+                    training_calibration=training_calibration,
                     output_base=output,
                     monitoring_protocol=protocol["monitoring"],
                     event_sink=event_sink,
@@ -3382,6 +3910,7 @@ def run_manifest(
     output_dir: str | Path,
     config: RunConfig | None = None,
     evaluation_view_paths: Sequence[str | Path] = (),
+    training_calibration_audit_path: str | Path | None = None,
     event_sink: RunEventSink | None = None,
     recovery_enabled: bool = False,
     recovery_deadline_unix: float | None = None,
@@ -3398,6 +3927,7 @@ def run_manifest(
             output_dir=output,
             config=config,
             evaluation_view_paths=evaluation_view_paths,
+            training_calibration_audit_path=training_calibration_audit_path,
             event_sink=event_sink,
             recovery_enabled=recovery_enabled,
             recovery_deadline_unix=recovery_deadline_unix,

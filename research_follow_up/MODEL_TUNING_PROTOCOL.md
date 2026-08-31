@@ -85,6 +85,29 @@ AdamW or weight-decay benefit. The lower-learning-rate candidate is not
 selected and is not expanded to multiple seeds. Adam at `1e-3` with zero
 weight decay remains the reference for the next single-variable stage.
 
+## Stage M4 registered candidate: training-only best-epoch selection
+
+Stage M4 retains the D2 data, replay-50 memory, FT256x4 architecture, Adam at
+`1e-3`, zero weight decay, focal loss, seed 42, eight Task-0 pretraining epochs
+and ten family-head epochs. It changes only the retained family-head
+checkpoint. All ten epochs are still trained. After each epoch, the candidate
+measures binary Macro-F1 on a deterministic balanced calibration pool drawn
+only from the disjoint source-training calibration rows of classes seen so far.
+The earliest epoch with the highest calibration Macro-F1 is restored.
+
+The primary manifest must bind the exact calibration-audit SHA-256. Runtime
+validation checks fit, calibration and official-test shard identities and
+hashes, split conservation, absence of future classes, and unchanged model/RNG
+state during calibration. Each binary label is capped at 5,000 calibration
+rows and must have at least 32. A class below that support falls back to epoch
+10. The official test set is never used for checkpoint choice.
+
+This is a registered single-seed diagnostic, not a completed result. It tests
+whether keeping the last family epoch causes avoidable overfitting while
+holding the exposure and optimizer schedule fixed. It will replace the Adam
+`1e-3` control only if the registered minority-sensitive metrics improve
+without a material regression in average task accuracy or forgetting.
+
 ## Later stages
 
 The remaining intended order is:
@@ -110,5 +133,6 @@ The learning-rate result package has deterministic result SHA-256
 `bb7e29c98dcdd3808cdf196d01235132e81158f21e3dac8a8fa23245ebaf1861`
 and protected checksum-registry SHA-256
 `a11e8e55e32e3b11bb3b77bc23198e14af890c6870ef650a8f593f77627bf8c8`.
-Validation-governed training control, multi-seed confirmation and later tuning
-stages remain incomplete.
+The Stage M4 code path has passed its local deterministic, no-look-ahead and
+recovery tests. Its DICC run, multi-seed confirmation and later tuning stages
+remain incomplete.

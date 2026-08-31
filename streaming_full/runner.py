@@ -27,6 +27,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Run shard-backed, full-data OFRA validation without loading a full dataset into RAM."
     )
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument(
+        "--training-calibration-audit",
+        type=Path,
+        help=(
+            "Hash-verified training-only calibration audit. Required only for "
+            "training_only_calibration_macro_f1 checkpoint selection."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--seeds", type=int, nargs="+", required=True)
     parser.add_argument(
@@ -145,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             config=config,
             evaluation_view_paths=evaluation_paths,
+            training_calibration_audit_path=args.training_calibration_audit,
             event_sink=tracker,
             recovery_enabled=args.recovery,
             recovery_deadline_unix=(

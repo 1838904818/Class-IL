@@ -105,6 +105,38 @@ required.
 - Cap and uncapped router arms share the identical encoder, heads, training
   trajectory, checkpoints, and matched cap centroids/counts/lambda.
 
+### Optional training-only checkpoint selection
+
+The default `family_checkpoint_selection=last` retains the final family-head
+epoch and does not load a calibration artifact. The registered validation-
+governed candidate instead uses
+`training_only_calibration_macro_f1`. It still trains every family head for
+the full configured ten epochs, evaluates the head after each epoch on a
+deterministic balanced binary calibration pool, and restores the earliest
+epoch attaining the highest binary Macro-F1. Thus this candidate changes only
+which already-trained epoch is retained; it does not change the training-row
+exposure or optimizer-step schedule.
+
+The calibration audit is mandatory exactly when this mode is enabled. Its file
+hash and algorithm must be bound by the primary streaming manifest. The loader
+also verifies every fit shard, calibration shard, official-test shard, class
+identity, row count and split-conservation invariant. Calibration rows come
+only from the source training partition, are disjoint from fit rows and are
+never part of official evaluation. At task `t`, selection may use only classes
+introduced through task `t`; future classes are rejected. Positive and
+negative labels receive the same bounded row count, with negative capacity
+allocated as evenly as possible across currently seen non-target classes.
+
+The reportable candidate uses at most 5,000 rows per binary label and requires
+at least 32 rows per label. A head without that minimum support, notably the
+very small Heartbleed class in ReplayIDS D2, falls back to the final epoch
+instead of making an unstable selection. Every epoch records the calibration
+confusion matrix, accuracy, binary Macro-F1 and proof that evaluation changed
+neither model state nor RNG state. The final record binds the last-epoch and
+selected-head hashes, chosen epoch, tie rule and audit hash. Recovery stores
+the same best-epoch state and reproduces the uninterrupted deterministic
+result hash.
+
 `router_only_uncapped` and `joint_uncapped` mean that all training rows of a
 class refine the router. They do not mean an unbounded in-memory dataset. The
 router construction uses two bounded-memory passes. The first builds the
@@ -205,6 +237,7 @@ Create a JSON object containing any non-default `RunConfig` fields, then run:
 ```powershell
 python -m streaming_full `
   --manifest C:\path\to\manifest.json `
+  --training-calibration-audit C:\path\to\sampling_audit.json `
   --evaluation-view duplicate_excluded=C:\path\to\evaluation_view_manifest.json `
   --config-json C:\path\to\run_config.json `
   --seeds 11 22 33 44 55 `

@@ -10,7 +10,6 @@ from typing import Iterable, Iterator, Sequence
 
 import numpy as np
 
-
 EVALUATION_VIEW_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 EVALUATION_VIEW_ALGORITHM = "exclude_test_if_exact_train_float32_feature_exists_v1"
 EVALUATION_VIEW_EQUALITY_KEY = (
@@ -175,6 +174,27 @@ class DatasetManifest:
     @property
     def class_names(self) -> dict[int, str]:
         return {record.class_id: record.name for record in self.classes}
+
+
+@dataclass(frozen=True)
+class CalibrationRecord:
+    class_id: int
+    name: str
+    shards: tuple[Shard, ...]
+    calibration_indices_sha256: str
+
+
+@dataclass(frozen=True)
+class TrainingCalibration:
+    path: Path
+    audit_sha256: str
+    algorithm: str
+    calibration_fraction: float
+    classes: tuple[CalibrationRecord, ...]
+
+    @property
+    def class_map(self) -> dict[int, CalibrationRecord]:
+        return {record.class_id: record for record in self.classes}
 
 
 @dataclass(frozen=True)
@@ -549,6 +569,182 @@ def _resolve_contained_path(root: Path, relative: object, label: str) -> Path:
     except ValueError as error:
         raise ValueError(f"{label} escapes the evaluation-view root") from error
     return candidate
+
+
+def load_training_calibration_audit(
+    path: str | Path,
+    primary: DatasetManifest,
+    *,
+    verify_hashes: bool = True,
+) -> TrainingCalibration:
+    """Load the builder's disjoint training-only calibration registry.
+
+    The audit is bound to the primary fit manifest class by class. Calibration
+    arrays are permitted for model selection only and are never added to the
+    fit or official-test registries.
+    """
+
+    audit_path = Path(path).resolve()
+    raw_bytes = audit_path.read_bytes()
+    audit_sha256 = sha256_bytes(raw_bytes)
+    raw = json.loads(raw_bytes)
+    if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+        raise ValueError("training-calibration audit schema_version must be 1")
+    algorithm = raw.get("algorithm")
+    if not isinstance(algorithm, str) or "train_calibration" not in algorithm:
+        raise ValueError("training-calibration audit algorithm is unsupported")
+    primary_raw = json.loads(primary.path.read_text(encoding="utf-8"))
+    primary_source = primary_raw.get("source") if isinstance(primary_raw, dict) else None
+    if not isinstance(primary_source, dict):
+        raise ValueError("primary manifest lacks a training-calibration source binding")
+    if primary_source.get("sampling_audit_sha256") != audit_sha256:
+        raise ValueError("training-calibration audit is not bound by the primary manifest")
+    if primary_source.get("algorithm") != algorithm:
+        raise ValueError("training-calibration algorithm disagrees with the primary manifest")
+    source_manifest = raw.get("source_manifest")
+    expected_source_manifest_sha256 = primary_source.get("source_manifest_sha256")
+    if expected_source_manifest_sha256 is not None and (
+        not isinstance(source_manifest, dict)
+        or source_manifest.get("sha256") != expected_source_manifest_sha256
+    ):
+        raise ValueError("training-calibration source-manifest binding mismatch")
+    invariants = raw.get("invariants")
+    if (
+        not isinstance(invariants, dict)
+        or invariants.get("calibration_source") != "source training rows only"
+        or invariants.get("fit_calibration_disjoint") is not True
+        or invariants.get("official_test_sampled") is not False
+    ):
+        raise ValueError("training-calibration audit invariants are incomplete")
+    configuration = raw.get("configuration")
+    fraction = (
+        configuration.get("calibration_fraction")
+        if isinstance(configuration, dict)
+        else None
+    )
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+        raise ValueError("training-calibration fraction must be numeric")
+    fraction = float(fraction)
+    if not 0.0 < fraction < 1.0:
+        raise ValueError("training-calibration fraction must be in (0, 1)")
+
+    classes_raw = raw.get("classes")
+    if not isinstance(classes_raw, list) or len(classes_raw) != len(primary.classes):
+        raise ValueError("training-calibration class axis mismatch")
+    root = audit_path.parent
+    primary_paths = {
+        shard.path.resolve()
+        for record in primary.classes
+        for shard in (*record.train, *record.test)
+    }
+    records: list[CalibrationRecord] = []
+    for expected, item in zip(primary.classes, classes_raw):
+        if (
+            not isinstance(item, dict)
+            or item.get("id") != expected.class_id
+            or item.get("name") != expected.name
+            or item.get("fit_calibration_disjoint") is not True
+        ):
+            raise ValueError("training-calibration class identity/order mismatch")
+        if len(expected.train) != 1:
+            raise ValueError("training-calibration audit requires one fit shard per class")
+        fit = item.get("fit")
+        if not isinstance(fit, dict):
+            raise ValueError("training-calibration audit lacks a fit binding")
+        fit_path = _resolve_contained_path(
+            root, fit.get("path"), "training-calibration fit path"
+        )
+        if (
+            fit_path != expected.train[0].path.resolve()
+            or fit.get("sha256") != expected.train[0].sha256
+            or item.get("fit_rows") != expected.train[0].rows
+        ):
+            raise ValueError("training-calibration fit binding mismatch")
+        calibration = item.get("calibration")
+        rows = item.get("calibration_rows")
+        if (
+            not isinstance(calibration, dict)
+            or isinstance(rows, bool)
+            or not isinstance(rows, int)
+            or rows <= 0
+        ):
+            raise ValueError("training-calibration shard metadata is invalid")
+        calibration_shards = _parse_shards(
+            root,
+            [
+                {
+                    "path": calibration.get("path"),
+                    "rows": rows,
+                    "sha256": calibration.get("sha256"),
+                }
+            ],
+            feature_dim=primary.feature_dim,
+            context=f"training-calibration class {expected.class_id}",
+            verify_hashes=verify_hashes,
+        )
+        if any(shard.path.resolve() in primary_paths for shard in calibration_shards):
+            raise ValueError("training-calibration shard overlaps a fit/test path")
+        calibration_sha256 = calibration_shards[0].sha256
+        if calibration_sha256 in {
+            shard.sha256 for shard in (*expected.train, *expected.test)
+        }:
+            raise ValueError("training-calibration shard duplicates a fit/test shard")
+        official_test = item.get("official_test")
+        expected_official_test = [
+            {
+                "derived_path": shard.path.relative_to(root).as_posix(),
+                "rows": shard.rows,
+                "sha256": shard.sha256,
+                "byte_identical": True,
+            }
+            for shard in expected.test
+        ]
+        if not isinstance(official_test, list) or [
+            {
+                "derived_path": record.get("derived_path"),
+                "rows": record.get("rows"),
+                "sha256": record.get("sha256"),
+                "byte_identical": record.get("byte_identical"),
+            }
+            for record in official_test
+            if isinstance(record, dict)
+        ] != expected_official_test:
+            raise ValueError("training-calibration official-test binding mismatch")
+        source_train_rows = item.get("source_train_rows")
+        fit_pool_rows = item.get("fit_pool_rows")
+        if (
+            source_train_rows is not None
+            or fit_pool_rows is not None
+        ) and (
+            isinstance(source_train_rows, bool)
+            or not isinstance(source_train_rows, int)
+            or isinstance(fit_pool_rows, bool)
+            or not isinstance(fit_pool_rows, int)
+            or source_train_rows != fit_pool_rows + rows
+            or item.get("fit_rows") > fit_pool_rows
+        ):
+            raise ValueError("training-calibration source-row conservation failed")
+        indices_sha = item.get("calibration_indices_sha256")
+        if (
+            not isinstance(indices_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", indices_sha)
+        ):
+            raise ValueError("training-calibration index hash is invalid")
+        records.append(
+            CalibrationRecord(
+                class_id=expected.class_id,
+                name=expected.name,
+                shards=calibration_shards,
+                calibration_indices_sha256=indices_sha,
+            )
+        )
+    return TrainingCalibration(
+        path=audit_path,
+        audit_sha256=audit_sha256,
+        algorithm=algorithm,
+        calibration_fraction=fraction,
+        classes=tuple(records),
+    )
 
 
 def load_evaluation_view(

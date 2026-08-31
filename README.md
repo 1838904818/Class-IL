@@ -191,3 +191,10 @@ accuracy, attack recall and average task accuracy declined materially, neither
 lower-learning-rate recipe replaces the Adam `1e-3` control. The single-seed
 comparisons, decision and integrity hashes are in
 [`results/replayids-d2-optimizer-seed42/`](results/replayids-d2-optimizer-seed42/README.md).
+
+The next registered single-variable diagnostic keeps the Adam `1e-3` control
+and all ten family-head training epochs, but restores the earliest epoch with
+the best binary Macro-F1 on a manifest-bound, training-only calibration split.
+The implementation rejects future-class or official-test selection data and
+has passed local deterministic and recovery tests. No DICC result is claimed
+until the reviewed hash-bound candidate completes.
