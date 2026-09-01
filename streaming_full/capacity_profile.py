@@ -43,7 +43,6 @@ from .validation import (
     IndexChunkCursor,
     RunConfig,
     StreamingOFRA,
-    _build_optimizer,
     _resolve_device,
     _seed_process,
 )
@@ -314,9 +313,9 @@ def run_capacity_profile(
         temporary_head = torch.nn.Linear(
             config.d_model, len(manifest.classes)
         ).to(device)
-        optimizer = _build_optimizer(
+        optimizer = torch.optim.Adam(
             [*agent.encoder.parameters(), *temporary_head.parameters()],
-            config,
+            lr=config.learning_rate,
         )
         agent.encoder.train()
         temporary_head.train()
@@ -377,9 +376,7 @@ def run_capacity_profile(
                     "ft_dim_head": config.ft_dim_head,
                     "batch_size": config.batch_size,
                     "gradient_accumulation_steps": config.gradient_accumulation_steps,
-                    "optimizer_name": config.optimizer_name,
                     "learning_rate": config.learning_rate,
-                    "weight_decay": config.weight_decay,
                     "deterministic": config.deterministic,
                 },
                 "sampling": {

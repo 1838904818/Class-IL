@@ -6,6 +6,21 @@ MalayaNetwork_GT external application-traffic dataset form the registered
 five-dataset suite. Every dataset has its own preprocessing contract and is
 trained and evaluated independently.
 
+## Latest focused update: paired checkpoint selection
+
+The 2 September 2026 update is limited to one paired five-seed experiment:
+training-only best-epoch selection versus retaining the last epoch on the
+ReplayIDS CIC-IDS-2017 D2 protocol. The implementation, registered protocol,
+aggregate and per-class results, W&B run registry, and checksums are available
+under [`results/replayids-d2-checkpoint-selection-paired5/`](results/replayids-d2-checkpoint-selection-paired5/).
+The aligned manuscript and technical document are under
+[`paper/checkpoint_selection_2026-09-01/`](paper/checkpoint_selection_2026-09-01/).
+
+The experiment did not establish a reliable overall improvement: final
+accuracy and Macro-F1 increased numerically, while average task accuracy and
+attack recall declined and forgetting increased. All paired 95% confidence
+intervals crossed zero, so last-epoch selection remains the primary protocol.
+
 The current model uses an FT-Transformer encoder, family-specific low-rank
 binary heads, DP-Means centroid routing, bounded exemplar memory, and five
 matched scoring arms. The explanation stage uses SHAP expected gradients on
@@ -16,33 +31,36 @@ produce an offline governance ledger; it does not alter classifier predictions.
 
 | Dataset or stage | Completed evidence | Status |
 |---|---|---|
-| Five-dataset prediction suite | Seeds 1, 2, 3, 4, 42; independent preprocessing contracts | Strict descriptive five-seed evidence |
-| Malaya explanation and ETG | Source-bound routed margin, seed 1 | Single-seed offline governance evidence |
-| Attribution sensitivity | Expected Gradients, feature ablation, Gradient x Input | Three-method seed-1 pilot |
-| CSE-CIC-IDS2018 | Strict 8+10-epoch five-seed campaign | Coverage gain with severe false-alarm cost |
-| ReplayIDS D2 checkpoint selection | Last epoch versus training-only calibration, Job 425539 | Paired five-seed negative superiority result |
-| ReplayIDS O1 open set | Held-out FTP-Patator, seed 42 | Single-seed negative autonomous-discovery result |
+| MalayaNetwork_GT | FT-Transformer 512x12, seeds 1-4 | Four-seed descriptive result |
+| NSL-KDD | FT-Transformer 512x12, seeds 1-4 | Four-seed descriptive result |
+| Malaya explanation and ETG | Seed 1, completed DICC Job 389896 | Single-seed partial analysis |
+| CSE-CIC-IDS2018 | A100 throughput and memory profile, Job 390164 | Capacity evidence only |
+| CIC-IDS-2017 and UNSW-NB15 | Preprocessing and training implementation | No new 512x12 formal result in this snapshot |
+
+The completed seed set is `1, 2, 3, 4`. It is not a five-seed result. The fifth
+registered seed and the remaining large-model dataset runs are still pending.
+The detailed metrics, per-seed files, and hashes are in
+[`results/README.md`](results/README.md) and
+[`results/aggregate_4seed.json`](results/aggregate_4seed.json).
 
 A consolidated description of the architecture, preprocessing contracts,
 training protocol, SHAP analysis, ETG logic, results, and evidence boundaries
-is available in the current
-[`technical document`](paper/checkpoint_selection_2026-09-01/OFRA_ETG_Technical_Document_v2_9_2026-09-01.pdf).
+is available in [`TECHNICAL_DOCUMENTATION.md`](TECHNICAL_DOCUMENTATION.md).
 
-## Latest paired checkpoint-selection result
+## Four-seed headline results
 
-Values below are mean +/- sample standard deviation across paired seeds
-`1, 2, 3, 4, 42` on one fixed split.
+Values below are mean +/- sample standard deviation across seeds 1-4.
 
-| Selection rule | Final accuracy | Macro-F1 | Avg task accuracy | Forgetting |
-|---|---:|---:|---:|---:|
-| Last epoch | 85.51% +/- 6.18 | 54.40% +/- 5.07 | 79.78% +/- 6.86 | 3.52 +/- 2.60 pp |
-| Training-only calibration | 87.52% +/- 4.78 | 56.34% +/- 4.06 | 77.88% +/- 9.57 | 5.18 +/- 5.43 pp |
+| Dataset | Scoring arm | Accuracy | Macro-F1 | Forgetting |
+|---|---|---:|---:|---:|
+| MalayaNetwork_GT | Joint full | 56.14% +/- 3.00 | 21.04% +/- 3.85 | 3.23 +/- 0.88 pp |
+| MalayaNetwork_GT | Joint cap 3,000 | 54.37% +/- 3.02 | 20.70% +/- 3.72 | 3.79 +/- 0.64 pp |
+| NSL-KDD | Joint full | 68.51% +/- 2.87 | 38.32% +/- 2.97 | 2.60 +/- 1.15 pp |
+| NSL-KDD | Joint cap 3,000 | 69.07% +/- 3.38 | 38.81% +/- 3.04 | 2.38 +/- 1.34 pp |
 
-Calibration improves final accuracy and Macro-F1 numerically but reduces
-average task accuracy and attack recall and increases forgetting. Every paired
-95% confidence interval crosses zero. Last-epoch selection remains primary.
-Detailed aggregate, per-class, W&B, and integrity records are under
-[`results/replayids-d2-checkpoint-selection-paired5/`](results/replayids-d2-checkpoint-selection-paired5/README.md).
+These results are descriptive. They do not establish statistical superiority,
+and the low Malaya Macro-F1 indicates weak minority-class performance despite
+moderate overall accuracy.
 
 ## Decision architecture
 
@@ -147,51 +165,6 @@ export PYTHONPATH="$OFRA_PROJECT_DIR/formal_v2_explanation_etg:$OFRA_PROJECT_DIR
   test_analyze.py test_publish_wandb.py test_verify_submission_bindings.py)
 ```
 
-`SHA256SUMS.txt` covers the complete published tree except the manifest itself.
-Text files are LF-normalised and binary documents are hashed byte-for-byte. The
+`SHA256SUMS.txt` is generated from the published LF-normalised files. The
 runtime manifests in `reproducibility/` bind the current code to the completed
 training and analysis evidence.
-
-## Manuscript and cited papers
-
-The current supervisor-revision manuscript is under [`paper/`](paper/). A
-complete linked library of every cited paper, together with a reusable BibTeX
-file and redistribution notes, is under [`references/`](references/REFERENCES.md).
-Publisher PDFs are not mirrored when redistribution permission has not been
-established.
-
-## Follow-up experiments
-
-The reproducible protocols for training-set capping, ReplayIDS-guided tuning,
-and unseen-attack rejection/new-head adaptation are under
-[`research_follow_up/`](research_follow_up/README.md). The first hash-bound O1
-open-set evaluation is complete and recorded under
-[`results/replayids-o1-open-set-seed42/`](results/replayids-o1-open-set-seed42/README.md).
-It is a single-seed negative result for autonomous discovery and does not
-replace the completed five-dataset headline results.
-
-The adaptive normal-only data derivation completed as reviewed DICC Job
-`414907`. The seed-42 replay-size screen at 500 and 3,000 exemplars per class
-completed as DICC Job `414908`. Larger replay improved final overall accuracy
-and Benign false-positive rate, but reduced Macro-F1, balanced accuracy, attack
-recall, and average task accuracy. Replay 50 therefore remains the reference
-for the next controlled stage; this single-seed diagnostic is not a five-seed
-publication claim. The exact comparison and evidence hashes are recorded in
-[`results/replayids-replay-capacity-seed42/`](results/replayids-replay-capacity-seed42/README.md).
-
-The subsequent D2 optimizer-recipe screen completed as DICC Job `425182`, and
-the isolated Adam learning-rate diagnostic completed as DICC Job `425382`.
-Adam at `5e-4` exactly matched the AdamW recipe's seven registered scalar
-metrics. The result attributes the measured trade-off to lowering the learning
-rate, not to an additional AdamW or weight-decay benefit. Because balanced
-accuracy, attack recall and average task accuracy declined materially, neither
-lower-learning-rate recipe replaces the Adam `1e-3` control. The single-seed
-comparisons, decision and integrity hashes are in
-[`results/replayids-d2-optimizer-seed42/`](results/replayids-d2-optimizer-seed42/README.md).
-
-The registered training-only checkpoint diagnostic completed as DICC Job
-`425539`. Final accuracy and Macro-F1 improved numerically, while average task
-accuracy and attack recall declined and forgetting increased. All paired 95%
-confidence intervals crossed zero, so last-epoch selection remains the primary
-protocol. The complete public-safe record is under
-[`results/replayids-d2-checkpoint-selection-paired5/`](results/replayids-d2-checkpoint-selection-paired5/README.md).

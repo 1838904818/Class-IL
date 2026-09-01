@@ -110,12 +110,8 @@ output layer.
 
 The learner retains at most 50 exemplars per class from a candidate pool of at
 most 5,000. Replay mixes selected older examples with the current task to
-reduce catastrophic forgetting. A controlled seed-42 diagnostic also tested
-capacities 500 and 3,000 while holding the model, data, epochs, optimiser,
-loss, router and seed fixed. The larger buffers improved final overall accuracy
-and Benign false-positive rate but weakened class-balanced metrics. Capacity 50
-therefore remains the reference for the next stage; the one-seed result does
-not imply that 50 is universally optimal.
+reduce catastrophic forgetting. This is a fixed study budget and does not
+imply that 50 is generally optimal.
 
 ### 4.4 DP-Means router
 
@@ -220,129 +216,50 @@ or training.
 
 ## 8. Current completed evidence
 
-### 8.1 Strict five-seed prediction evidence
+All values below are mean +/- sample standard deviation across seeds 1-4.
 
-The table reports means across seeds 1, 2, 3, 4, and 42. Each dataset is an
-independent experiment; model capacities are disclosed and are not pooled.
+| Dataset | Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
+|---|---|---:|---:|---:|---:|
+| MalayaNetwork_GT | Joint full | 56.14% +/- 3.00 | 21.04% +/- 3.85 | 22.89% +/- 3.92 | 3.23 +/- 0.88 pp |
+| MalayaNetwork_GT | Joint cap 3,000 | 54.37% +/- 3.02 | 20.70% +/- 3.72 | 22.70% +/- 3.86 | 3.79 +/- 0.64 pp |
+| NSL-KDD | Joint full | 68.51% +/- 2.87 | 38.32% +/- 2.97 | 40.44% +/- 2.83 | 2.60 +/- 1.15 pp |
+| NSL-KDD | Joint cap 3,000 | 69.07% +/- 3.38 | 38.81% +/- 3.04 | 40.87% +/- 2.96 | 2.38 +/- 1.34 pp |
 
-| Dataset | Model | Arm | Accuracy | Macro-F1 | Balanced accuracy | Forgetting |
-|---|---|---|---:|---:|---:|---:|
-| NSL-KDD | FT256x4 | Head only | 56.29% | 31.08% | 36.48% | 8.14 pp |
-| NSL-KDD | FT256x4 | Joint cap 3,000 | 71.56% | 41.46% | 42.25% | 1.60 pp |
-| UNSW-NB15 | FT256x4 | Head only | 68.78% | 21.16% | 23.52% | 2.68 pp |
-| UNSW-NB15 | FT256x4 | Joint cap 3,000 | 61.95% | 23.50% | 28.45% | 8.97 pp |
-| CIC-IDS-2017 | FT256x4 | Head only | 64.59% | 21.25% | 25.91% | 9.04 pp |
-| CIC-IDS-2017 | FT256x4 | Joint cap 3,000 | 72.57% | 36.95% | 63.13% | 9.63 pp |
-| CSE-CIC-IDS2018 | FT256x4 | Head only | 79.21% | 19.06% | 21.15% | 2.00 pp |
-| CSE-CIC-IDS2018 | FT256x4 | Joint cap 3,000 | 50.16% | 33.55% | 52.15% | 19.07 pp |
-| MalayaNetwork_GT | FT512x12 | Head only | 56.03% | 11.77% | 15.05% | 3.16 pp |
-| MalayaNetwork_GT | FT512x12 | Joint cap 3,000 | 54.68% | 21.15% | 23.03% | 3.55 pp |
-
-Routing is therefore dataset-dependent. It is favourable across all four
-displayed metrics on NSL-KDD, improves class-balanced coverage at a cost on
-UNSW-NB15, improves coverage without reducing forgetting on CIC-IDS-2017, and
-produces an operationally severe false-positive and retention trade-off on
-CSE-CIC-IDS2018. Malaya remains strongly imbalanced, so overall accuracy alone
-is not an adequate summary.
-
-### 8.2 Explanation and governance evidence
+The low Malaya Macro-F1 and balanced accuracy show that its moderate overall
+accuracy is driven by uneven class performance. The result must not be
+summarized by overall accuracy alone. The high between-seed variability in the
+NSL head-only arm also shows that conclusions must be based on paired,
+multi-seed comparisons rather than one favorable run.
 
 The completed Malaya seed-1 explanation analysis reported 12 silent-drift
 events among 17 eligible transitions (70.59%). ETG recorded six certified
 admissions, four refused admissions, four escalations, one strict
 recertification, and two strict-recertification failures.
 
-### 8.3 Seed-42 open-set and labelled-head pilot
-
-The ReplayIDS expected-contract O1 pilot held FTP-Patator out until the final
-labelled increment. Known-only calibration did not use the test set. Before the
-label arrived, confidence-only, centroid-distance-only, conservative joint, and
-empirical-joint gates all produced 0% unknown recall. The best AUROC was 0.5303,
-the OSCR-style AUC was 0.4699, and the primary candidate buffer contained 509
-known rows and no FTP-Patator rows. The current gate therefore failed as an
-unknown-discovery mechanism.
-
-After the label was supplied, the normal supervised OFRA update achieved
-82.30% FTP-Patator recall. Old-class accuracy changed from 87.28% to 87.01%, a
-reduction of 0.27 percentage points. The experiment did not create a head
-automatically. It supports labelled adaptation only and remains a single-seed,
-single-held-out-class diagnostic.
-
-### 8.4 Seed-42 replay-capacity diagnostic
-
-DICC Job 414908 compared exemplar capacities 50, 500 and 3,000 under the same
-uncapped expected-contract data and `official/joint_cap3000` scoring view.
-Final accuracy increased from 83.62% at replay 50 to 87.08% and 87.62% at
-replay 500 and 3,000. Benign false-positive rate fell from 9.24% to 3.81% and
-2.47%. However, balanced accuracy fell from 68.62% to 52.07% and 42.76%, while
-attack recall fell from 61.06% to 58.31% and 55.46%. Replay 3,000 also reduced
-Macro-F1 from 50.02% to 41.77%.
-
-Neither larger buffer passed the registered minority-performance selection
-rule, so replay 50 remains the reference. `joint_cap3000` is the separate
-router sample cap; it is not the exemplar capacity being tuned. The diagnostic
-uses seed 42 only and does not establish a five-seed ranking.
-
-### 8.5 Paired five-seed checkpoint-selection diagnostic
-
-DICC Job 425539 compared the last family-head epoch with the earliest epoch
-that maximised binary Macro-F1 on a manifest-bound training-only calibration
-split. Seeds `1, 2, 3, 4, 42` were paired on the same fixed data split, model,
-optimizer, replay-50 budget, router, training budget and official
-`joint_cap3000` evaluation arm.
-
-| Metric | Last epoch | Training-only calibration | Paired delta |
-|---|---:|---:|---:|
-| Final accuracy | 85.51% +/- 6.18% | 87.52% +/- 4.78% | +2.02 pp |
-| Final Macro-F1 | 54.40% +/- 5.07% | 56.34% +/- 4.06% | +1.95 pp |
-| Average task accuracy | 79.78% +/- 6.86% | 77.88% +/- 9.57% | -1.91 pp |
-| Forgetting | 3.52% +/- 2.60% | 5.18% +/- 5.43% | +1.66 pp |
-| Attack recall | 85.73% +/- 14.98% | 83.76% +/- 16.72% | -1.97 pp |
-| Benign FPR | 13.10% +/- 8.25% | 10.44% +/- 5.05% | -2.66 pp |
-
-Every paired 95% confidence interval crossed zero. The Holm-adjusted p-value
-for the two designated outcomes, Macro-F1 and forgetting, was 0.755161 for
-each. The candidate therefore changes the trade-off but does not support a
-superiority claim. Last-epoch selection remains the primary protocol.
-
-Per-class evidence is similarly mixed. FTP-Patator F1 rises from 30.9% to
-51.5% on average, while SSH-Patator recall falls from 82.3% to 69.0% and its F1
-falls from 30.4% to 21.0%. Heartbleed has only two official-test rows and one
-calibration row, so it uses the registered fallback and cannot support a strong
-class-level conclusion.
-
 ## 9. What is complete and what remains open
 
 Completed in this release:
 
-- strict five-seed prediction evidence for all five independently processed
-  datasets;
+- large-model MalayaNetwork_GT seeds 1-4;
+- large-model NSL-KDD seeds 1-4;
 - Malaya seed-1 SHAP and ETG analysis from completed DICC Job 389896;
-- three-method attribution-sensitivity pilot on the same routed score;
-- CSE-CIC-IDS2018 strict 8+10-epoch five-seed campaign;
-- seed-42 FTP-Patator open-set and post-label head diagnostic from DICC Job
-  414686;
-- seed-42 replay-capacity diagnostic from DICC Job 414908, with replay 50
-  retained as the next-stage reference;
-- paired five-seed checkpoint-selection diagnostic from DICC Job 425539, with
-  last-epoch retention kept as the primary protocol;
+- CSE-CIC-IDS2018 A100 capacity evidence;
 - executable preprocessing contracts for the five-dataset suite;
 - deterministic result, source-binding, and publication hashes.
 
 Not yet complete:
 
+- the fifth registered seed;
+- new FT-Transformer 512x12 formal results for CIC-IDS-2017, UNSW-NB15, and
+  CSE-CIC-IDS2018;
 - multi-seed SHAP and ETG estimates;
-- rotated held-out-class and multi-seed open-set evaluation;
-- a successful unknown gate or evidence supporting automatic head creation;
-- multi-seed confirmation of any follow-up tuning configuration that improves
-  both aggregate and minority-class operating metrics;
 - inferential tests supporting superiority claims;
 - a deployed feedback loop in which ETG decisions alter future OFRA routing or
   training.
 
-The prediction table is a completed descriptive five-seed record. The open-set
-result is diagnostic and negative for autonomous discovery; it must not be
-promoted to a general open-world claim.
+The available four-seed values are descriptive intermediate evidence. They are
+appropriate for progress reporting and reproducibility review, but they are not
+presented as a complete final-paper result table.
 
 ## 10. Reproducibility and file map
 
@@ -351,8 +268,8 @@ promoted to a general open-world claim.
   recovery;
 - `ofra_encoders/`: FT-Transformer integration;
 - `formal_v2_explanation_etg/`: SHAP and ETG analyzer;
-- `results/`: per-seed JSON, five-seed aggregates, ETG tables, classifier
-  comparisons, and the sanitised open-set pilot binding;
+- `results/`: per-seed JSON, four-seed aggregate, ETG tables, and capacity
+  profile;
 - `reproducibility/`: exact runtime and analysis bindings;
 - `SHA256SUMS.txt`: SHA-256 for every published file other than the manifest
   itself.

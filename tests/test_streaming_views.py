@@ -161,22 +161,6 @@ class StreamingViewTests(unittest.TestCase):
         self.assertIsInstance(restored.lora_alpha, float)
         self.assertIsInstance(restored.focal_gamma, float)
 
-    def test_run_config_validates_optimizer_recipe(self):
-        adamw = RunConfig(
-            optimizer_name="adamw",
-            learning_rate=5e-4,
-            weight_decay=1e-5,
-        )
-        adamw.validate()
-        self.assertEqual(adamw.optimizer_name, "adamw")
-        self.assertEqual(adamw.learning_rate, 5e-4)
-        self.assertEqual(adamw.weight_decay, 1e-5)
-
-        with self.assertRaisesRegex(ValueError, "optimizer_name"):
-            RunConfig(optimizer_name="sgd").validate()
-        with self.assertRaisesRegex(ValueError, "weight_decay"):
-            RunConfig(weight_decay=-1e-5).validate()
-
     def test_exposure_counter_uses_minimum_safe_unsigned_dtype(self):
         self.assertIs(_exposure_counter_dtype(10), np.uint8)
         self.assertIs(_exposure_counter_dtype(255), np.uint8)
