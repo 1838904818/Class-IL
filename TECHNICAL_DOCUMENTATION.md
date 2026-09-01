@@ -283,6 +283,34 @@ rule, so replay 50 remains the reference. `joint_cap3000` is the separate
 router sample cap; it is not the exemplar capacity being tuned. The diagnostic
 uses seed 42 only and does not establish a five-seed ranking.
 
+### 8.5 Paired five-seed checkpoint-selection diagnostic
+
+DICC Job 425539 compared the last family-head epoch with the earliest epoch
+that maximised binary Macro-F1 on a manifest-bound training-only calibration
+split. Seeds `1, 2, 3, 4, 42` were paired on the same fixed data split, model,
+optimizer, replay-50 budget, router, training budget and official
+`joint_cap3000` evaluation arm.
+
+| Metric | Last epoch | Training-only calibration | Paired delta |
+|---|---:|---:|---:|
+| Final accuracy | 85.51% +/- 6.18% | 87.52% +/- 4.78% | +2.02 pp |
+| Final Macro-F1 | 54.40% +/- 5.07% | 56.34% +/- 4.06% | +1.95 pp |
+| Average task accuracy | 79.78% +/- 6.86% | 77.88% +/- 9.57% | -1.91 pp |
+| Forgetting | 3.52% +/- 2.60% | 5.18% +/- 5.43% | +1.66 pp |
+| Attack recall | 85.73% +/- 14.98% | 83.76% +/- 16.72% | -1.97 pp |
+| Benign FPR | 13.10% +/- 8.25% | 10.44% +/- 5.05% | -2.66 pp |
+
+Every paired 95% confidence interval crossed zero. The Holm-adjusted p-value
+for the two designated outcomes, Macro-F1 and forgetting, was 0.755161 for
+each. The candidate therefore changes the trade-off but does not support a
+superiority claim. Last-epoch selection remains the primary protocol.
+
+Per-class evidence is similarly mixed. FTP-Patator F1 rises from 30.9% to
+51.5% on average, while SSH-Patator recall falls from 82.3% to 69.0% and its F1
+falls from 30.4% to 21.0%. Heartbleed has only two official-test rows and one
+calibration row, so it uses the registered fallback and cannot support a strong
+class-level conclusion.
+
 ## 9. What is complete and what remains open
 
 Completed in this release:
@@ -296,6 +324,8 @@ Completed in this release:
   414686;
 - seed-42 replay-capacity diagnostic from DICC Job 414908, with replay 50
   retained as the next-stage reference;
+- paired five-seed checkpoint-selection diagnostic from DICC Job 425539, with
+  last-epoch retention kept as the primary protocol;
 - executable preprocessing contracts for the five-dataset suite;
 - deterministic result, source-binding, and publication hashes.
 
@@ -304,8 +334,8 @@ Not yet complete:
 - multi-seed SHAP and ETG estimates;
 - rotated held-out-class and multi-seed open-set evaluation;
 - a successful unknown gate or evidence supporting automatic head creation;
-- training and evaluation on the newly derived adaptive normal-only protocol;
-- multi-seed confirmation of any selected follow-up tuning configuration;
+- multi-seed confirmation of any follow-up tuning configuration that improves
+  both aggregate and minority-class operating metrics;
 - inferential tests supporting superiority claims;
 - a deployed feedback loop in which ETG decisions alter future OFRA routing or
   training.

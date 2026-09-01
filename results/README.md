@@ -1,8 +1,19 @@
 # Validated result index
 
-This directory contains the completed FT-Transformer 512x12 results available on 11 August 2026. Each dataset was trained and evaluated independently.
+This directory indexes validated evidence available on 1 September 2026. Each
+dataset is trained and evaluated independently under its registered contract.
 
-## Four-seed descriptive aggregate
+## Current paired five-seed checkpoint-selection result
+
+`replayids-d2-checkpoint-selection-paired5/` contains the completed Job
+`425539` comparison between last-epoch retention and training-only checkpoint
+calibration for seeds `1, 2, 3, 4, 42`. Calibration improves final accuracy by
+2.02 percentage points and Macro-F1 by 1.95 points, but reduces average task
+accuracy by 1.91 points, increases forgetting by 1.66 points, and reduces
+attack recall by 1.97 points. Every paired 95% confidence interval crosses
+zero. The candidate is not promoted to the primary protocol.
+
+## Historical four-seed descriptive aggregate
 
 The completed seed set is `1, 2, 3, 4`. These numbers must not be described as a five-seed result.
 
@@ -34,6 +45,8 @@ supervised OFRA update achieved 82.30% new-class recall while old-class accuracy
 fell by 0.27 percentage points. This is single-seed diagnostic evidence and does
 not establish autonomous new-head creation.
 
-## CSE-CIC-IDS2018 status
+## Historical CSE-CIC-IDS2018 capacity snapshot
 
-`cic-ids-2018/capacity_profile.json` is a non-reportable throughput and memory measurement used for resource planning. Formal CSE-CIC-IDS2018 model training was not complete at this release and no performance claim is made from the capacity profile.
+`cic-ids-2018/capacity_profile.json` is the earlier non-reportable throughput
+and memory measurement used for resource planning. It predates the completed
+strict five-seed campaign and must not be used as the current result.
