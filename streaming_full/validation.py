@@ -155,6 +155,9 @@ class RunConfig:
     family_checkpoint_selection: str = "last"
     family_validation_cap_per_label: int = 5000
     family_validation_min_per_label: int = 32
+    family_checkpoint_min_macro_f1_gain: float = 0.01
+    family_checkpoint_max_positive_recall_drop: float = 0.01
+    family_checkpoint_max_negative_fpr_increase: float = 0.01
 
     def __post_init__(self) -> None:
         # JSON writers may emit integral-valued floats such as 16.0 as 16.
@@ -169,6 +172,9 @@ class RunConfig:
             "router_lambda_quantile",
             "ft_attn_dropout",
             "ft_ff_dropout",
+            "family_checkpoint_min_macro_f1_gain",
+            "family_checkpoint_max_positive_recall_drop",
+            "family_checkpoint_max_negative_fpr_increase",
         ):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -211,6 +217,7 @@ class RunConfig:
         if self.family_checkpoint_selection not in {
             "last",
             "training_only_calibration_macro_f1",
+            "training_only_calibration_macro_f1_recall_fpr_guard",
         }:
             raise ValueError("family_checkpoint_selection is unsupported")
         if (
@@ -220,6 +227,19 @@ class RunConfig:
             raise ValueError("family checkpoint selection requires positive task epochs")
         if self.family_validation_min_per_label > self.family_validation_cap_per_label:
             raise ValueError("family validation minimum cannot exceed its cap")
+        for name, value in (
+            ("family_checkpoint_min_macro_f1_gain", self.family_checkpoint_min_macro_f1_gain),
+            (
+                "family_checkpoint_max_positive_recall_drop",
+                self.family_checkpoint_max_positive_recall_drop,
+            ),
+            (
+                "family_checkpoint_max_negative_fpr_increase",
+                self.family_checkpoint_max_negative_fpr_increase,
+            ),
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be in [0, 1]")
         if self.batch_size < self.negative_ratio + 1:
             raise ValueError("batch_size must be at least negative_ratio + 1")
         if self.exemplar_capacity < 0:
@@ -439,6 +459,64 @@ def _binary_macro_f1(confusion: np.ndarray) -> float:
         where=(precision + recall) > 0,
     )
     return float(f1.mean())
+
+
+def _checkpoint_guard_decision(
+    candidate_epoch: int,
+    candidate: dict[str, object],
+    last_epoch: int,
+    last: dict[str, object],
+    *,
+    min_macro_f1_gain: float,
+    max_positive_recall_drop: float,
+    max_negative_fpr_increase: float,
+) -> dict[str, object]:
+    candidate_macro_f1 = float(candidate["binary_macro_f1"])
+    last_macro_f1 = float(last["binary_macro_f1"])
+    candidate_recall = float(candidate["positive_recall"])
+    last_recall = float(last["positive_recall"])
+    candidate_fpr = float(candidate["negative_false_positive_rate"])
+    last_fpr = float(last["negative_false_positive_rate"])
+    macro_f1_gain = candidate_macro_f1 - last_macro_f1
+    positive_recall_drop = last_recall - candidate_recall
+    negative_fpr_increase = candidate_fpr - last_fpr
+    comparison_tolerance = 1e-12
+    passed = bool(
+        macro_f1_gain + comparison_tolerance >= min_macro_f1_gain
+        and positive_recall_drop
+        <= max_positive_recall_drop + comparison_tolerance
+        and negative_fpr_increase
+        <= max_negative_fpr_increase + comparison_tolerance
+    )
+    return {
+        "policy": "macro_f1_gain_with_positive_recall_and_negative_fpr_guard",
+        "thresholds_are_project_defined_pilot_values": True,
+        "floating_point_comparison_tolerance": comparison_tolerance,
+        "candidate_epoch": int(candidate_epoch),
+        "last_epoch": int(last_epoch),
+        "candidate": {
+            "binary_macro_f1": candidate_macro_f1,
+            "positive_recall": candidate_recall,
+            "negative_false_positive_rate": candidate_fpr,
+        },
+        "last": {
+            "binary_macro_f1": last_macro_f1,
+            "positive_recall": last_recall,
+            "negative_false_positive_rate": last_fpr,
+        },
+        "differences_candidate_minus_last": {
+            "binary_macro_f1": macro_f1_gain,
+            "positive_recall": candidate_recall - last_recall,
+            "negative_false_positive_rate": negative_fpr_increase,
+        },
+        "requirements": {
+            "minimum_macro_f1_gain": float(min_macro_f1_gain),
+            "maximum_positive_recall_drop": float(max_positive_recall_drop),
+            "maximum_negative_fpr_increase": float(max_negative_fpr_increase),
+        },
+        "passed": passed,
+        "decision": "restore_candidate" if passed else "retain_last_epoch",
+    }
 
 
 def _update_index_digest(digest: "hashlib._Hash", indices: np.ndarray) -> None:
@@ -996,6 +1074,19 @@ class StreamingOFRA:
             "calibration_algorithm": self.training_calibration.algorithm,
             "calibration_fraction": self.training_calibration.calibration_fraction,
         }
+        if mode == "training_only_calibration_macro_f1_recall_fpr_guard":
+            contract["selection_guard"] = {
+                "policy": "macro_f1_gain_with_positive_recall_and_negative_fpr_guard",
+                "minimum_macro_f1_gain": self.config.family_checkpoint_min_macro_f1_gain,
+                "maximum_positive_recall_drop": (
+                    self.config.family_checkpoint_max_positive_recall_drop
+                ),
+                "maximum_negative_fpr_increase": (
+                    self.config.family_checkpoint_max_negative_fpr_increase
+                ),
+                "thresholds_are_project_defined_pilot_values": True,
+                "fallback": "retain_last_epoch",
+            }
         if rows_per_label < self.config.family_validation_min_per_label:
             contract.update(
                 {
@@ -1084,6 +1175,12 @@ class StreamingOFRA:
             "confusion_matrix": confusion.tolist(),
             "accuracy": float(np.trace(confusion) / max(confusion.sum(), 1)),
             "binary_macro_f1": _binary_macro_f1(confusion),
+            "positive_recall": float(
+                confusion[1, 1] / max(confusion[1].sum(), 1)
+            ),
+            "negative_false_positive_rate": float(
+                confusion[0, 1] / max(confusion[0].sum(), 1)
+            ),
             "state_unchanged": True,
             "rng_unchanged": True,
         }
@@ -1572,24 +1669,55 @@ class StreamingOFRA:
                     unit_seconds,
                 )
         last_epoch_state_sha256 = _module_state_sha256(head)
+        selected_epoch = self.config.epochs_per_task
+        selected_metric: float | None = None
+        guard_decision: dict[str, object] | None = None
         if selection_applied:
             if best_head_state is None or best_epoch is None or best_metric is None:
                 raise RuntimeError("checkpoint selection did not produce a best epoch")
-            head.load_state_dict(best_head_state, strict=True)
+            if self.config.family_checkpoint_selection == "training_only_calibration_macro_f1":
+                selected_epoch = int(best_epoch)
+                selected_metric = float(best_metric)
+                head.load_state_dict(best_head_state, strict=True)
+            else:
+                candidate_validation = history[best_epoch - 1][
+                    "training_only_calibration"
+                ]
+                last_validation = history[-1]["training_only_calibration"]
+                guard_decision = _checkpoint_guard_decision(
+                    best_epoch,
+                    candidate_validation,
+                    self.config.epochs_per_task,
+                    last_validation,
+                    min_macro_f1_gain=(
+                        self.config.family_checkpoint_min_macro_f1_gain
+                    ),
+                    max_positive_recall_drop=(
+                        self.config.family_checkpoint_max_positive_recall_drop
+                    ),
+                    max_negative_fpr_increase=(
+                        self.config.family_checkpoint_max_negative_fpr_increase
+                    ),
+                )
+                if guard_decision["passed"] is True:
+                    selected_epoch = int(best_epoch)
+                    selected_metric = float(best_metric)
+                    head.load_state_dict(best_head_state, strict=True)
+                else:
+                    selected_metric = float(last_validation["binary_macro_f1"])
         selected_state_sha256 = _module_state_sha256(head)
         selection_record = {
             **selection_contract,
             "max_epochs": self.config.epochs_per_task,
-            "selected_epoch": (
-                int(best_epoch) if selection_applied and best_epoch is not None else self.config.epochs_per_task
-            ),
-            "selected_metric": (
-                float(best_metric) if selection_applied and best_metric is not None else None
-            ),
+            "selected_epoch": selected_epoch,
+            "selected_metric": selected_metric,
+            "candidate_epoch": int(best_epoch) if best_epoch is not None else None,
+            "candidate_metric": float(best_metric) if best_metric is not None else None,
+            "guard_decision": guard_decision,
             "last_epoch_state_sha256": last_epoch_state_sha256,
             "selected_state_sha256": selected_state_sha256,
             "restored_nonfinal_epoch": bool(
-                selection_applied and best_epoch != self.config.epochs_per_task
+                selection_applied and selected_epoch != self.config.epochs_per_task
             ),
         }
         if history:
@@ -3213,9 +3341,13 @@ def _validate_training_instrumentation(
                 f"result class {class_id} checkpoint-selection state binding failed: {path}"
             )
         if selection.get("applied") is True:
+            mode = selection.get("mode")
             if (
-                selection.get("mode")
-                != "training_only_calibration_macro_f1"
+                mode
+                not in {
+                    "training_only_calibration_macro_f1",
+                    "training_only_calibration_macro_f1_recall_fpr_guard",
+                }
                 or selection.get("metric") != "binary_macro_f1"
                 or selection.get("tie_break") != "earliest_epoch"
                 or selection.get("official_test_used") is not False
@@ -3233,21 +3365,67 @@ def _validate_training_instrumentation(
                 )
             metrics = [float(item["binary_macro_f1"]) for item in validation]
             selected_index = max(range(len(metrics)), key=lambda index: metrics[index])
+            if any(
+                    item.get("state_unchanged") is not True
+                    or item.get("rng_unchanged") is not True
+                    for item in validation
+            ):
+                raise RuntimeError(
+                    f"result class {class_id} checkpoint-selection invariant failed: {path}"
+                )
+            if mode == "training_only_calibration_macro_f1":
+                expected_epoch = selected_index + 1
+                expected_metric = metrics[selected_index]
+                if selection.get("guard_decision") is not None:
+                    raise RuntimeError(
+                        f"result class {class_id} has an unexpected checkpoint guard: {path}"
+                    )
+            else:
+                guard_contract = selection.get("selection_guard")
+                if not isinstance(guard_contract, dict):
+                    raise RuntimeError(
+                        f"result class {class_id} lacks checkpoint guard contract: {path}"
+                    )
+                expected_guard = _checkpoint_guard_decision(
+                    selected_index + 1,
+                    validation[selected_index],
+                    epochs,
+                    validation[-1],
+                    min_macro_f1_gain=float(guard_contract["minimum_macro_f1_gain"]),
+                    max_positive_recall_drop=float(
+                        guard_contract["maximum_positive_recall_drop"]
+                    ),
+                    max_negative_fpr_increase=float(
+                        guard_contract["maximum_negative_fpr_increase"]
+                    ),
+                )
+                if canonical_sha256(selection.get("guard_decision")) != canonical_sha256(
+                    expected_guard
+                ):
+                    raise RuntimeError(
+                        f"result class {class_id} checkpoint guard record failed: {path}"
+                    )
+                expected_epoch = selected_index + 1 if expected_guard["passed"] else epochs
+                expected_metric = (
+                    metrics[selected_index] if expected_guard["passed"] else metrics[-1]
+                )
             if (
-                selection.get("selected_epoch") != selected_index + 1
+                selection.get("candidate_epoch") != selected_index + 1
                 or not math.isclose(
-                    float(selection.get("selected_metric")),
+                    float(selection.get("candidate_metric")),
                     metrics[selected_index],
                     rel_tol=0.0,
                     abs_tol=0.0,
                 )
-                or selection.get("restored_nonfinal_epoch")
-                != (selected_index + 1 != epochs)
-                or any(
-                    item.get("state_unchanged") is not True
-                    or item.get("rng_unchanged") is not True
-                    for item in validation
+                or selection.get("selected_epoch") != expected_epoch
+                or not math.isclose(
+                    float(selection.get("selected_metric")),
+                    expected_metric,
+                    rel_tol=0.0,
+                    abs_tol=0.0,
                 )
+                or selection.get("restored_nonfinal_epoch")
+                != (expected_epoch != epochs)
             ):
                 raise RuntimeError(
                     f"result class {class_id} checkpoint-selection metric failed: {path}"
@@ -3698,10 +3876,7 @@ def _run_manifest_transaction(
     if recovery_enabled and len(seeds) != 1:
         raise ValueError("recovery mode requires exactly one seed per Slurm job")
     manifest = load_manifest(manifest_path, verify_hashes=config.verify_shard_hashes)
-    selection_uses_calibration = (
-        config.family_checkpoint_selection
-        == "training_only_calibration_macro_f1"
-    )
+    selection_uses_calibration = config.family_checkpoint_selection != "last"
     if selection_uses_calibration != (training_calibration_audit_path is not None):
         raise ValueError(
             "training calibration audit must be provided exactly when calibration "

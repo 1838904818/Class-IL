@@ -6,20 +6,24 @@ MalayaNetwork_GT external application-traffic dataset form the registered
 five-dataset suite. Every dataset has its own preprocessing contract and is
 trained and evaluated independently.
 
-## Latest focused update: paired checkpoint selection
+## Latest focused update: guarded checkpoint selection
 
-The 2 September 2026 update is limited to one paired five-seed experiment:
-training-only best-epoch selection versus retaining the last epoch on the
-ReplayIDS CIC-IDS-2017 D2 protocol. The implementation, registered protocol,
-aggregate and per-class results, W&B run registry, and checksums are available
-under [`results/replayids-d2-checkpoint-selection-paired5/`](results/replayids-d2-checkpoint-selection-paired5/).
-The aligned manuscript and technical document are under
-[`paper/checkpoint_selection_2026-09-01/`](paper/checkpoint_selection_2026-09-01/).
+The 3 September 2026 update adds a second paired five-seed checkpoint
+experiment on the same ReplayIDS-aligned CIC-IDS-2017 D2 protocol. The new
+candidate admits a non-final checkpoint only when training-only calibration
+meets project-defined Macro-F1, positive-recall, and negative-FPR guards.
+Implementation, tests, registered evidence, independent recomputation, W&B run
+registry, and checksums are under
+[`results/replayids-d2-checkpoint-recall-guard-paired5/`](results/replayids-d2-checkpoint-recall-guard-paired5/).
+The aligned v3.0 manuscript and technical document are under
+[`paper/guarded_checkpoint_2026-09-03/`](paper/guarded_checkpoint_2026-09-03/).
 
-The experiment did not establish a reliable overall improvement: final
-accuracy and Macro-F1 increased numerically, while average task accuracy and
-attack recall declined and forgetting increased. All paired 95% confidence
-intervals crossed zero, so last-epoch selection remains the primary protocol.
+Relative to the immutable last-epoch baseline, the guarded rule changes final
+accuracy by +1.59 percentage points, Macro-F1 by +1.53, forgetting by +0.04,
+attack recall by -2.29, and benign FPR by -2.20. Every paired 95% confidence
+interval includes zero. The guard largely removes the first selector's mean
+forgetting penalty, but it does not establish superiority; last epoch remains
+the registered primary protocol.
 
 The current model uses an FT-Transformer encoder, family-specific low-rank
 binary heads, DP-Means centroid routing, bounded exemplar memory, and five
@@ -27,40 +31,15 @@ matched scoring arms. The explanation stage uses SHAP expected gradients on
 fixed checkpoint probes. ETG consumes explanation and performance evidence to
 produce an offline governance ledger; it does not alter classifier predictions.
 
-## Evidence available in this release
+## Current evidence boundary
 
-| Dataset or stage | Completed evidence | Status |
-|---|---|---|
-| MalayaNetwork_GT | FT-Transformer 512x12, seeds 1-4 | Four-seed descriptive result |
-| NSL-KDD | FT-Transformer 512x12, seeds 1-4 | Four-seed descriptive result |
-| Malaya explanation and ETG | Seed 1, completed DICC Job 389896 | Single-seed partial analysis |
-| CSE-CIC-IDS2018 | A100 throughput and memory profile, Job 390164 | Capacity evidence only |
-| CIC-IDS-2017 and UNSW-NB15 | Preprocessing and training implementation | No new 512x12 formal result in this snapshot |
-
-The completed seed set is `1, 2, 3, 4`. It is not a five-seed result. The fifth
-registered seed and the remaining large-model dataset runs are still pending.
-The detailed metrics, per-seed files, and hashes are in
-[`results/README.md`](results/README.md) and
-[`results/aggregate_4seed.json`](results/aggregate_4seed.json).
-
-A consolidated description of the architecture, preprocessing contracts,
-training protocol, SHAP analysis, ETG logic, results, and evidence boundaries
-is available in [`TECHNICAL_DOCUMENTATION.md`](TECHNICAL_DOCUMENTATION.md).
-
-## Four-seed headline results
-
-Values below are mean +/- sample standard deviation across seeds 1-4.
-
-| Dataset | Scoring arm | Accuracy | Macro-F1 | Forgetting |
-|---|---|---:|---:|---:|
-| MalayaNetwork_GT | Joint full | 56.14% +/- 3.00 | 21.04% +/- 3.85 | 3.23 +/- 0.88 pp |
-| MalayaNetwork_GT | Joint cap 3,000 | 54.37% +/- 3.02 | 20.70% +/- 3.72 | 3.79 +/- 0.64 pp |
-| NSL-KDD | Joint full | 68.51% +/- 2.87 | 38.32% +/- 2.97 | 2.60 +/- 1.15 pp |
-| NSL-KDD | Joint cap 3,000 | 69.07% +/- 3.38 | 38.81% +/- 3.04 | 2.38 +/- 1.34 pp |
-
-These results are descriptive. They do not establish statistical superiority,
-and the low Malaya Macro-F1 indicates weak minority-class performance despite
-moderate overall accuracy.
+Five-seed prediction evidence is complete for the registered five-dataset
+suite, with each dataset processed and evaluated independently. The guarded
+checkpoint result is a paired five-seed mechanism ablation on one fixed D2 data
+split. Source-bound SHAP and offline ETG evidence remains a Malaya seed-1
+analysis, and protocol-matched external continual-learning baselines remain
+open. No current result supports universal superiority or a deployed adaptive
+OFRA-ETG control loop.
 
 ## Decision architecture
 

@@ -4,6 +4,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,11 @@ import torch
 
 from streaming_full.data import sha256_file
 from streaming_full.smoke_test import _make_synthetic_manifest
-from streaming_full.validation import RunConfig, run_manifest
+from streaming_full.validation import (
+    RunConfig,
+    _checkpoint_guard_decision,
+    run_manifest,
+)
 
 
 def _calibration_audit(manifest_path: Path) -> Path:
@@ -123,6 +128,18 @@ def _config() -> RunConfig:
     )
 
 
+def _guard_config() -> RunConfig:
+    return replace(
+        _config(),
+        family_checkpoint_selection=(
+            "training_only_calibration_macro_f1_recall_fpr_guard"
+        ),
+        family_checkpoint_min_macro_f1_gain=0.01,
+        family_checkpoint_max_positive_recall_drop=0.01,
+        family_checkpoint_max_negative_fpr_increase=0.01,
+    )
+
+
 class TrainingCalibrationSelectionTests(unittest.TestCase):
     def setUp(self) -> None:
         torch.set_num_threads(1)
@@ -218,6 +235,95 @@ class TrainingCalibrationSelectionTests(unittest.TestCase):
                     seeds=[61],
                     output_dir=root / "missing",
                     config=_config(),
+                )
+
+    def test_checkpoint_guard_accepts_only_a_bounded_improvement(self) -> None:
+        candidate = {
+            "binary_macro_f1": 0.72,
+            "positive_recall": 0.79,
+            "negative_false_positive_rate": 0.11,
+        }
+        last = {
+            "binary_macro_f1": 0.70,
+            "positive_recall": 0.80,
+            "negative_false_positive_rate": 0.10,
+        }
+        decision = _checkpoint_guard_decision(
+            7,
+            candidate,
+            10,
+            last,
+            min_macro_f1_gain=0.01,
+            max_positive_recall_drop=0.01,
+            max_negative_fpr_increase=0.01,
+        )
+        self.assertTrue(decision["passed"])
+        self.assertEqual(decision["decision"], "restore_candidate")
+
+    def test_checkpoint_guard_rejects_recall_or_fpr_regression(self) -> None:
+        last = {
+            "binary_macro_f1": 0.70,
+            "positive_recall": 0.80,
+            "negative_false_positive_rate": 0.10,
+        }
+        for candidate in (
+            {
+                "binary_macro_f1": 0.72,
+                "positive_recall": 0.78,
+                "negative_false_positive_rate": 0.10,
+            },
+            {
+                "binary_macro_f1": 0.72,
+                "positive_recall": 0.80,
+                "negative_false_positive_rate": 0.12,
+            },
+            {
+                "binary_macro_f1": 0.705,
+                "positive_recall": 0.80,
+                "negative_false_positive_rate": 0.10,
+            },
+        ):
+            with self.subTest(candidate=candidate):
+                decision = _checkpoint_guard_decision(
+                    7,
+                    candidate,
+                    10,
+                    last,
+                    min_macro_f1_gain=0.01,
+                    max_positive_recall_drop=0.01,
+                    max_negative_fpr_increase=0.01,
+                )
+                self.assertFalse(decision["passed"])
+                self.assertEqual(decision["decision"], "retain_last_epoch")
+
+    def test_guarded_selection_records_auditable_decision(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="ofra_checkpoint_guard_") as tmp:
+            root = Path(tmp)
+            cache = root / "cache"
+            cache.mkdir()
+            manifest = _make_synthetic_manifest(cache)
+            audit = _calibration_audit(manifest)
+            output = run_manifest(
+                manifest,
+                seeds=[67],
+                output_dir=root / "output",
+                config=_guard_config(),
+                training_calibration_audit_path=audit,
+            )
+            result = output["results"][0]
+            for record in result["training_exposure_records"].values():
+                selection = record["checkpoint_selection"]
+                self.assertTrue(selection["applied"])
+                self.assertIsInstance(selection["guard_decision"], dict)
+                self.assertIn(
+                    selection["guard_decision"]["decision"],
+                    {"restore_candidate", "retain_last_epoch"},
+                )
+                self.assertEqual(
+                    selection["selected_epoch"],
+                    selection["candidate_epoch"]
+                    if selection["guard_decision"]["passed"]
+                    else selection["max_epochs"],
                 )
 
 
