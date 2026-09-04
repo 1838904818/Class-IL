@@ -46,9 +46,13 @@ scientific validity or statistical significance.
 - Verify method-pair agreement and ETG status sensitivity, drift
   denominators, threshold settings, missing/undefined cases, and uncertainty.
 - Confirm the completed aggregate W&B record and its allowlisted outputs.
-- Package and test the exact v9 analysis code for portable reproduction.
-  This status register does **not** mean the repository's existing analysis
-  entry point has been upgraded to the v9 runtime.
+- The versioned offline source snapshot is available at
+  `reproducibility/attribution_etg_v9/README.md`: 46 offline unit tests and
+  its isolated import inventory passed. Full-data reproduction and network
+  publication are not covered by those tests. The repository's existing
+  analysis entry point has not been overwritten. The snapshot also records
+  the retrospectively verified recovery import missing from the original
+  source manifest; this does not close its pre-submission provenance gap.
 - Update the manuscript and technical documentation only after those checks;
   keep earlier single-seed pilots and this interim state distinct from the
   eventual five-seed result.

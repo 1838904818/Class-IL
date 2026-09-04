@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Five hash-bound CPU-reconstruction attribution seeds plus a five-seed ETG robustness aggregate.
+# No training and no predictive-model or threshold selection.
+#SBATCH --job-name=ofra-mal-attr-etg5-v9
+#SBATCH --partition=cpu-epyc-genoa
+#SBATCH --qos=long
+#SBATCH --time=36:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
+
+set -euo pipefail
+umask 077
+
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export PYTHONUNBUFFERED=1
+export PYTHONNOUSERSITE=1
+export PYTHONDONTWRITEBYTECODE=1
+unset PYTHONOPTIMIZE
+export WANDB_MODE=online
+export WANDB_CONSOLE=off
+export WANDB_DISABLE_CODE=true
+export WANDB_DISABLE_GIT=true
+export WANDB_ERROR_REPORTING=false
+export WANDB_SENTRY_DSN=""
+export WANDB_LOG_MODEL=false
+export WANDB_SILENT=true
+
+OPERATION_DIR="${HOME}/ofra-etg/operations/20260904-malaya-ft512x12-attribution-etg-five-seed-v9"
+RUNTIME_ROOT="${OPERATION_DIR}/runtime"
+TRANSFER_ROOT="${HOME}/ofra-etg/transfers/20260730/core"
+PROJECT_DIR="${TRANSFER_ROOT}/ofra-etg-core-code/ofra_fttransformer_mvp_v1_20260804"
+CACHE_DIR="/scr/user/${USER}/ofra-etg/transfers/20260730/core/ofra_formal_v3_cache_20260716/malaya-network-gt"
+SCRATCH_ROOT="/scr/user/${USER}/ofra-etg/attribution-etg-five-seed-20260904-v9"
+PROTECTED_ROOT="${HOME}/ofra-etg/protected-results/20260904-malaya-ft512x12-attribution-etg-five-seed-v9"
+FIDELITY_PREFLIGHT="${SCRATCH_ROOT}/all-seed-score-fidelity-preflight.json"
+VENV="${HOME}/.venvs/ofra-etg"
+NETRC="${HOME}/.netrc"
+EXPLANATION_SENTINEL="${VENV}/requirements-explanation.sha256"
+BINDINGS="${OPERATION_DIR}/MALAYA_FT512X12_ATTRIBUTION_ETG_FIVE_SEED_BINDINGS.json"
+METHOD_PROTOCOL="${RUNTIME_ROOT}/formal_v2_explanation_etg/DRIFT_ETG_METHOD_PROTOCOL.md"
+CAMPAIGN_PROTOCOL="${OPERATION_DIR}/ATTRIBUTION_ETG_FIVE_SEED_PROTOCOL.md"
+GOVERNANCE="${OPERATION_DIR}/ATTRIBUTION_WANDB_GOVERNANCE.json"
+SOURCE_MANIFEST="${OPERATION_DIR}/OPERATION_PAYLOAD_MANIFEST.sha256"
+RUNTIME_MANIFEST="${OPERATION_DIR}/PROJECT_RUNTIME_MANIFEST.sha256"
+EXPECTED_SOURCE_MANIFEST_SHA="007113937a2f0b6b9846416e3b4c7dfa8053e7d9a336d89e5d81ccf637aabb66"
+EXPECTED_RUNTIME_MANIFEST_SHA="e08d91a77c95312e9136a7f59a1256b19127e8292e2f8246f825baa6260df2b0"
+EXPECTED_SENTINEL_SHA="468f4863266e1842114226ed49b2b29089e51b4609df6e291cbf97a04e12809d"
+
+for required in "$OPERATION_DIR" "$RUNTIME_ROOT" "$PROJECT_DIR" "$CACHE_DIR" "$BINDINGS" \
+  "$METHOD_PROTOCOL" "$CAMPAIGN_PROTOCOL" "$GOVERNANCE" "$SOURCE_MANIFEST" \
+  "$RUNTIME_MANIFEST"; do
+  [[ -e "$required" ]] || { echo "Missing required path: $required" >&2; exit 66; }
+done
+[[ -x "${VENV}/bin/python" ]] || { echo "Missing environment: ${VENV}" >&2; exit 66; }
+[[ -f "$NETRC" && "$(stat -c '%a' "$NETRC")" == "600" ]] || {
+  echo "Missing protected W&B login or ~/.netrc is not mode 600" >&2
+  exit 77
+}
+[[ -s "$EXPLANATION_SENTINEL" ]] || { echo "Missing explanation dependency sentinel" >&2; exit 66; }
+
+[[ "$(sha256sum "$SOURCE_MANIFEST" | awk '{print $1}')" == "$EXPECTED_SOURCE_MANIFEST_SHA" ]] || exit 65
+[[ "$(sha256sum "$RUNTIME_MANIFEST" | awk '{print $1}')" == "$EXPECTED_RUNTIME_MANIFEST_SHA" ]] || exit 65
+[[ "$(sha256sum "$EXPLANATION_SENTINEL" | awk '{print $1}')" == "$EXPECTED_SENTINEL_SHA" ]] || exit 65
+( cd "$OPERATION_DIR" && sha256sum -c OPERATION_PAYLOAD_MANIFEST.sha256 --status )
+( cd "$PROJECT_DIR" && sha256sum -c "$RUNTIME_MANIFEST" --status )
+( cd "$PROJECT_DIR/hpc" && sha256sum -c "$EXPLANATION_SENTINEL" --status )
+echo "BOUND_SOURCE_VERIFICATION=PASS"
+
+module purge
+export PYTHONPATH="${RUNTIME_ROOT}:${PROJECT_DIR}"
+cd "$PROJECT_DIR"
+
+echo "CAMPAIGN=MALAYA_FT512X12_ATTRIBUTION_ETG_FIVE_SEED"
+echo "DATASET=malaya-network-gt"
+echo "TRAINING=none"
+echo "COMPUTED_SEEDS=1,2,3,4,42"
+echo "AGGREGATE_SEEDS=1,2,3,4,42"
+echo "ATTRIBUTION_METHODS=expected_gradients,feature_ablation,gradient_x_input"
+echo "SCORE_TARGET=joint_cap3000_class_margin_exact_forward"
+echo "ETG_MODE=offline_post_hoc_non_suppressing_ledger"
+
+srun "${VENV}/bin/python" -c \
+  'from importlib import metadata; import sys, torch, numpy; expected={"torch":"2.6.0+cu118","numpy":"2.2.6","shap":"0.51.0","wandb":"0.23.0"}; actual={"torch":torch.__version__,"numpy":numpy.__version__,"shap":metadata.version("shap"),"wandb":metadata.version("wandb")}; sys.exit(f"environment mismatch: {actual}") if actual != expected else None; sys.exit(f"unexpected Python: {sys.version_info[:2]}") if sys.version_info[:2] != (3,11) else None'
+
+srun "${VENV}/bin/python" -u -m formal_v2_explanation_etg.verify_multiseed_bindings \
+  --bindings "$BINDINGS" \
+  --operation-dir "$OPERATION_DIR" \
+  --home "$HOME" \
+  --scratch "/scr/user/${USER}"
+
+srun "${VENV}/bin/python" -u -m unittest \
+  formal_v2_explanation_etg.test_joint_margin_exact_forward \
+  formal_v2_explanation_etg.test_preflight_score_fidelity \
+  formal_v2_explanation_etg.test_attribution_robustness \
+  formal_v2_explanation_etg.test_aggregate_attribution_robustness \
+  formal_v2_explanation_etg.test_completed_output_resume \
+  formal_v2_explanation_etg.test_publish_robustness_wandb \
+  formal_v2_explanation_etg.test_verify_multiseed_bindings
+
+mkdir -p "$SCRATCH_ROOT"
+
+# Fail every seed/checkpoint/class numerical contract before the first SHAP call.
+srun "${VENV}/bin/python" -u -m formal_v2_explanation_etg.preflight_score_fidelity \
+  --bindings "$BINDINGS" \
+  --method-protocol "$METHOD_PROTOCOL" \
+  --output "$FIDELITY_PREFLIGHT" \
+  --cpu-threads "${SLURM_CPUS_PER_TASK}" \
+  --reuse-complete-output \
+  --confirm RUN_SCORE_FIDELITY_PREFLIGHT_CPU
+
+job_for_seed() {
+  case "$1" in
+    1) echo 388991 ;;
+    2) echo 394503 ;;
+    3) echo 394646 ;;
+    4) echo 394745 ;;
+    42) echo 412039 ;;
+    *) echo "Unexpected seed" >&2; return 64 ;;
+  esac
+}
+
+verify_protected_seed() {
+  local seed="$1"
+  local path="${PROTECTED_ROOT}/seed-${seed}"
+  [[ -f "${path}/SHA256SUMS" ]] || return 1
+  ( cd "$path" && sha256sum -c SHA256SUMS --status ) || return 1
+  srun "${VENV}/bin/python" -c \
+    'import json,sys; from formal_v2_explanation_etg.aggregate_attribution_robustness import validate_artifact; p=sys.argv[1]; s=int(sys.argv[2]); validate_artifact(json.load(open(p,encoding="utf-8")),s)' \
+    "${path}/robustness/attribution_robustness.json" "$seed"
+}
+
+for seed in 1 2 3 4 42; do
+  if [[ "$seed" == "1" ]]; then
+    RESULT_DIR="/scr/user/${USER}/ofra-etg/mvp/388991/malaya-ft512x12-formal"
+  else
+    RESULT_DIR="/scr/user/${USER}/ofra-etg/final-ft512x12-20260809/malaya-network-gt/seed-${seed}"
+  fi
+  SEED_ROOT="${SCRATCH_ROOT}/seed-${seed}"
+  EXPECTED_DIR="${SEED_ROOT}/expected-gradients-etg"
+  ROBUST_DIR="${SEED_ROOT}/attribution-robustness"
+  PROTECTED_SEED="${PROTECTED_ROOT}/seed-${seed}"
+  if verify_protected_seed "$seed"; then
+    echo "SEED_${seed}_PROTECTED_RESUME_SKIP=1"
+    continue
+  fi
+  [[ ! -e "$PROTECTED_SEED" ]] || {
+    echo "Refusing incomplete or corrupt protected seed: $PROTECTED_SEED" >&2
+    exit 73
+  }
+  mkdir -p "$SEED_ROOT"
+  srun "${VENV}/bin/python" -u -m formal_v2_explanation_etg.analyze \
+    --result-dir "$RESULT_DIR" \
+    --seed "$seed" \
+    --method-protocol "$METHOD_PROTOCOL" \
+    --output-dir "$EXPECTED_DIR" \
+    --device cpu \
+    --cpu-threads "${SLURM_CPUS_PER_TASK}" \
+    --shap-nsamples 64 \
+    --shap-batch-size 16 \
+    --resume \
+    --reuse-complete-output \
+    --confirm RUN_FORMAL_V2_CPU
+
+  if [[ -e "$ROBUST_DIR" ]]; then
+    [[ -d "$ROBUST_DIR" && ! -L "$ROBUST_DIR" ]] || {
+      echo "Existing robustness output is not a plain directory" >&2
+      exit 73
+    }
+    srun "${VENV}/bin/python" -u -m formal_v2_explanation_etg.attribution_robustness \
+      --result-dir "$RESULT_DIR" \
+      --cache-dir "$CACHE_DIR" \
+      --seed "$seed" \
+      --source-training-job "$(job_for_seed "$seed")" \
+      --expected-analysis "${EXPECTED_DIR}/analysis.json" \
+      --expected-attributions "${EXPECTED_DIR}/attributions.npz" \
+      --output-dir "$ROBUST_DIR" \
+      --device cpu \
+      --batch-size 4 \
+      --ablation-batch-size 256 \
+      --skip-integrated-diagnostic \
+      --reuse-complete-output
+    echo "SEED_${seed}_ROBUSTNESS_RESUME_SKIP=1"
+  else
+    ROBUST_STAGE="${SEED_ROOT}/.attribution-robustness-${SLURM_JOB_ID}.staging"
+    [[ ! -e "$ROBUST_STAGE" ]] || { echo "Unexpected current-job robustness stage" >&2; exit 73; }
+    srun "${VENV}/bin/python" -u -m formal_v2_explanation_etg.attribution_robustness \
+      --result-dir "$RESULT_DIR" \
+      --cache-dir "$CACHE_DIR" \
+      --seed "$seed" \
+      --source-training-job "$(job_for_seed "$seed")" \
+      --expected-analysis "${EXPECTED_DIR}/analysis.json" \
+      --expected-attributions "${EXPECTED_DIR}/attributions.npz" \
+      --output-dir "$ROBUST_STAGE" \
+      --device cpu \
+      --batch-size 4 \
+      --ablation-batch-size 256 \
+      --skip-integrated-diagnostic
+    [[ ! -e "$ROBUST_DIR" ]] || { echo "Refusing robustness overwrite" >&2; exit 73; }
+    mv "$ROBUST_STAGE" "$ROBUST_DIR"
+  fi
+
+  PROTECTED_STAGE="${PROTECTED_ROOT}/.seed-${seed}-${SLURM_JOB_ID}.staging"
+  [[ ! -e "$PROTECTED_STAGE" ]] || { echo "Unexpected current-job protected stage" >&2; exit 73; }
+  mkdir -p "$PROTECTED_STAGE/expected-gradients-etg" "$PROTECTED_STAGE/robustness"
+  cp "$EXPECTED_DIR/analysis.json" "$EXPECTED_DIR/analysis_manifest.json" \
+    "$EXPECTED_DIR/analysis_protocol.json" "$EXPECTED_DIR/attributions.npz" \
+    "$EXPECTED_DIR/checkpoint_metrics.csv" "$EXPECTED_DIR/transition_metrics.csv" \
+    "$EXPECTED_DIR/threshold_sensitivity.csv" "$EXPECTED_DIR/etg_ledger.csv" \
+    "$PROTECTED_STAGE/expected-gradients-etg/"
+  cp "$ROBUST_DIR/attribution_robustness.json" \
+    "$ROBUST_DIR/attribution_robustness_mean_attributions.npz" \
+    "$PROTECTED_STAGE/robustness/"
+  cp "$RESULT_DIR/protocol.json" "$RESULT_DIR/result_seed_${seed}.json" \
+    "$RESULT_DIR/summary.json" "$BINDINGS" "$METHOD_PROTOCOL" "$CAMPAIGN_PROTOCOL" \
+    "$PROTECTED_STAGE/"
+  MANIFEST_TMP="${SEED_ROOT}/protected-seed-${seed}-SHA256SUMS.${SLURM_JOB_ID}.tmp"
+  [[ ! -e "$MANIFEST_TMP" ]] || { echo "Unexpected seed manifest temp" >&2; exit 73; }
+  ( cd "$PROTECTED_STAGE" && find . -type f -print0 | sort -z | xargs -0 sha256sum > "$MANIFEST_TMP" )
+  mv "$MANIFEST_TMP" "$PROTECTED_STAGE/SHA256SUMS"
+  ( cd "$PROTECTED_STAGE" && sha256sum -c SHA256SUMS --status )
+  mkdir -p "$PROTECTED_ROOT"
+  mv "$PROTECTED_STAGE" "$PROTECTED_SEED"
+  verify_protected_seed "$seed"
+  echo "SEED_${seed}_PROTECTED_COMPLETE=1"
+done
+
+FINAL_PROTECTED="${PROTECTED_ROOT}/five-seed-aggregate"
+if [[ -f "${FINAL_PROTECTED}/SHA256SUMS" ]]; then
+  ( cd "$FINAL_PROTECTED" && sha256sum -c SHA256SUMS --status )
+  echo "FIVE_SEED_AGGREGATE_ALREADY_PROTECTED=1"
+  exit 0
+fi
+[[ ! -e "$FINAL_PROTECTED" ]] || { echo "Refusing incomplete aggregate overwrite" >&2; exit 73; }
+
+AGGREGATE_DIR="${SCRATCH_ROOT}/five-seed-aggregate"
+mkdir -p "$AGGREGATE_DIR"
+SEED1_ARG="1=${PROTECTED_ROOT}/seed-1/robustness/attribution_robustness.json"
+SEED2_ARG="2=${PROTECTED_ROOT}/seed-2/robustness/attribution_robustness.json"
+SEED3_ARG="3=${PROTECTED_ROOT}/seed-3/robustness/attribution_robustness.json"
+SEED4_ARG="4=${PROTECTED_ROOT}/seed-4/robustness/attribution_robustness.json"
+SEED42_ARG="42=${PROTECTED_ROOT}/seed-42/robustness/attribution_robustness.json"
+srun "${VENV}/bin/python" -u -m formal_v2_explanation_etg.aggregate_attribution_robustness \
+  --artifact "$SEED1_ARG" --artifact "$SEED2_ARG" --artifact "$SEED3_ARG" \
+  --artifact "$SEED4_ARG" --artifact "$SEED42_ARG" --output-dir "$AGGREGATE_DIR"
+
+WANDB_RECORD="${AGGREGATE_DIR}/wandb_publication.json"
+srun "${VENV}/bin/python" -u -m formal_v2_explanation_etg.publish_robustness_wandb \
+  --aggregate "${AGGREGATE_DIR}/attribution_robustness_five_seed.json" \
+  --artifact "$SEED1_ARG" --artifact "$SEED2_ARG" --artifact "$SEED3_ARG" \
+  --artifact "$SEED4_ARG" --artifact "$SEED42_ARG" \
+  --governance "$GOVERNANCE" --bindings "$BINDINGS" \
+  --project ofra-etg-leon-hpc --entity csnet \
+  --group malaya-attribution-etg-five-seed-20260904-v9 --output "$WANDB_RECORD"
+
+FINAL_STAGE="${PROTECTED_ROOT}/.five-seed-aggregate-${SLURM_JOB_ID}.staging"
+mkdir -p "$FINAL_STAGE"
+cp "$AGGREGATE_DIR/attribution_robustness_five_seed.json" \
+  "$AGGREGATE_DIR/attribution_robustness_five_seed_method_counts.csv" \
+  "$WANDB_RECORD" "$FIDELITY_PREFLIGHT" "$BINDINGS" "$METHOD_PROTOCOL" "$CAMPAIGN_PROTOCOL" \
+  "$GOVERNANCE" "$FINAL_STAGE/"
+FINAL_MANIFEST_TMP="${AGGREGATE_DIR}/protected-aggregate-SHA256SUMS.${SLURM_JOB_ID}.tmp"
+[[ ! -e "$FINAL_MANIFEST_TMP" ]] || { echo "Unexpected aggregate manifest temp" >&2; exit 73; }
+( cd "$FINAL_STAGE" && find . -type f -print0 | sort -z | xargs -0 sha256sum > "$FINAL_MANIFEST_TMP" )
+mv "$FINAL_MANIFEST_TMP" "$FINAL_STAGE/SHA256SUMS"
+( cd "$FINAL_STAGE" && sha256sum -c SHA256SUMS --status )
+mv "$FINAL_STAGE" "$FINAL_PROTECTED"
+( cd "$FINAL_PROTECTED" && sha256sum -c SHA256SUMS --status )
+
+echo "ATTRIBUTION_ETG_FIVE_SEED_COMPLETE=1"
+echo "PROTECTED_DIR=$FINAL_PROTECTED"
+echo "PROTECTED_SHA256SUMS=$(sha256sum "$FINAL_PROTECTED/SHA256SUMS" | awk '{print $1}')"
