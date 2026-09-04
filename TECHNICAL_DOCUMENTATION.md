@@ -1,4 +1,22 @@
-# OFRA and ETG technical documentation
+# OFRA and ETG technical documentation: historical four-seed snapshot
+
+> **Historical reference, not the current evidence summary.** The text below
+> preserves an earlier four-seed release, including its model settings,
+> preprocessing descriptions, result tables, and then-open work. Statements
+> such as "current", "completed", and "not yet complete" below refer to that
+> release, not to the present project. In particular, the 122/194-feature
+> preprocessing descriptions must not be substituted for the later strict
+> Task-0-only contracts, and the four-seed table is not the final five-seed table.
+
+For the current completed-evidence narrative, use the
+[v3.0 technical document and manuscript](paper/guarded_checkpoint_2026-09-03/).
+The separate [v9 attribution/ETG register](reproducibility/ATTRIBUTION_ETG_V9_STATUS.md)
+tracks the unfinished five-seed explanation campaign. Its partial outputs do
+not supersede the completed single-seed pilot or establish a final aggregate.
+The [repository overview](README.md) identifies the registered primary and
+keeps the non-significant guarded-checkpoint comparison separate.
+
+---
 
 ## 1. Research objective and evaluation boundary
 

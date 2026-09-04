@@ -18,6 +18,12 @@ registry, and checksums are under
 The aligned v3.0 manuscript and technical document are under
 [`paper/guarded_checkpoint_2026-09-03/`](paper/guarded_checkpoint_2026-09-03/).
 
+The root [technical documentation](TECHNICAL_DOCUMENTATION.md) is retained as
+a historical four-seed snapshot, not the current results summary. For the
+unfinished five-seed explanation campaign, consult the separate
+[v9 evidence register](reproducibility/ATTRIBUTION_ETG_V9_STATUS.md); partial
+protected outputs are not a completed five-seed estimate.
+
 Relative to the immutable last-epoch baseline, the guarded rule changes final
 accuracy by +1.59 percentage points, Macro-F1 by +1.53, forgetting by +0.04,
 attack recall by -2.29, and benign FPR by -2.20. Every paired 95% confidence
@@ -144,6 +150,8 @@ export PYTHONPATH="$OFRA_PROJECT_DIR/formal_v2_explanation_etg:$OFRA_PROJECT_DIR
   test_analyze.py test_publish_wandb.py test_verify_submission_bindings.py)
 ```
 
-`SHA256SUMS.txt` is generated from the published LF-normalised files. The
-runtime manifests in `reproducibility/` bind the current code to the completed
-training and analysis evidence.
+`SHA256SUMS.txt` is a partial release inventory of LF-normalised files, not an
+inventory of every later addition. Verify the manifest supplied with each
+specific evidence package; do not infer that the entire current source tree
+matches every historical run. The source manifests in `reproducibility/`
+state their experiment-specific bindings and limitations.
