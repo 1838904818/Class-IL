@@ -31,7 +31,8 @@ the original checksum and aggregate validators.
 
 The semantic checker and its 18 synthetic tests use Python's standard library
 only. The array checker adds 16 tests and requires NumPy (release QA: 2.4.6).
-Together the directory contains 34 tests:
+The aggregate checker adds 15 tests, using the byte-preserved v9 runtime for
+a synthetic golden comparison. Together the directory contains 49 tests:
 
 ```text
 python -B -m unittest discover -s reproducibility/attribution_etg_checks -p "test_*.py" -v
@@ -53,7 +54,7 @@ completed five-seed experiment and not evidence that any explainer is correct.
 ## Validation assessment, 2026-09-04
 
 **Share with caveats for code QA; final experimental interpretation remains
-pending.** All 34 synthetic tests passed. Protected seed 1 and seed 2 artifacts
+pending.** All 49 synthetic tests passed. Protected seed 1 and seed 2 artifacts
 passed both the original canonical/summary validator and these additional
 semantic checks. No seed-level outcome is promoted as a five-seed estimate.
 
@@ -138,3 +139,47 @@ the bound manifest. They do not recompute sample-level SHAP, establish that
 the original raw feature rows are correct, prove derivative equivalence, or
 replay the deletion/random-control experiment. Those distinctions remain
 necessary even when every array check passes.
+
+## Complete five-seed aggregate arithmetic
+
+`validate_aggregate.py` independently recomputes the registered aggregate
+from exactly seeds 1, 2, 3, 4, and 42. It does not call the runtime's
+aggregation functions to calculate the expected values. Tests compare it
+against the frozen runtime using clearly synthetic fixtures, then alter
+means, confidence bounds, pooled counts, seed counts, and source bindings
+to ensure those errors are rejected. The actual five-seed aggregate is
+still pending; synthetic test success is not an experimental result.
+
+The checker verifies:
+
+- Seed-file byte hashes and canonical hashes against aggregate bindings;
+- The fixed dataset, class/checkpoint registry, thresholds, score target,
+  attribution scope, common data schema, and analysis-code binding;
+- All pairwise and three-method agreement statistics from the stored rows;
+- Per-seed and pooled ETG/drift counts;
+- Equal-weight seed means, sample standard deviations, ranges, and the
+  registered descriptive t intervals (`n=5`, `df=4`);
+- The five predictive metrics for the `official/joint_cap3000` arm.
+
+The t critical constant was also checked against `scipy.stats.t.ppf(0.975,4)`
+to an absolute tolerance of `1e-12`. SciPy is not a runtime dependency of this
+checker. As in the registered aggregate, displayed interval bounds are
+clipped to `[0,1]`; these are descriptive seed-level summaries, not an
+explainer-accuracy test, a causal comparison, or evidence of generalisation
+across datasets. The seed-mean drift rate is not substituted with the ratio
+of pooled events to pooled eligible transitions. A seed with an undefined
+rate stops the five-seed summary and requires an explicit missingness policy;
+it is never changed to zero or omitted to produce a four-seed answer.
+
+CLI inputs are `--aggregate`, its independently verified `--aggregate-sha256`,
+`--inputs`, and a new `--output` file. The input registry is a JSON list of
+exactly five records, each containing `seed`, `path`, and `sha256`. Relative
+paths resolve beside that registry. A partial registry is rejected before
+reading the aggregate, and no success report is written. Paths and hashes
+must be populated from the protected final evidence, not synthetic examples.
+
+Passing arithmetic verification is not automatic publication approval.
+All five semantic and array checks, training/protocol provenance, W&B
+verification, and interpretation review remain required. This stage does
+not treat within-seed transitions as independent seed replications, nor
+equate Malaya application-classification evidence with NIDS attack metrics.
