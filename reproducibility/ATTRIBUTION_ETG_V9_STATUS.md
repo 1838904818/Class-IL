@@ -45,6 +45,10 @@ scientific validity or statistical significance.
   bindings, probe coverage, and aggregate checksum manifests.
 - Verify method-pair agreement and ETG status sensitivity, drift
   denominators, threshold settings, missing/undefined cases, and uncertainty.
+  The independent checker in `reproducibility/attribution_etg_checks/`
+  passed protected seeds 1 and 2; it supplements rather than replaces the
+  original artifact validator. All five seed packages must pass before a
+  final aggregate is promoted.
 - Confirm the completed aggregate W&B record and its allowlisted outputs.
 - The versioned offline source snapshot is available at
   `reproducibility/attribution_etg_v9/README.md`: 46 offline unit tests and
