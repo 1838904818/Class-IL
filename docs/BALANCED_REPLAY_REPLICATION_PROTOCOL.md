@@ -1,6 +1,6 @@
 # Balanced replay replication protocol
 
-Status (6 September 2026): the seed-1 candidates are prepared; no seed-1 result is claimed here.
+Status (6 September 2026): the seed-1 candidates were submitted as Malaya Job 451049 and ReplayIDS D2 Job 451050. Both were initially queued awaiting resources. No seed-1 result is claimed here.
 
 ## Purpose and scope
 
