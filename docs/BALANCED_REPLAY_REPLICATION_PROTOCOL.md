@@ -1,6 +1,14 @@
 # Balanced replay replication protocol
 
-Status (7 September 2026): Malaya Job 451049 and ReplayIDS D2 Job 451050 completed successfully. Protected result/protocol checksums and local numerical audits passed. Their recorded W&B URLs are available, but independent cloud verification is pending. Seeds 2–4 have been prepared without changing the training or data contracts; they have not been submitted. See [seed-1 paired evidence](BALANCED_REPLAY_SEED1_RESULTS.md).
+Status (7 September 2026): Malaya Job 451049 and ReplayIDS D2 Job 451050 completed successfully. Protected result/protocol checksums and local numerical audits passed. Their recorded W&B URLs are available, but independent cloud verification is pending. All six seed-2–4 replications were submitted after exact-hash review and individual confirmation, without changing the training or data contracts. Their initial scheduler state was PENDING (Resources); no new result is claimed. See [seed-1 paired evidence](BALANCED_REPLAY_SEED1_RESULTS.md).
+
+| Training seed | Malaya job | ReplayIDS D2 job |
+|---|---:|---:|
+| 2 | 451841 | 451842 |
+| 3 | 451843 | 451844 |
+| 4 | 451845 | 451846 |
+
+Each job requests one A100, 16 GiB host memory, one node/task and a 45-minute short-QoS limit. Malaya uses four CPUs; ReplayIDS D2 uses two. The measured seed-1 elapsed times were 14m49s and 14m03s, excluding queue time. Those measurements are not a scheduling guarantee. Job submission is not evidence that training or W&B synchronization has begun.
 
 ## Purpose and scope
 
