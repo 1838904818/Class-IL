@@ -1,12 +1,12 @@
 # Balanced replay replication protocol
 
-Status (6 September 2026): the seed-1 candidates were submitted as Malaya Job 451049 and ReplayIDS D2 Job 451050. Both were initially queued awaiting resources. No seed-1 result is claimed here.
+Status (7 September 2026): Malaya Job 451049 and ReplayIDS D2 Job 451050 completed successfully. Protected result/protocol checksums and local numerical audits passed. Their recorded W&B URLs are available, but independent cloud verification is pending. Seeds 2–4 have been prepared without changing the training or data contracts; they have not been submitted. See [seed-1 paired evidence](BALANCED_REPLAY_SEED1_RESULTS.md).
 
 ## Purpose and scope
 
 The seed-42 diagnostic screened balanced replay against frozen nearest-mean exemplars. Balanced replay had higher final accuracy and Macro-F1 on both MalayaNetwork_GT and ReplayIDS D2 and was retained for replication. This is a custom conventional comparator, not a tuned state-of-the-art baseline.
 
-The planned training seeds are 1, 2, 3, 4 and 42. The next stage runs seed 1 separately on each dataset. Seeds 2–4 remain pending. Seed 42 informed comparator selection; final reporting must disclose that selection and provide a sensitivity summary for the four new seeds separately. No new-seed test outcome will select hyperparameters.
+The planned training seeds are 1, 2, 3, 4 and 42. Seeds 42 and 1 are complete on both datasets; the next stage comprises six independent runs for seeds 2–4. Seed 42 informed comparator selection; final reporting must disclose that selection and provide a sensitivity summary for the four new seeds separately. No new-seed test outcome will select hyperparameters.
 
 ## Fixed training and data contracts
 
@@ -34,11 +34,11 @@ W&B receives validated aggregate metrics and tables only. Raw feature rows, iden
 
 ## Integrity gates
 
-Verify the configuration, runtime and data bindings before execution. Verify result/protocol checksums, all expected checkpoints, final confusion-matrix row totals and the W&B record before admitting a run into the evidence package. A successful scheduler exit alone is insufficient.
+Verify the configuration, runtime and data bindings before execution. Verify result/protocol checksums, all expected checkpoints and final confusion-matrix row totals before admitting numerical results. Independently verify the W&B record before claiming cloud synchronization is complete. A successful scheduler exit alone is insufficient. For seed 1, local numerical verification is complete but independent W&B cloud verification remains pending.
 
 The seed-1 paired OFRA result SHA-256 values are:
 
 - Malaya: fd532519409bd09f97074805aef924fdcdf4dc68a2038c62125934d8da525026
 - ReplayIDS D2: 4676c8f2ac98b73fccc90f8b86630053e93cb0403643e83032b37619db017310
 
-This protocol adds a replication plan; it does not revise manuscript headline results.
+This protocol records replication progress; it does not revise manuscript headline results.
