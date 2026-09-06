@@ -1,5 +1,13 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+Latest prediction addendum (7 September 2026):
+[completed Balanced Replay50 paired replication](docs/BALANCED_REPLAY_FIVE_SEED_RESULTS.md).
+Both datasets now include seeds 1, 2, 3, 4 and 42, with seeds 1-4 reported separately
+because seed 42 selected the comparator. OFRA has higher final accuracy in every
+pair; Malaya Macro-F1 gains are small on the new seeds, and ReplayIDS lower FPR
+comes with lower attack recall. This addendum does not add SHAP/ETG evidence or
+replace the registered prediction arm with a selected new rule.
+
 > **Historical reference, not the current evidence summary.** The text below
 > preserves an earlier four-seed release, including its model settings,
 > preprocessing descriptions, result tables, and then-open work. Statements

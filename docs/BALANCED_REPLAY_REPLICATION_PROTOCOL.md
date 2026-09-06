@@ -1,6 +1,6 @@
 # Balanced replay replication protocol
 
-Status (7 September 2026): Malaya Job 451049 and ReplayIDS D2 Job 451050 completed successfully. Protected result/protocol checksums and local numerical audits passed. Their recorded W&B URLs are available, but independent cloud verification is pending. All six seed-2–4 replications were submitted after exact-hash review and individual confirmation, without changing the training or data contracts. Their initial scheduler state was PENDING (Resources); no new result is claimed. See [seed-1 paired evidence](BALANCED_REPLAY_SEED1_RESULTS.md).
+Status (7 September 2026): all five training seeds are complete on both datasets. The six seed-2–4 jobs below completed with exit code 0, in 14m01s–14m45s each, excluding queue time. Protected result/protocol checksums, fixed configuration/runtime/data bindings and all checkpoint confusion/task metrics passed local verification. W&B URLs are recorded, but independent cloud verification remains pending. See the [five-seed results and four-new-seed sensitivity analysis](BALANCED_REPLAY_FIVE_SEED_RESULTS.md). The [seed-1 report](BALANCED_REPLAY_SEED1_RESULTS.md) is retained as a historical checkpoint.
 
 | Training seed | Malaya job | ReplayIDS D2 job |
 |---|---:|---:|
@@ -14,7 +14,7 @@ Each job requests one A100, 16 GiB host memory, one node/task and a 45-minute sh
 
 The seed-42 diagnostic screened balanced replay against frozen nearest-mean exemplars. Balanced replay had higher final accuracy and Macro-F1 on both MalayaNetwork_GT and ReplayIDS D2 and was retained for replication. This is a custom conventional comparator, not a tuned state-of-the-art baseline.
 
-The planned training seeds are 1, 2, 3, 4 and 42. Seeds 42 and 1 are complete on both datasets; the next stage comprises six independent runs for seeds 2–4. Seed 42 informed comparator selection; final reporting must disclose that selection and provide a sensitivity summary for the four new seeds separately. No new-seed test outcome will select hyperparameters.
+The completed training seeds are 1, 2, 3, 4 and 42. Seed 42 informed comparator selection; reporting therefore includes a separate sensitivity summary for seeds 1–4. Training and data contracts were unchanged across the replication; no new-seed test outcome selected hyperparameters.
 
 ## Fixed training and data contracts
 

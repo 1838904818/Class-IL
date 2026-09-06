@@ -1,0 +1,96 @@
+{
+  "schema_version": 2,
+  "dataset": "cic-ids-2017-replayids-contract-normalcap-largest-attack",
+  "manifest_sha256": "6d6e467ed0687ff6eb2d171c9799c74ee16af3c5b65bea2e662fa569bc3d5e1b",
+  "config_file_sha256": "668a52747c78b48a1d263e698bcf7869a5880403337b298c0af20f132b1cda64",
+  "config": {
+    "pretrain_epochs": 8,
+    "epochs_per_task": 10,
+    "batch_size": 384,
+    "eval_batch_size": 512,
+    "shuffle_block_rows": 8192,
+    "optimizer_name": "adam",
+    "learning_rate": 0.001,
+    "weight_decay": 0.0,
+    "encoder_type": "ft_transformer",
+    "d_model": 256,
+    "n_layers": 4,
+    "ft_heads": 8,
+    "ft_dim_head": 32,
+    "ft_attn_dropout": 0.1,
+    "ft_ff_dropout": 0.1,
+    "ft_num_residual_streams": 1,
+    "buffer_per_class": 50,
+    "herding_candidate_capacity": 5000,
+    "distillation_temperature": 2.0,
+    "distillation_weight": 1.0,
+    "device": "cuda:0",
+    "deterministic": true,
+    "verify_shard_hashes": true,
+    "verbose": true
+  },
+  "seed": 4,
+  "methods": [
+    "balanced_replay50"
+  ],
+  "tasks": [
+    [
+      0,
+      1
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      6,
+      7
+    ]
+  ],
+  "normalization": {
+    "algorithm": "chan_welford_float64_population_variance",
+    "count": 130339,
+    "source_classes": [
+      0,
+      1
+    ],
+    "mean_sha256": "6a4f13472505e1b31af1e2df538ff5abb9727300065882586ef5c97eacaab1c9",
+    "scale_sha256": "7752fb354e28774e2681ae63245035b4dbc657c63f060504790c80bf96645313"
+  },
+  "runtime_source_sha256": {
+    "continual_baselines/validation.py": "6d207d2ae4c1d8ac875bdc8c22a01afced38bdc44f2a1a400e57ac7b840da24b",
+    "continual_baselines/runner.py": "5553aa13933e1c52df270be56d57ca9689d70a9bb1b612405b4e462fd558e9e7",
+    "streaming_full/data.py": "26b4542cfe3875c77963ebf6a0e21a1450fb914d5113ae9b3208e6ca17bb3e4f",
+    "streaming_full/models.py": "455c516b3da1fdc373263698ba5484050b4edde349b02ae2e29effae6e0d21c2",
+    "streaming_full/validation.py": "5086ea5efbfcc8e146de24aa8da23e5330c94df59576db78885b2bd5595c0695",
+    "ofra_encoders/ft_transformer.py": "04d061241ddbb526c96b58abd94d946126d8c9305659d3190582977bb9fa7c0c"
+  },
+  "comparison_contract": {
+    "same_manifest_and_task_order": true,
+    "same_task0_only_normalization": true,
+    "same_encoder_capacity_as_dataset_ofra_arm": true,
+    "same_pretrain_epochs": true,
+    "same_later_task_epochs_for_trainable_methods": true,
+    "same_memory_budget_per_class": 50,
+    "important_difference": "trainable baselines continue updating one shared encoder and multiclass head; frozen_nme50 is a diagnostic with no later-task gradient updates; OFRA freezes its Task-0 encoder and learns class-specific LoRA heads plus routing",
+    "screening_only": true,
+    "single_seed_not_final_evidence": true
+  },
+  "method_definitions": {
+    "naive": "shared encoder and multiclass head; current-task rows only",
+    "replay50": "Naive plus deterministic uniform replay with 50 stored rows per seen class",
+    "balanced_replay50": "shared encoder and multiclass head; every new-task row is paired with one deterministic replay draw from equal 50-row old-class buffers",
+    "icarl_style50": "shared encoder, CE plus old-class distillation, 50 exemplars per class, bounded-candidate herding, and nearest-mean-of-exemplars inference",
+    "frozen_nme50": "Task-0 encoder frozen permanently; 50 herded exemplars per seen class; nearest-mean-of-exemplars inference; no later-task gradient updates"
+  },
+  "model_parameters": {
+    "encoder": 4294144,
+    "multiclass_classifier": 2056,
+    "total": 4296200
+  },
+  "protocol_sha256": "178221042af8c88ab6578d38723174210a9ad20f8fe04b7918b3514d8e1b32b1"
+}
