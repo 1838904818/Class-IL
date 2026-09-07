@@ -1,5 +1,10 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+Validation preparation: the [staged score-validation protocol](docs/REPLAYIDS_SCORE_VALIDATION_PROTOCOL.md)
+now binds all 20 primary checkpoint inputs. Canonical encoder batching is 512;
+prior batch32/898 tests are stress diagnostics. Legacy reproduction and a
+separately versioned direct64 candidate remain distinct, unpromoted stages.
+
 Numerical isolation: [fixed-embedding Router diagnostics](docs/REPLAYIDS_ROUTER_ARITHMETIC.md)
 confirm float32 Router batching sensitivity. A direct64 reference is more stable
 in the tested cases but does not reproduce every saved CUDA prediction. No
