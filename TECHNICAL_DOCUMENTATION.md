@@ -2,6 +2,15 @@
 
 ## Current revision: v3.3.1, 7 September 2026
 
+Parallel preparation: the [three-track reference package](experimental/parallel_research/README.md)
+adds a source-bound fair-comparison audit, an increment-available sampling
+reference, and evidence/partition/budget gates for a proposed repair study.
+Its [local verification](experimental/parallel_research/LOCAL_VERIFICATION.json)
+concerns synthetic tests only. No production data builder, trainer instrumentation,
+repair optimizer or new model result is provided. Review requests requiring
+matched training, prospective data and measured intervention utility remain open.
+The ongoing historical-score fidelity gate is independent of this local preparation.
+
 The [current manuscript](paper/revision_2026-09-07_v3_3_1/README.md) and
 [technical audit supplement](docs/TECHNICAL_AUDIT_SUPPLEMENT_2026-09-07.md)
 supersede the narrative status below. The submitted v3.2 is retained unchanged.
