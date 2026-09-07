@@ -1,5 +1,9 @@
 # ReplayIDS score validation: staged prospective follow-up
 
+Execution update: [Stage A canonical CPU check](REPLAYIDS_CANONICAL_FIDELITY.md)
+completed all 20 checkpoints and failed the cross-environment fidelity gate.
+The matched historical GPU check and later candidate stages remain outstanding.
+
 Version 1, fixed 7 September 2026 before any new full-test candidate evaluation.
 This is retrospective follow-up motivated by existing benchmark/probe diagnostics,
 not a preregistration of the historical experiments. No candidate is promoted by

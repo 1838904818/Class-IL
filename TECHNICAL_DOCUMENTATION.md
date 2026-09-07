@@ -1,5 +1,11 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+Canonical-path update: [all-checkpoint CPU fidelity](docs/REPLAYIDS_CANONICAL_FIDELITY.md)
+used the original 512-row encoder batches and whole-probe Head/Router calls.
+Five initial checkpoints passed; fifteen later checkpoints failed score tolerance.
+Two argmax changes were the same seed-3 sample at two checkpoints. This is not a
+matched historical GPU run or a revised performance result.
+
 Validation preparation: the [staged score-validation protocol](docs/REPLAYIDS_SCORE_VALIDATION_PROTOCOL.md)
 now binds all 20 primary checkpoint inputs. Canonical encoder batching is 512;
 prior batch32/898 tests are stress diagnostics. Legacy reproduction and a
