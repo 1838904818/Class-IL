@@ -2,14 +2,19 @@
 
 ## Current revision: v3.3.1, 7 September 2026
 
-Parallel preparation: the [three-track reference package](experimental/parallel_research/README.md)
-adds a source-bound fair-comparison audit, an increment-available sampling
-reference, and evidence/partition/budget gates for a proposed repair study.
-Its [local verification](experimental/parallel_research/LOCAL_VERIFICATION.json)
-concerns synthetic tests only. No production data builder, trainer instrumentation,
-repair optimizer or new model result is provided. Review requests requiring
-matched training, prospective data and measured intervention utility remain open.
-The ongoing historical-score fidelity gate is independent of this local preparation.
+Executable preparation: the [three-line execution package](experimental/parallel_execution/README.md)
+now implements actual paired head optimization/accounting, immutable train-only
+array derivation and its encoder/input bridge, bounded R1 fitting with independent
+acceptance and sealed subsequent evaluation, and native raw-score/fusion controls.
+The [verification record](experimental/parallel_execution/LOCAL_VERIFICATION.json)
+concerns tiny synthetic CPU and mocked operational tests only; no real-data
+training, SHAP extraction, GPU fidelity pass or intervention benefit is claimed.
+The [candidate novelty analysis](experimental/parallel_execution/NOVELTY_AND_FALSIFICATION.md)
+documents close prior art, conditional claims, simple controls and rejection
+criteria. The [review-status delta](experimental/parallel_execution/REVIEW_STATUS_DELTA.md)
+keeps empirical review requests open. The earlier
+[reference-only package](experimental/parallel_research/README.md) is preserved
+unchanged. Historical results and manuscript v3.3.1 are unchanged.
 
 The [current manuscript](paper/revision_2026-09-07_v3_3_1/README.md) and
 [technical audit supplement](docs/TECHNICAL_AUDIT_SUPPLEMENT_2026-09-07.md)
@@ -44,10 +49,16 @@ records the v6 parser repair and 16 passing regressions. v6 has now been
 uploaded: all 17 operation hashes and 91 input hashes match, and actual
 validation-only checks pass. After independent review and fresh confirmation,
 the exact candidate was submitted as Job 453142 at 06:48 UTC on 7 September.
-Its first queue/accounting snapshot is PENDING (Resources); see the
-[submission record](results/replayids-gpu-fidelity/JOB_453142_SUBMISSION.json).
-No new numerical or tracking result is established. Scientific results and
-manuscript claims are unchanged.
+The [submission record](results/replayids-gpu-fidelity/JOB_453142_SUBMISSION.json)
+preserves its initial pending snapshot. The job subsequently FAILED 126:0
+after 27 seconds: telemetry failed before any of the twenty checkpoint
+comparisons completed. This is an infrastructure failure, not a scientific
+score mismatch or an OOM diagnosis. The
+[terminal evidence and local telemetry repair](experimental/parallel_execution/operations/README.md)
+record protected hashes, memory headroom, explicit compute-environment
+preservation, bounded diagnostics and preflight-before-verifier regression tests.
+The proposed v3 coordinator is not uploaded, reviewed or submitted. Independent
+W&B cloud finalization remains unverified. No numerical tolerance was relaxed.
 
 ## Previous manuscript and validation priorities (historical snapshot)
 
