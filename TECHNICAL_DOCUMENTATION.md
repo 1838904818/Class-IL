@@ -1,5 +1,18 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+## Current manuscript and validation priorities
+
+The current [v3.2 manuscript](paper/external_review_2026-09-07/README.md)
+includes the completed five-seed prediction and Malaya attribution evidence,
+the primary checkpoint correction and the CPU score-fidelity limitation.
+The earlier snapshot below is retained as history, not the current completion register.
+The [validation priorities](docs/VALIDATION_PRIORITIES_2026-09-07.md)
+distinguish existing results from proposed score-fidelity, sensitivity,
+faithfulness, fair-comparison and operational evaluations. A published single-seed
+64-setting drift grid already exists; full five-seed governance-policy sensitivity
+and historical-environment GPU parity are not established. No new training,
+GPU verification or operational ETG benefit is claimed by this documentation update.
+
 GPU validation preparation: [historical-environment verifier](docs/REPLAYIDS_GPU_FIDELITY_CANDIDATE.md)
 now binds 91 inputs and restores the original deterministic/TF32 settings.
 Local control tests and input hashes have been checked; GPU execution, resource

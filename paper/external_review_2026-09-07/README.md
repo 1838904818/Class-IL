@@ -19,10 +19,13 @@ methods. Declarations describe research-tool assistance and author responsibilit
 - [Canonical CPU fidelity](../../docs/REPLAYIDS_CANONICAL_FIDELITY.md)
 - [Preceding manuscript and attribution evidence](../attribution_robustness_2026-09-05/README.md)
 
-The external-review service accepted the PDF on 7 September 2026. The most recent
-checked status was that the review was still being generated. Submission is not
-peer-review acceptance or validation of the findings. Query credentials and
-notification contact information are excluded from this repository.
+The external-review service accepted the PDF on 7 September 2026. Its automated
+feedback was received on the same day. This is not a human peer-review decision
+or validation of the findings, and the service supplied no numerical score.
+The [technical validation priorities](../../docs/VALIDATION_PRIORITIES_2026-09-07.md)
+record the next evidence requirements without modifying the submitted manuscript.
+Raw review discussions, query credentials and notification contact information
+are excluded from the supervisor-facing repository.
 
 ## Document checks
 
