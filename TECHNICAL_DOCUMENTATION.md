@@ -1,8 +1,24 @@
 # OFRA and ETG technical documentation
 
-## Current manuscript and validation priorities
+## Current revision: v3.3, 7 September 2026
 
-The current [v3.2 manuscript](paper/external_review_2026-09-07/README.md)
+The [current manuscript](paper/revision_2026-09-07_v3_3/README.md) and
+[technical audit supplement](docs/TECHNICAL_AUDIT_SUPPLEMENT_2026-09-07.md)
+supersede the narrative status below. The submitted v3.2 is retained unchanged.
+[Saved-evidence re-analysis](results/review-audit-20260907/README.md) reproduces
+450 historical states/actions, 240 fixed-top-15 policy replays and performance-
+stratified consensus. Primary ReplayIDS statistics use last-epoch Job 425539,
+not the older guarded comparison. Provenance capsules bind recovered protected
+protocol versions and all five probe manifests; they are redacted attestations.
+
+ETG is an audit record, not a demonstrated operational governance mechanism.
+The [experiment gates](docs/EXPERIMENT_GATES_2026-09-07.md) separate remaining
+numerical/attribution fidelity, matched-baseline and actual repair-utility tests.
+No new model run or validated algorithmic novelty is claimed by this revision.
+
+## Previous manuscript and validation priorities (historical snapshot)
+
+The previously submitted [v3.2 manuscript](paper/external_review_2026-09-07/README.md)
 includes the completed five-seed prediction and Malaya attribution evidence,
 the primary checkpoint correction and the CPU score-fidelity limitation.
 The earlier snapshot below is retained as history, not the current completion register.

@@ -52,3 +52,7 @@ The specific expansion/normalization/rival decomposition and its usefulness for 
 ## Execution boundary
 
 Begin with local evidence recovery and the diagnostic reference. Keep the submitted v3.2 PDF immutable; prepare a later manuscript revision only after the evidence inventory is reconciled. Reference code and synthetic tests do not establish real-data utility. Any subsequent compute campaign must follow institutional policy and the separately reviewed execution protocol.
+
+## Evidence update for v3.3
+
+The [technical supplement](TECHNICAL_AUDIT_SUPPLEMENT_2026-09-07.md) now records the completed retrospective ledger, statistical and provenance audits. See [experiment gates](EXPERIMENT_GATES_2026-09-07.md) for remaining work. The current manuscript removes operational governance from its main contribution; a repair controller remains unvalidated.
