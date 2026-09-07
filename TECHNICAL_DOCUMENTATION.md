@@ -1,5 +1,10 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+Reconstruction update (7 September 2026): the [frozen-probe forward check](docs/REPLAYIDS_FORWARD_PARITY.md)
+failed the fixed Router/Joint score tolerance in all five seeds on CPU. One
+seed-4 probe prediction changed at batch 32. Calibration remains gated; original
+protected benchmark results are unchanged.
+
 Input readiness (7 September 2026): the [holdout and inference-state audit](docs/REPLAYIDS_SCORE_READINESS.md)
 verifies 68,313 calibration rows and five final snapshots, not a fitted calibrator
 or new result. Forward parity and all-checkpoint score reconstruction remain open.

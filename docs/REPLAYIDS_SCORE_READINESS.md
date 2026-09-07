@@ -1,5 +1,9 @@
 # ReplayIDS D2: holdout and inference-state readiness
 
+Follow-up: the [CPU forward-parity check](REPLAYIDS_FORWARD_PARITY.md) has now been
+performed and failed its fixed score tolerance. The readiness JSON below remains
+the immutable earlier input-only audit, not a forward-parity result.
+
 Updated 7 September 2026. This is a verified input-readiness audit, **not a new model result or successful calibration experiment**. The relevant primary remains last-epoch OFRA from Job 425539, as distinguished from guarded checkpoint selection in the [scoring diagnostic](REPLAYIDS_PRIMARY_SCORING_DIAGNOSTIC.md).
 
 ## Verified inputs
