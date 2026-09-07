@@ -1,5 +1,11 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+GPU validation preparation: [historical-environment verifier](docs/REPLAYIDS_GPU_FIDELITY_CANDIDATE.md)
+now binds 91 inputs and restores the original deterministic/TF32 settings.
+Local control tests and input hashes have been checked; GPU execution, resource
+profiling, W&B/protected-output integration and submission review are still pending.
+This is preparation, not a new performance or fidelity result.
+
 Canonical-path update: [all-checkpoint CPU fidelity](docs/REPLAYIDS_CANONICAL_FIDELITY.md)
 used the original 512-row encoder batches and whole-probe Head/Router calls.
 Five initial checkpoints passed; fifteen later checkpoints failed score tolerance.

@@ -3,6 +3,9 @@
 Execution update: [Stage A canonical CPU check](REPLAYIDS_CANONICAL_FIDELITY.md)
 completed all 20 checkpoints and failed the cross-environment fidelity gate.
 The matched historical GPU check and later candidate stages remain outstanding.
+The [allocation-only GPU verifier and input binding](REPLAYIDS_GPU_FIDELITY_CANDIDATE.md)
+are now prepared locally; their operational launcher and resource evidence are
+not yet complete and no GPU result is implied.
 
 Version 1, fixed 7 September 2026 before any new full-test candidate evaluation.
 This is retrospective follow-up motivated by existing benchmark/probe diagnostics,
