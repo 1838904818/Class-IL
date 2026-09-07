@@ -1,9 +1,9 @@
 # Bounded historical-score fidelity profile
 
 Status: v5 validation-only parsing failed; the v6 repair is uploaded and
-live validation passed. Independent review approved the exact v6 candidate;
-fresh submission confirmation is still required.
-No calculation was submitted. See the
+live validation passed. Following independent review and one fresh confirmation,
+v6 was submitted as Job 453142. Its first queue/accounting state is PENDING
+(Resources); submission is not execution or a numerical pass. See the
 [account-status regression note](DICC_ACCOUNT_STATUS_VALIDATION.md).
 No GPU pass, new model result, repair effect or live tracking run is reported here.
 This is a self-contained numerical-fidelity gate. It authorizes no subsequent

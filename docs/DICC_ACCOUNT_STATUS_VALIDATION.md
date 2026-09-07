@@ -51,9 +51,12 @@ Authorized v6 staging is complete. All 17 remote operation files and all 91
 bound input files match, the output parents are owned and empty, and the
 guard explicitly returned that no job was submitted. See the
 [redacted staging evidence](../results/replayids-gpu-fidelity/V6_STAGING_VALIDATION.json).
-Independent review approved the exact v6 candidate. Fresh exact-command user
-confirmation remains required; any relevant bound-file or live-state change
-invalidates that approval. This is not a numerical-fidelity or Slurm execution result.
+Independent review approved the exact v6 candidate. A later, separate user
+confirmation authorized one submission: Job 453142, initially PENDING
+(Resources). The [submission record](../results/replayids-gpu-fidelity/JOB_453142_SUBMISSION.json)
+is distinct from the earlier no-submission staging attestation. No numerical
+pass or GPU execution is inferred from scheduler acceptance. The confirmation
+is consumed and cannot authorize a retry.
 
 To reproduce the pure tests without a cluster connection:
 

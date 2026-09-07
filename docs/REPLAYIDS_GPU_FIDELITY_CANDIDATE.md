@@ -1,8 +1,8 @@
 # Historical GPU fidelity: implementation and execution boundary
 
-Status on 7 September 2026: **v6 uploaded and live validation passed;
-independent review APPROVED; awaiting fresh user submission confirmation.
-No calculation submitted or run**.
+Status on 7 September 2026: **v6 uploaded, validated, independently approved
+and submitted once as Job 453142. First observed state: PENDING (Resources).
+No numerical-fidelity result is established**.
 See the [bounded profile specification](REPLAYIDS_FIDELITY_PROFILE.md) for the
 later tracking, failure-preservation and resource controls. The 91 remote input
 hashes now match the same binding, as recorded in the

@@ -33,9 +33,12 @@ validation-only guard rejected ANSI-coloured FULL account output. No job was
 submitted. The [account-status regression note](docs/DICC_ACCOUNT_STATUS_VALIDATION.md)
 records the v6 parser repair and 16 passing regressions. v6 has now been
 uploaded: all 17 operation hashes and 91 input hashes match, and actual
-validation-only checks pass. Independent release review approved this exact
-candidate, subject to fresh submission confirmation. No job was submitted;
-scientific results and manuscript claims are unchanged.
+validation-only checks pass. After independent review and fresh confirmation,
+the exact candidate was submitted as Job 453142 at 06:48 UTC on 7 September.
+Its first queue/accounting snapshot is PENDING (Resources); see the
+[submission record](results/replayids-gpu-fidelity/JOB_453142_SUBMISSION.json).
+No new numerical or tracking result is established. Scientific results and
+manuscript claims are unchanged.
 
 ## Previous manuscript and validation priorities (historical snapshot)
 
