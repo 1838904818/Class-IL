@@ -1,5 +1,10 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+Input readiness (7 September 2026): the [holdout and inference-state audit](docs/REPLAYIDS_SCORE_READINESS.md)
+verifies 68,313 calibration rows and five final snapshots, not a fitted calibrator
+or new result. Forward parity and all-checkpoint score reconstruction remain open.
+The audit distinguishes Task-0 normalization from offline count-based sampling.
+
 Checkpoint-policy clarification: the ReplayIDS figures in the balanced-replay
 addendum below use the secondary guarded policy. The registered primary is
 last epoch. See the [primary comparison and scoring diagnosis](docs/REPLAYIDS_PRIMARY_SCORING_DIAGNOSTIC.md)
