@@ -1,8 +1,8 @@
 # OFRA and ETG technical documentation
 
-## Current revision: v3.3, 7 September 2026
+## Current revision: v3.3.1, 7 September 2026
 
-The [current manuscript](paper/revision_2026-09-07_v3_3/README.md) and
+The [current manuscript](paper/revision_2026-09-07_v3_3_1/README.md) and
 [technical audit supplement](docs/TECHNICAL_AUDIT_SUPPLEMENT_2026-09-07.md)
 supersede the narrative status below. The submitted v3.2 is retained unchanged.
 [Saved-evidence re-analysis](results/review-audit-20260907/README.md) reproduces
@@ -15,6 +15,11 @@ ETG is an audit record, not a demonstrated operational governance mechanism.
 The [experiment gates](docs/EXPERIMENT_GATES_2026-09-07.md) separate remaining
 numerical/attribution fidelity, matched-baseline and actual repair-utility tests.
 No new model run or validated algorithmic novelty is claimed by this revision.
+
+Declaration correction: v3.3.1 acknowledges DICC computational resources and
+removes unconfirmed assertions of no funding or competing interests. Those
+author declarations remain pending confirmation before submission. Scientific
+content is unchanged from v3.3; this is not a new experiment or a final paper.
 
 Execution preparation: a [bounded fidelity/profile coordinator](docs/REPLAYIDS_FIDELITY_PROFILE.md)
 now implements controlled execution, aggregate-only tracking and protected
