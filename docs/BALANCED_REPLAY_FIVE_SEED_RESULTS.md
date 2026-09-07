@@ -1,5 +1,7 @@
 # Balanced Replay50 versus OFRA: completed paired replication
 
+**Checkpoint-scope correction (7 September 2026): ReplayIDS OFRA values below refer to Job 426307 guarded checkpoint selection, a secondary policy, not the registered last-epoch primary.** The original numbers and exports are retained. See the [last-epoch comparison and scoring diagnostic](REPLAYIDS_PRIMARY_SCORING_DIAGNOSTIC.md) for the primary result (85.51% accuracy, 54.40% Macro-F1, 85.73% attack recall, 13.10% FPR). Malaya is unaffected by this correction. `joint_cap3000` identifies the scoring arm, not the checkpoint-selection policy.
+
 Updated 7 September 2026. Both datasets have completed training seeds 1, 2, 3, 4 and 42. This report concerns prediction/retention only; it does not add SHAP or ETG evidence.
 
 ## Conclusion

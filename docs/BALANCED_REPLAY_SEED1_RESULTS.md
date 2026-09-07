@@ -1,5 +1,7 @@
 # Balanced Replay50 versus OFRA: seed-1 paired evidence
 
+Checkpoint scope: ReplayIDS OFRA here is the guarded-checkpoint secondary (Job 426307). It is not the registered last-epoch primary. See [primary-policy comparison](REPLAYIDS_PRIMARY_SCORING_DIAGNOSTIC.md); historical seed-1 exports remain unchanged.
+
 Updated 7 September 2026. These are individual-seed comparisons, not five-seed conclusions. OFRA denotes the existing same-seed `official / joint_cap3000` arm. Dataset contracts and task order are fixed, as specified in the [replication protocol](BALANCED_REPLAY_REPLICATION_PROTOCOL.md).
 
 ## Results

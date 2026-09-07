@@ -1,5 +1,11 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+Checkpoint-policy clarification: the ReplayIDS figures in the balanced-replay
+addendum below use the secondary guarded policy. The registered primary is
+last epoch. See the [primary comparison and scoring diagnosis](docs/REPLAYIDS_PRIMARY_SCORING_DIAGNOSTIC.md)
+for the corrected scope and the verified 85.51% primary accuracy. Historical
+exports are retained; no test-based model promotion was performed.
+
 Latest prediction addendum (7 September 2026):
 [completed Balanced Replay50 paired replication](docs/BALANCED_REPLAY_FIVE_SEED_RESULTS.md).
 Both datasets now include seeds 1, 2, 3, 4 and 42, with seeds 1-4 reported separately

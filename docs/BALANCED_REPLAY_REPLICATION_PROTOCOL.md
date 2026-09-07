@@ -34,6 +34,8 @@ A balanced-replay later epoch contains equal numbers of new-row and replay prese
 
 ## Evaluation and reporting
 
+Checkpoint-policy scope (clarified 7 September 2026): the original hash-bound ReplayIDS comparator was Job 426307 guarded selection. The registered primary remains Job 425539 last epoch; that comparison is added retrospectively in the [primary-policy diagnostic](REPLAYIDS_PRIMARY_SCORING_DIAGNOSTIC.md). The same `official/joint_cap3000` arm name does not make these checkpoint policies interchangeable. No original run, binding or result is replaced.
+
 Record every task checkpoint's confusion matrix, per-class precision/recall/F1/support, overall accuracy, Macro-F1, balanced accuracy and forgetting. Record attack recall and benign false-positive rate for ReplayIDS D2. Malaya's application labels do not define a benign/attack partition.
 
 Pair each result with the same training seed of OFRA's joint_cap3000 arm under the corresponding fixed data contract. Preserve the distinction between current diagnostic evidence and five-seed inference; report effect sizes and uncertainty, not a publication-readiness claim.
