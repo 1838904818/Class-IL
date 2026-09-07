@@ -1,5 +1,10 @@
 # OFRA and ETG technical documentation: historical four-seed snapshot
 
+Numerical isolation: [fixed-embedding Router diagnostics](docs/REPLAYIDS_ROUTER_ARITHMETIC.md)
+confirm float32 Router batching sensitivity. A direct64 reference is more stable
+in the tested cases but does not reproduce every saved CUDA prediction. No
+arithmetic change or calibration candidate has been promoted.
+
 Reconstruction update (7 September 2026): the [frozen-probe forward check](docs/REPLAYIDS_FORWARD_PARITY.md)
 failed the fixed Router/Joint score tolerance in all five seeds on CPU. One
 seed-4 probe prediction changed at batch 32. Calibration remains gated; original

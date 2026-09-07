@@ -1,5 +1,9 @@
 # ReplayIDS: frozen-probe reconstruction gate
 
+Follow-up: [fixed-embedding arithmetic isolation](REPLAYIDS_ROUTER_ARITHMETIC.md)
+now separates Router batch effects from encoder-batch perturbations. The failed
+legacy parity result below remains unchanged.
+
 7 September 2026. **Gate failed: do not use this CPU reconstruction for a new calibration or explanation claim.** This follows the [input-readiness audit](REPLAYIDS_SCORE_READINESS.md), which verified files and splits but did not prove forward parity. Neither result changes the original protected benchmark metrics.
 
 ## Fixed check
