@@ -1,6 +1,8 @@
 # Bounded historical-score fidelity profile
 
-Status: local implementation and synthetic validation only; not uploaded or submitted.
+Status: v5 uploaded with matching hashes but validation-only parsing failed;
+the v6 repair is local only. No calculation was submitted. See the
+[account-status regression note](DICC_ACCOUNT_STATUS_VALIDATION.md).
 No GPU pass, new model result, repair effect or live tracking run is reported here.
 This is a self-contained numerical-fidelity gate. It authorizes no subsequent
 experiment or automatic submission.

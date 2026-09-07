@@ -28,6 +28,13 @@ verifies input identity, not numerical reproduction. Local operational tests
 use synthetic/mocked boundaries. GPU execution, measured resource suitability,
 independent release approval and live tracking verification remain outstanding.
 
+Staging correction: the v5 package matched all 15 remote file hashes, but its
+validation-only guard rejected ANSI-coloured FULL account output. No job was
+submitted. The [account-status regression note](docs/DICC_ACCOUNT_STATUS_VALIDATION.md)
+records the local v6 parser repair and 16 passing regressions. Remote v6
+validation and independent release approval are still outstanding; scientific
+results and manuscript claims are unchanged.
+
 ## Previous manuscript and validation priorities (historical snapshot)
 
 The previously submitted [v3.2 manuscript](paper/external_review_2026-09-07/README.md)
