@@ -26,8 +26,11 @@ The new parser has 16 passing regressions, including the observed coloured
 FULL output, coloured LIMITED/CRLF, duplicate and conflicting fields, inactive
 notices and a reproduction of the previous failure. Together with 23 existing
 coordinator tests, local results are 38 PASS and one Windows symlink SKIP.
-Static preflight and Bash syntax validation passed. This does not establish
-that the complete guard passes against current live cluster services.
+Static preflight and Bash syntax validation passed. Subsequently the exact
+v6 guard also passed actual live validation, including coloured FULL status,
+partition membership, own-account QoS and a 600-second request within the
+259,200-second account limit. This client lacks the optional scheduler
+test-only capability; the compatibility notice is preserved.
 
 The candidate contains 17 bound files. It changes no scientific verifier,
 checkpoint, input binding, coordinator, score tolerance or resource request.
@@ -40,13 +43,17 @@ unmeasured. No scientific review item is closed by these operational tests.
 |---|---|
 | Uploaded v5 sbatch | `49edb9f53c5527047ea5223b7f91b033fc3f747275ab11c58abbba73c6160fa2` |
 | Uploaded v5 package manifest | `cddbd69727110f5c3ad99ecbb1ea83c9fcfc7fe3a020be34ca6c2b64223692ef` |
-| Local v6 sbatch | `b2eab1a663ddaad8643dec5e971cfc830a361ffc30671c02a4ec6644bbea1aa5` |
-| Local v6 package manifest | `0c1fe1ae0ba689466934d2ceba79d8b10ca52d2936ba9c4992ecd8edbf1fd4f7` |
+| Uploaded v6 sbatch | `b2eab1a663ddaad8643dec5e971cfc830a361ffc30671c02a4ec6644bbea1aa5` |
+| Uploaded v6 package manifest | `0c1fe1ae0ba689466934d2ceba79d8b10ca52d2936ba9c4992ecd8edbf1fd4f7` |
 | Pure parser | `a79089cfe79f971e88dd1bc973c85db6ea85ef1302b3dd9cf1c4982fce49946d` |
 
-v6 is local only: new staging authorization, exact remote closure, successful
-live validation, independent submission approval and a fresh exact-command
-confirmation remain required. This correction is not a Slurm execution result.
+Authorized v6 staging is complete. All 17 remote operation files and all 91
+bound input files match, the output parents are owned and empty, and the
+guard explicitly returned that no job was submitted. See the
+[redacted staging evidence](../results/replayids-gpu-fidelity/V6_STAGING_VALIDATION.json).
+Independent review approved the exact v6 candidate. Fresh exact-command user
+confirmation remains required; any relevant bound-file or live-state change
+invalidates that approval. This is not a numerical-fidelity or Slurm execution result.
 
 To reproduce the pure tests without a cluster connection:
 

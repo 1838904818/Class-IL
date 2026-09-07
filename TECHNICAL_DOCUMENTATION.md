@@ -25,15 +25,17 @@ Execution preparation: a [bounded fidelity/profile coordinator](docs/REPLAYIDS_F
 now implements controlled execution, aggregate-only tracking and protected
 failure evidence. All 91 remote input hashes were checked successfully; this
 verifies input identity, not numerical reproduction. Local operational tests
-use synthetic/mocked boundaries. GPU execution, measured resource suitability,
-independent release approval and live tracking verification remain outstanding.
+use synthetic/mocked boundaries. GPU execution, measured resource suitability
+and live tracking verification remain outstanding.
 
 Staging correction: the v5 package matched all 15 remote file hashes, but its
 validation-only guard rejected ANSI-coloured FULL account output. No job was
 submitted. The [account-status regression note](docs/DICC_ACCOUNT_STATUS_VALIDATION.md)
-records the local v6 parser repair and 16 passing regressions. Remote v6
-validation and independent release approval are still outstanding; scientific
-results and manuscript claims are unchanged.
+records the v6 parser repair and 16 passing regressions. v6 has now been
+uploaded: all 17 operation hashes and 91 input hashes match, and actual
+validation-only checks pass. Independent release review approved this exact
+candidate, subject to fresh submission confirmation. No job was submitted;
+scientific results and manuscript claims are unchanged.
 
 ## Previous manuscript and validation priorities (historical snapshot)
 
