@@ -1,7 +1,12 @@
 # Historical GPU fidelity: implementation and execution boundary
 
-Status on 7 September 2026: **local verifier and exact-input binding prepared;
-not submitted, not yet an operationally complete Slurm candidate**.
+Status on 7 September 2026: **local verifier, exact-input binding and operational
+coordinator prepared; not uploaded, not approved for submission and not run**.
+See the [bounded profile specification](REPLAYIDS_FIDELITY_PROFILE.md) for the
+later tracking, failure-preservation and resource controls. The 91 remote input
+hashes now match the same binding, as recorded in the
+[read-only closure check](../results/replayids-gpu-fidelity/REMOTE_INPUT_CLOSURE_20260907.json).
+Input identity is not a score-fidelity result.
 
 ## Why this check is needed
 
@@ -97,19 +102,19 @@ the GPU, simulate the real scheduler, measure utilization or prove full parity.
 The existing canonical scoring tests separately exercise the encoder versus
 whole-probe batching split.
 
-## Operational work still required before execution
+## Operational implementation and release boundary
 
-1. Bind and review a small GPU fidelity/profile launcher. Training-run memory is
-   context, not a measurement of this inference-only workload. Do not overstate
-   resource evidence or repeat dummy work to raise utilization.
-2. Record host-memory/CPU/GPU utilization and establish a bounded failure action.
-   Peak CUDA memory alone is not a GPU-utilization measurement.
-3. Add outbound aggregate-only W&B progress and validated protected output
-   copying/checksums, including partial-failure evidence. Raw probe rows and
-   sample IDs must not enter W&B. The verifier itself has no W&B/network client.
-4. Bind all executable dependencies, exact remote inputs, logs outside the
-   immutable operation closure, resource requests and output locations. Obtain
-   fresh live checks, independent review and exact-action authorization.
+The separate coordinator implements resource sampling, conservative stopping,
+online aggregate-only tracking and protected copying/checksums, including
+partial-failure evidence. Its mocked/local tests do not establish GPU integration,
+resource adequacy or live W&B delivery. Raw probe rows and sample identifiers
+remain outside tracking; the verifier itself has no network client.
+
+Remaining release gates are exact staged-file closure, reviewed log/output
+paths, fresh live environment/limit checks, independent approval, and exact-action
+user authorization. Training memory is context, not a measurement of this
+inference-only workload. A bounded first profile must not be described as a
+previously measured allocation or padded with dummy work to raise utilization.
 
 No new GPU result or W&B run exists for this candidate. Stage B arithmetic,
 full-test Stage C, calibration and score-specific SHAP/ETG validation remain

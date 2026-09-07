@@ -16,6 +16,13 @@ The [experiment gates](docs/EXPERIMENT_GATES_2026-09-07.md) separate remaining
 numerical/attribution fidelity, matched-baseline and actual repair-utility tests.
 No new model run or validated algorithmic novelty is claimed by this revision.
 
+Execution preparation: a [bounded fidelity/profile coordinator](docs/REPLAYIDS_FIDELITY_PROFILE.md)
+now implements controlled execution, aggregate-only tracking and protected
+failure evidence. All 91 remote input hashes were checked successfully; this
+verifies input identity, not numerical reproduction. Local operational tests
+use synthetic/mocked boundaries. GPU execution, measured resource suitability,
+independent release approval and live tracking verification remain outstanding.
+
 ## Previous manuscript and validation priorities (historical snapshot)
 
 The previously submitted [v3.2 manuscript](paper/external_review_2026-09-07/README.md)
@@ -38,8 +45,9 @@ has synthetic control tests, not real-data validation or a novelty claim.
 
 GPU validation preparation: [historical-environment verifier](docs/REPLAYIDS_GPU_FIDELITY_CANDIDATE.md)
 now binds 91 inputs and restores the original deterministic/TF32 settings.
-Local control tests and input hashes have been checked; GPU execution, resource
-profiling, W&B/protected-output integration and submission review are still pending.
+Local control tests and input hashes have been checked. A later coordinator
+implements W&B/protected-output integration with synthetic tests; GPU execution,
+resource profiling, real integration validation and submission approval remain pending.
 This is preparation, not a new performance or fidelity result.
 
 Canonical-path update: [all-checkpoint CPU fidelity](docs/REPLAYIDS_CANONICAL_FIDELITY.md)
