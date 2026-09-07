@@ -1,4 +1,4 @@
-# OFRA and ETG technical documentation: historical four-seed snapshot
+# OFRA and ETG technical documentation
 
 ## Current manuscript and validation priorities
 
@@ -8,10 +8,17 @@ the primary checkpoint correction and the CPU score-fidelity limitation.
 The earlier snapshot below is retained as history, not the current completion register.
 The [validation priorities](docs/VALIDATION_PRIORITIES_2026-09-07.md)
 distinguish existing results from proposed score-fidelity, sensitivity,
-faithfulness, fair-comparison and operational evaluations. A published single-seed
-64-setting drift grid already exists; full five-seed governance-policy sensitivity
-and historical-environment GPU parity are not established. No new training,
-GPU verification or operational ETG benefit is claimed by this documentation update.
+faithfulness, fair-comparison and operational evaluations. The
+[recovered five-seed EG grid](docs/RECOVERED_SENSITIVITY_2026-09-07.md)
+contains 320 verified settings and alternative-metric coverage for 100 transitions.
+Full three-method governance-state sensitivity and historical-environment GPU
+parity remain unestablished. No new training, GPU verification or operational
+ETG benefit is claimed by this documentation update.
+
+The [revised research plan](docs/RESEARCH_PLAN_2026-09-07.md) makes independently
+measurable intervention utility a condition for retaining ETG as a main contribution.
+A [research-only score-decomposition reference](experimental/expansion_diagnostic/)
+has synthetic control tests, not real-data validation or a novelty claim.
 
 GPU validation preparation: [historical-environment verifier](docs/REPLAYIDS_GPU_FIDELITY_CANDIDATE.md)
 now binds 91 inputs and restores the original deterministic/TF32 settings.
@@ -58,6 +65,8 @@ because seed 42 selected the comparator. OFRA has higher final accuracy in every
 pair; Malaya Macro-F1 gains are small on the new seeds, and ReplayIDS lower FPR
 comes with lower attack recall. This addendum does not add SHAP/ETG evidence or
 replace the registered prediction arm with a selected new rule.
+
+## Archived four-seed snapshot (superseded)
 
 > **Historical reference, not the current evidence summary.** The text below
 > preserves an earlier four-seed release, including its model settings,
