@@ -2,6 +2,23 @@
 
 ## Current revision: v3.3.1, 7 September 2026
 
+### Subsequent diagnostic evidence, 9 September 2026
+
+The completed P training-seed-1 frozen-embedding L1 run now has a fixed
+final-checkpoint competition diagnostic. Both loss arms reproduced their
+archived prediction hashes. For Slowhttptest, 1,029 of 1,100 positives
+crossed the binary 0.5 threshold but lost the multiclass argmax; the
+corresponding binary false-positive rate was 65.38%. FTP-Patator showed
+1,576 such losses among 1,588 positives and a binary FPR of 34.46%.
+Thus observed competition does not establish useful binary discrimination
+or demonstrate that thresholding would solve the problem.
+
+See the [published diagnostic and provenance](results/p-seed1-final-competition-diagnostic/README.md).
+This is one exploratory final checkpoint, not native routed OFRA, a P/O
+performance comparison, an AUROC/AP evaluation or an ETG intervention.
+The earlier preparation records below describe their respective dates.
+The diagnostic does not update the manuscript's primary five-seed results.
+
 ### Complete P and O derivation update, 8 September 2026
 
 All four increments of both data policies now pass real local derivation and
