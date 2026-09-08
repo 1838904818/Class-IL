@@ -96,6 +96,17 @@ class Task0Tests(unittest.TestCase):
         self.assertEqual(a["final_encoder_sha256"], b["final_encoder_sha256"])
         self.assertEqual(r.read_json(self.root / "tracked" / "pretrain-cost.json")["measurements"]["optimizer_steps"], 6)
 
+    def test_resume_rejects_metric_adapter_drift(self):
+        import pretrain_metrics
+        self.run_stage("paused", max_steps=1)
+        original = r.sha
+        def changed(path):
+            return "0" * 64 if Path(path) == Path(pretrain_metrics.__file__) else original(path)
+        with patch.object(r, "sha", side_effect=changed):
+            with self.assertRaisesRegex(Exception, "resume input/code/environment drift"):
+                self.run_stage("paused", resume=True)
+        self.assertEqual(r.read_json(self.root / "paused" / "LATEST.json")["cursor"], 1)
+
     def test_pause_resume_matches_clean_state_and_cost(self):
         self.assertEqual(self.run_stage("resumed", max_steps=1)["status"], "PAUSED")
         self.assertFalse((self.root / "resumed" / "COMPLETE.json").exists())

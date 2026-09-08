@@ -189,6 +189,7 @@ def run(directory, expected_manifest_sha256, config_path, output, *, evidence_ki
                    "config_value_sha256": r.object_hash(config),
                    "implementation_sha256": r.sha(__file__), "shared_helpers_sha256": r.sha(r.__file__),
                    "encoder_adapter_sha256": r.sha(export.__file__), "evidence_kind": evidence_kind,
+                   "metric_adapter_sha256": r.sha(pretrain_metrics.__file__),
                    "environment": r.environment(device), "runtime_source_sha256": export.PINNED_RUNTIME
                    if config["architecture"]["encoder_type"] == "ft_transformer" else {}}
         if resume:
@@ -222,7 +223,8 @@ def run(directory, expected_manifest_sha256, config_path, output, *, evidence_ki
                          measurements=[], sampled_storage_peak_bytes=0, observed_optimizer_peak_bytes=0)
         def checkpoint():
             r.require(r.sha(__file__) == binding["implementation_sha256"] and r.sha(r.__file__) == binding["shared_helpers_sha256"]
-                      and r.sha(export.__file__) == binding["encoder_adapter_sha256"], "pretraining code changed")
+                      and r.sha(export.__file__) == binding["encoder_adapter_sha256"]
+                      and r.sha(pretrain_metrics.__file__) == binding["metric_adapter_sha256"], "pretraining code changed")
             if config["architecture"]["encoder_type"] == "ft_transformer":
                 export.verify_runtime_sources(runtime_root)
             state["model"] = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
@@ -309,7 +311,8 @@ def run(directory, expected_manifest_sha256, config_path, output, *, evidence_ki
         close_arrays(other)
         r.require(verified == manifest and r.sha(config_path) == binding["config_sha256"], "training input changed")
         r.require(r.sha(__file__) == binding["implementation_sha256"] and r.sha(r.__file__) == binding["shared_helpers_sha256"]
-                  and r.sha(export.__file__) == binding["encoder_adapter_sha256"], "pretraining code changed")
+                  and r.sha(export.__file__) == binding["encoder_adapter_sha256"]
+                  and r.sha(pretrain_metrics.__file__) == binding["metric_adapter_sha256"], "pretraining code changed")
         if config["architecture"]["encoder_type"] == "ft_transformer":
             export.verify_runtime_sources(runtime_root)
         journal.emit({"event": "attempt_completed", "elapsed_seconds": time.perf_counter() - started})
