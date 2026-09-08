@@ -2,6 +2,20 @@
 
 ## Current revision: v3.3.1, 7 September 2026
 
+### Prospective data preparation update, 8 September 2026
+
+The first real local prospective Task 0 derivation is complete. From 529439
+training rows, it selected 5559 Benign and 5559 DoS GoldenEye fitting rows,
+reserved 52943 calibration rows, and recorded 465378 omitted fitting candidates.
+An independent source-index audit verified exhaustive, nonoverlapping coverage.
+The common transform cohort has 11118 rows; no transform or encoder was fitted.
+The measured local duration was 83.891 seconds with about 186.3 MiB observed
+peak child working set. These are Windows measurements, not a DICC allocation
+profile. See the [result and evidence](experimental/parallel_execution/prospective_sampling/real_input_preparation_20260908/TASK0_RESULT.md).
+Later increments, the offline comparison arm, model training and performance
+evaluation remain outstanding. Row-identity checks do not prove capture-group
+independence. No new predictive benefit or algorithmic novelty is established.
+
 ### Infrastructure verification update, 8 September 2026
 
 The [UUID-only telemetry repair](experimental/parallel_execution/operations/README.md)
