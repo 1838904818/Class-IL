@@ -4,14 +4,14 @@
 
 The shared Task-0 FT256x4 encoder stage has now completed on real data and passed its post-run audit: 11,118 common fitting rows, eight epochs, 232 optimizer steps and 88,944 row presentations. See the paired sampling evidence directory's TRAINING_RESULT.md. This run used local journals rather than online W&B.
 
-The L1 downstream head comparison and FT embedding export have not yet run on this new cohort. Statements below about synthetic-only L1 validation refer to these downstream components, not the completed encoder stage. There is still no full OFRA router comparison or new test-set accuracy result.
+The P/O FT embedding exports have also completed and passed the pair audit: 377,199 and 496,420 total forwarded rows, respectively, including identical official-test outputs. See EMBEDDING_EXPORT_RESULT.md in the paired sampling evidence directory. The L1 downstream head comparison has not run on this cohort. There is still no full OFRA router comparison or new test-set accuracy result.
 
 This is a working experimental runner, not only a schema. It trains paired
 binary residual low-rank heads on actual supplied NumPy embedding arrays,
 measures consumed rows and optimizer steps, checkpoints Adam state, evaluates
 held-out data, and audits its emitted receipts. **Only tiny synthetic CPU tests
 have been executed. No real-data training, GPU profile, institutional submission,
-or baseline reproduction is claimed.**
+or baseline reproduction is claimed for the downstream L1 runner.** The separate real-data encoder training and frozen exports are documented above.
 
 The estimand is deliberately narrow: plain binary cross-entropy versus the
 existing conditional focal weighting, under one identical frozen Task-0 encoder,
@@ -39,7 +39,7 @@ short on an arbitrary dataset. Resume requires unchanged input bytes, source,
 configuration, environment and online-tracking policy. Each unit is one paired
 head epoch or one task evaluation; no test-selected checkpoint is possible.
 
-CUDA is implemented but untested here. It requires a supported device and an
+Downstream L1 CUDA training is implemented but untested here. The separate encoder training/export CUDA stages have run. CUDA requires a supported device and an
 explicit deterministic `CUBLAS_WORKSPACE_CONFIG` before launch. No GPU request,
 HPC script, remote command or allocation recommendation is supplied. Real
 institutional runs remain subject to current rules, independent exact-hash review
@@ -94,8 +94,8 @@ python -B materialize_embeddings.py raw/export-manifest.json --output inputs/mat
 MLP export is self-contained and tested on 18 synthetic rows. FT-Transformer
 export additionally needs `--runtime-root` pointing to the exact hash-pinned
 OFRA runtime recorded by the adapter. Its upstream dependency validates version
-and source hash. The real FT path and historical numerical parity have **not**
-been executed or certified here. No training is performed by this exporter.
+and source hash. The real FT export path has now run for the paired cohort;
+this does not certify historical numerical parity. No training is performed by this exporter.
 Its source is equivalent to the encoder-only portion of the existing monitoring
 loader, not a call that unnecessarily instantiates historical heads/routers.
 
