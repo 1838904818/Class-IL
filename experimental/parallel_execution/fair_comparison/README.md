@@ -1,5 +1,11 @@
 # Executable L1 objective-control pilot
 
+## Execution status, 9 September 2026
+
+The shared Task-0 FT256x4 encoder stage has now completed on real data and passed its post-run audit: 11,118 common fitting rows, eight epochs, 232 optimizer steps and 88,944 row presentations. See the paired sampling evidence directory's TRAINING_RESULT.md. This run used local journals rather than online W&B.
+
+The L1 downstream head comparison and FT embedding export have not yet run on this new cohort. Statements below about synthetic-only L1 validation refer to these downstream components, not the completed encoder stage. There is still no full OFRA router comparison or new test-set accuracy result.
+
 This is a working experimental runner, not only a schema. It trains paired
 binary residual low-rank heads on actual supplied NumPy embedding arrays,
 measures consumed rows and optimizer steps, checkpoints Adam state, evaluates
