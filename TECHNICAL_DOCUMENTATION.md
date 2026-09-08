@@ -10,7 +10,7 @@ reports 192 executed tests passed and two platform skips across five software
 tracks. These software tests do not establish governance benefit.
 The subsequent [GPU probe verification](experimental/parallel_execution/operations/FIDELITY_VERIFIED_SCOPE.md)
 completed as Job 454941: 20 seed/checkpoint pairs and 60 head/router/joint
-score comparisons were bit-exact with zero prediction changes on the bound
+score comparisons were numerically equal with zero prediction changes on the bound
 probes. This is not a full-population test, new accuracy result, or proof of
 historical driver/kernel identity. Manuscript integration remains pending.
 

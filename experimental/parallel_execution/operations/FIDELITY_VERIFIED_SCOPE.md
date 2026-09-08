@@ -14,7 +14,7 @@ Bound verifier requires atol=1e-4, rtol=1e-5 and encoder batch size 512.
 
 The complete Cartesian product of seeds 1, 2, 3, 4, 42 and checkpoints 0–3
 contains 20 unique records. Each compares head, router-z and joint scores:
-60 score comparisons report bit-exact equality, zero maximum absolute error
+60 score comparisons report exact numerical equality, zero maximum absolute error
 and zero out-of-tolerance cells. Prediction mismatch counts are zero and saved
 and reconstructed prediction hashes match in every record.
 
@@ -37,6 +37,13 @@ This local receipt is not an independent cloud API verification.
 - New accuracy/forgetting results, improved performance, or algorithm novelty.
 - Closure of all numerical or methodological comments outside this bound
   ReplayIDS probe/checkpoint reconstruction scope.
+
+The original report field named `bit_exact` is computed with NumPy
+`array_equal`. It establishes elementwise numerical equality, not bytewise
+identity: signed zeros and equal values in different dtypes can compare equal.
+The comparator checks score shapes and finiteness but does not explicitly
+compare score dtypes or saved-versus-reconstructed score bytes. Accordingly,
+this document does not claim identical floating-point bit patterns.
 
 No raw-score arrays were recomputed locally in this audit. This review checks
 the protected per-checkpoint outputs, hashes, coverage and bound verifier
