@@ -48,9 +48,19 @@ class Metrics(unittest.TestCase):
 class Telemetry(unittest.TestCase):
     def test_gpu_mapping(self):
         env={'CUDA_VISIBLE_DEVICES':'0','SLURM_STEP_GPUS':'5','SLURM_JOB_GPUS':'5'}
-        self.assertEqual(m.allocated_gpu(env),'5')
-        self.assertIn('--id=5',m.gpu_query(m.allocated_gpu(env)))
-        self.assertEqual(m.allocated_gpu({'CUDA_VISIBLE_DEVICES':'GPU-a-b'}),'GPU-a-b')
+        identity='GPU-12345678-1234-1234-1234-123456789abc'
+        self.assertEqual(m.allocated_gpu(env,lambda:identity),identity)
+        self.assertIn('--id='+identity,m.gpu_query(m.allocated_gpu(env,lambda:identity)))
+        self.assertEqual(m.allocated_gpu({'CUDA_VISIBLE_DEVICES':'GPU-12345678'},lambda:identity),identity)
+    def test_uuid_resolution_fails_closed(self):
+        env={'CUDA_VISIBLE_DEVICES':'0','SLURM_STEP_GPUS':'5','SLURM_JOB_GPUS':'5'}
+        for value in ('5','GPU-short','MIG-123',''):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                m.allocated_gpu(env,lambda:value)
+        with self.assertRaises(ValueError):
+            m.allocated_gpu({'CUDA_VISIBLE_DEVICES':'GPU-deadbeef'},lambda:'GPU-12345678-1234-1234-1234-123456789abc')
+        def unavailable():raise RuntimeError('driver unavailable')
+        with self.assertRaises(RuntimeError):m.allocated_gpu(env,unavailable)
     def test_invalid_gpu_mapping(self):
         for v in ('','0,1','MIG-abc','0; whoami','-1'):
             with self.subTest(v=v),self.assertRaises(ValueError):m.gpu_query(v)
@@ -140,7 +150,7 @@ class Binding(unittest.TestCase):
 
 class CoordinatorFlow(unittest.TestCase):
     """Mocked SDK/process boundary; this is not a GPU or Slurm integration test."""
-    def exercise(self,init_fails=False,finish_fails=False,telemetry_fails=False,running=False):
+    def exercise(self,init_fails=False,finish_fails=False,telemetry_fails=False,running=False,identity_error=None):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);scratch=root/'scratch';protected=root/'protected'
             scratch.mkdir();protected.mkdir();folder=SOURCE.parent
@@ -178,6 +188,7 @@ class CoordinatorFlow(unittest.TestCase):
                 if telemetry_fails:raise RuntimeError('synthetic telemetry error')
                 return {'gpu_percent':25.,'gpu_memory_used_mib':10.,'gpu_memory_total_mib':100.}
             def popen(command,**kwargs):
+                self.assertIsNone(identity_error, 'identity failure must not launch verifier')
                 self.assertFalse(telemetry_fails, 'preflight failure must not launch verifier')
                 out=Path(command[command.index('--output')+1]);out.mkdir()
                 m.write(out/'GPU_FIDELITY.json',valid_report());return Child()
@@ -190,12 +201,15 @@ class CoordinatorFlow(unittest.TestCase):
                  patch.object(m,'inside',side_effect=lambda base,p:Path(p)),patch.object(m,'verify_operation'),\
                  patch.object(m,'prepare_tracking_environment',return_value={}),\
                  patch.object(m,'read_allocated_gpu',side_effect=telemetry),\
+                 patch.object(m,'allocated_gpu',return_value='GPU-a-b',side_effect=identity_error),\
                  patch.object(m,'process_sample',return_value=(0.,5*1024**3 if running else 0)),\
                  patch.object(m.time,'sleep'),patch.object(m.signal,'signal'),\
                  patch.object(m.subprocess,'Popen',side_effect=popen),patch.dict(m.os.environ,env),\
                  patch.object(m.sys,'argv',['profile','--operation',str(op),'--operation-sha256',m.digest(op)]):
                 code=m.main()
             target=protected/'job-123';status=m.load(target/'OPERATION_STATUS.json')
+            self.assertEqual(m.load(target/'RESOURCE_SAMPLES.json')['gpu_scope'],
+                'only the full UUID of the sole process-visible CUDA device resolved by a timeout-bounded helper; Slurm IDs are consistency checks, not telemetry selectors')
             receipt=m.load(target/'TRACKING_FINALIZATION.json')
             seal=m.load(target/'PROTECTED_COMPLETE.json')
             for n,h in seal['files'].items():self.assertEqual(m.digest(target/n),h)
@@ -214,6 +228,13 @@ class CoordinatorFlow(unittest.TestCase):
         self.assertEqual(code,82);self.assertTrue(status['scientific_pass'])
         self.assertEqual(receipt['status'],'CLIENT_FINISH_FAILED')
 
+    def test_identity_failures_are_protected_without_verifier(self):
+        for error in (m.subprocess.TimeoutExpired('identity',10),
+                      m.subprocess.CalledProcessError(1,'identity'),ValueError('invalid UUID')):
+            code,status,receipt=self.exercise(identity_error=error)
+            self.assertEqual(code,126)
+            self.assertEqual(status['status'],'TELEMETRY_PREFLIGHT_FAILURE')
+            self.assertFalse(status['scientific_pass'])
     def test_gpu_preflight_failure_does_not_launch_verifier(self):
         code,status,receipt=self.exercise(telemetry_fails=True)
         self.assertEqual(code,126)
@@ -292,5 +313,58 @@ class TelemetryRegression(unittest.TestCase):
             old={'schema':'replayids-fidelity-profile-v2','walltime_seconds':600,
                  'verifier_deadline_seconds':480,'allocated_memory_mib':4096}
             with self.assertRaises(ValueError):m.verify_operation(old,Path(d))
+
+class NativeIdentityBoundary(unittest.TestCase):
+    def test_identity_child_has_timeout_and_preserved_environment(self):
+        env={'CUDA_VISIBLE_DEVICES':'0','SLURM_STEP_GPUS':'5','SLURM_JOB_GPUS':'5'}
+        identity='GPU-12345678-1234-1234-1234-123456789abc'
+        with patch.object(m.subprocess,'run',return_value=types.SimpleNamespace(stdout=identity+'\n')) as run:
+            self.assertEqual(m.allocated_gpu(env),identity)
+        kwargs=run.call_args.kwargs
+        self.assertEqual(kwargs['timeout'],10)
+        self.assertEqual(kwargs['env'],env)
+        self.assertIsNot(kwargs['env'],env)
+        self.assertTrue(kwargs['check'])
+        self.assertNotIn('shell',kwargs)
+    def test_identity_child_timeout_propagates(self):
+        with patch.object(m.subprocess,'run',side_effect=m.subprocess.TimeoutExpired('identity',10)):
+            with self.assertRaises(m.subprocess.TimeoutExpired):m.bounded_cuda_uuid({})
+    def driver(self,count=1,fail=None,empty=False):
+        calls=[]
+        class Function:
+            def __init__(self,name,action):self.name=name;self.action=action
+            def __call__(self,*args):
+                calls.append(self.name)
+                if self.name==fail:return 101
+                self.action(*args)
+                return 0
+        def identity(ptr,device):
+            self.assertEqual(device,7)
+            for i in range(16):ptr._obj.bytes[i]=0 if empty else i+1
+        return types.SimpleNamespace(
+            cuInit=Function('init',lambda flags:None),
+            cuDeviceGetCount=Function('count',lambda ptr:setattr(ptr._obj,'value',count)),
+            cuDeviceGet=Function('device',lambda ptr,ordinal:setattr(ptr._obj,'value',7)),
+            cuDeviceGetUuid=Function('uuid',identity)),calls
+    def test_native_uuid_bytes(self):
+        driver,calls=self.driver()
+        with patch('ctypes.CDLL',return_value=driver) as load:
+            self.assertEqual(m.cuda_device_uuid(),'GPU-01020304-0506-0708-090a-0b0c0d0e0f10')
+        load.assert_called_once_with('libcuda.so.1')
+        self.assertEqual(calls,['init','count','device','uuid'])
+    def test_zero_and_multiple_devices_rejected_before_identity(self):
+        for count in (0,2,8):
+            driver,calls=self.driver(count=count)
+            with patch('ctypes.CDLL',return_value=driver),self.assertRaises(ValueError):m.cuda_device_uuid()
+            self.assertEqual(calls,['init','count'])
+    def test_native_api_failures_and_empty_uuid(self):
+        for stage in ('init','count','device','uuid'):
+            driver,calls=self.driver(fail=stage)
+            with patch('ctypes.CDLL',return_value=driver),self.assertRaises(RuntimeError):m.cuda_device_uuid()
+            self.assertEqual(calls[-1],stage)
+        driver,_=self.driver(empty=True)
+        with patch('ctypes.CDLL',return_value=driver),self.assertRaises(ValueError):m.cuda_device_uuid()
+    def test_missing_driver(self):
+        with patch('ctypes.CDLL',side_effect=OSError('unavailable')),self.assertRaises(OSError):m.cuda_device_uuid()
 
 if __name__=='__main__':unittest.main()

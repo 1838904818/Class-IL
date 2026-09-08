@@ -2,6 +2,15 @@
 
 ## Current revision: v3.3.1, 7 September 2026
 
+### Infrastructure verification update, 8 September 2026
+
+The [UUID-only telemetry repair](experimental/parallel_execution/operations/README.md)
+uses a timeout-bounded identity helper. The [new local verification record](experimental/parallel_execution/UUID_REPAIR_VERIFICATION.json)
+reports 192 executed tests passed and two platform skips across five software
+tracks. This does not establish successful cluster execution, score fidelity,
+or governance benefit. The failed profile did not start scientific comparisons;
+the manuscript results remain unchanged pending a newly authorized GPU run.
+
 Executable preparation: the [three-line execution package](experimental/parallel_execution/README.md)
 now implements actual paired head optimization/accounting, immutable train-only
 array derivation and its encoder/input bridge, bounded R1 fitting with independent

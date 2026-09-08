@@ -97,15 +97,61 @@ def gpu_query(device):
     return ['nvidia-smi','--id='+device,'--query-gpu=utilization.gpu,memory.used,memory.total',
             '--format=csv,noheader,nounits']
 
-def allocated_gpu(env):
-    """Use a UUID or Slurm's global step ID, never a remapped CUDA ordinal."""
+def cuda_device_uuid():
+    """Resolve the sole process-visible device; call only inside an allocation.
+
+    CUDA ordinals and Slurm/NVML indices need not agree. Do not enumerate NVML
+    devices or try numeric fallback identifiers when this resolution fails.
+    """
+    import ctypes
+    driver=ctypes.CDLL('libcuda.so.1')
+    def check(code):
+        if code != 0:raise RuntimeError('CUDA identity query failed: '+str(code))
+    driver.cuInit.argtypes=[ctypes.c_uint]
+    driver.cuDeviceGetCount.argtypes=[ctypes.POINTER(ctypes.c_int)]
+    driver.cuDeviceGet.argtypes=[ctypes.POINTER(ctypes.c_int),ctypes.c_int]
+    class UUID(ctypes.Structure):
+        _fields_=[('bytes',ctypes.c_ubyte*16)]
+    driver.cuDeviceGetUuid.argtypes=[ctypes.POINTER(UUID),ctypes.c_int]
+    for name in ('cuInit','cuDeviceGetCount','cuDeviceGet','cuDeviceGetUuid'):
+        getattr(driver,name).restype=ctypes.c_int
+    check(driver.cuInit(0))
+    count=ctypes.c_int();check(driver.cuDeviceGetCount(ctypes.byref(count)))
+    if count.value!=1:raise ValueError('Exactly one process-visible CUDA device required')
+    device=ctypes.c_int();check(driver.cuDeviceGet(ctypes.byref(device),0))
+    identity=UUID();check(driver.cuDeviceGetUuid(ctypes.byref(identity),device.value))
+    import uuid
+    raw=bytes(identity.bytes)
+    if raw==bytes(16):raise ValueError('Empty CUDA UUID')
+    return 'GPU-'+str(uuid.UUID(bytes=raw))
+
+def bounded_cuda_uuid(env):
+    """One short-lived identity child; timeout kills/reaps it before returning.
+
+    Native driver calls cannot safely be interrupted in the monitoring process.
+    The child inherits only the original compute context, before SDK changes.
+    """
+    command=[sys.executable,'-B','-c',
+        "import runpy,sys; m=runpy.run_path(sys.argv[1],run_name='identity_helper'); print(m['cuda_device_uuid']())",
+        str(Path(__file__).resolve())]
+    result=subprocess.run(command,env=dict(env),capture_output=True,text=True,
+        check=True,timeout=10)
+    return result.stdout.strip()
+
+def allocated_gpu(env,resolve_uuid=None):
+    """Validate single-device allocation, then resolve through CUDA, not Slurm IDs."""
     visible=env.get('CUDA_VISIBLE_DEVICES','')
     gpu_query(visible)
-    if visible.startswith('GPU-'):return visible
-    step=env.get('SLURM_STEP_GPUS','');job=env.get('SLURM_JOB_GPUS','')
-    gpu_query(step)
-    if job!=step:raise ValueError('One matching global job/step GPU ID required')
-    return step
+    if not visible.startswith('GPU-'):
+        step=env.get('SLURM_STEP_GPUS','');job=env.get('SLURM_JOB_GPUS','')
+        gpu_query(step)
+        if job!=step:raise ValueError('One matching global job/step GPU ID required')
+    resolved=resolve_uuid() if resolve_uuid else bounded_cuda_uuid(env)
+    if not re.fullmatch(r'GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',resolved):
+        raise ValueError('Full CUDA UUID required')
+    if visible.startswith('GPU-') and not resolved.lower().startswith(visible.lower()):
+        raise ValueError('CUDA UUID does not match visible allocation')
+    return resolved
 
 def scientific_pass(report,code,binding):
     rows=report.get('checkpoints',[])
@@ -234,7 +280,7 @@ def main():
     if digest(a.operation)!=a.operation_sha256:raise ValueError('Operation binding mismatch')
     folder=a.operation.resolve().parent;plan=load(a.operation);verify_operation(plan,folder)
     # No environment installation, credential reading, or scientific imports here.
-    gpu_cmd=gpu_query(allocated_gpu(os.environ))
+    gpu_cmd=None
     scratch=inside(Path('/scr/user')/user,plan['scratch_parent'])
     protected=inside(Path.home(),plan['protected_parent'])
     if not scratch.is_dir() or not protected.is_dir():raise ValueError('Reviewed output parents must exist')
@@ -254,6 +300,7 @@ def main():
         clean=prepare_tracking_environment(compute_env,Path.home(),os.getuid(),plan['wandb_version'])
         # A device/library failure must not launch the memory-heavy verifier.
         stage='allocated_gpu_preflight'
+        gpu_cmd=gpu_query(allocated_gpu(compute_env))
         initial_sample=read_allocated_gpu(gpu_cmd,compute_env)
         status['telemetry_preflight']={'status':'PASS','sample':initial_sample,
             'scope':'query availability only; not workload utilization or scientific fidelity'}
@@ -336,7 +383,7 @@ def main():
             tracking_finish_confirmed=False,tracking_receipt='TRACKING_FINALIZATION.json, if subsequently created')
         write(run_dir/'WANDB_RUN.json',tracking);write(run_dir/'RESOURCE_SAMPLES.json',{
             'samples':samples,'sample_seconds':5,'host_memory_scope':'summed RSS of this process and its descendants; shared pages may be double-counted',
-            'gpu_scope':'only the allocated UUID or Slurm global step GPU ID; never a remapped CUDA ordinal',
+            'gpu_scope':'only the full UUID of the sole process-visible CUDA device resolved by a timeout-bounded helper; Slurm IDs are consistency checks, not telemetry selectors',
             'cpu_scope':'own process-tree tick deltas; exited children can cause conservative undercounting',
             'measurement_scope':'first workload profile; not a prior measured resource justification'})
         write(run_dir/'OPERATION_STATUS.json',status)

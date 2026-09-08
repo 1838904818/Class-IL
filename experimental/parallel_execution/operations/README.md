@@ -1,5 +1,34 @@
 # Local telemetry repair, not an approved job
 
+## Update: GPU identity and bounded initialization
+
+The subsequent Job 454585 failed after four seconds with exit 126 at telemetry
+preflight. Its protected status reports `no_device` and query return code 6;
+the verifier did not start and no online tracking run was generated. Three
+protected core artifacts passed checksum verification after local retrieval.
+This is not a scientific fidelity failure and not an OOM.
+
+The former assumption that Slurm numeric GPU IDs could be used as NVML indices
+is unsafe; see [Slurm GPU management](https://slurm.schedmd.com/gres.html).
+The exact physical cause of the failed job remains unproven. Current local
+source resolves the sole process-visible CUDA device UUID in a sequential
+helper with a 10-second timeout, then queries that UUID only. No numeric
+fallback, whole-node enumeration or visibility override is used. Native CUDA
+return types are explicit. Identity errors stop before verifier launch and
+produce protected, redacted failure records. The recorded measurement scope
+now explicitly describes UUID-only selection.
+
+The coordinator suite contains 37 synthetic tests: 36 passed and one platform
+skip. These tests include mocked native API failures and protected timeout
+paths; they do not establish successful CUDA execution on the cluster.
+Independent review accepted the local candidate only. Remote checks and a new
+explicit submission authorization are still required. No manuscript result
+or novelty claim follows from this infrastructure repair.
+
+The following account documents the earlier environment-preservation repair.
+Its local-only statement describes that historical test stage, not the later
+failed Job 454585.
+
 The historical-fidelity prerequisite did not complete. Job 453142 ended on
 7 September 2026 at 07:17:56 UTC after 27 seconds with Slurm FAILED 126:0.
 The coordinator recorded TELEMETRY_FAILURE, three CalledProcessError events,
