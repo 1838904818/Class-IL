@@ -7,9 +7,12 @@
 The [UUID-only telemetry repair](experimental/parallel_execution/operations/README.md)
 uses a timeout-bounded identity helper. The [new local verification record](experimental/parallel_execution/UUID_REPAIR_VERIFICATION.json)
 reports 192 executed tests passed and two platform skips across five software
-tracks. This does not establish successful cluster execution, score fidelity,
-or governance benefit. The failed profile did not start scientific comparisons;
-the manuscript results remain unchanged pending a newly authorized GPU run.
+tracks. These software tests do not establish governance benefit.
+The subsequent [GPU probe verification](experimental/parallel_execution/operations/FIDELITY_VERIFIED_SCOPE.md)
+completed as Job 454941: 20 seed/checkpoint pairs and 60 head/router/joint
+score comparisons were bit-exact with zero prediction changes on the bound
+probes. This is not a full-population test, new accuracy result, or proof of
+historical driver/kernel identity. Manuscript integration remains pending.
 
 Executable preparation: the [three-line execution package](experimental/parallel_execution/README.md)
 now implements actual paired head optimization/accounting, immutable train-only
@@ -17,7 +20,8 @@ array derivation and its encoder/input bridge, bounded R1 fitting with independe
 acceptance and sealed subsequent evaluation, and native raw-score/fusion controls.
 The [verification record](experimental/parallel_execution/LOCAL_VERIFICATION.json)
 concerns tiny synthetic CPU and mocked operational tests only; no real-data
-training, SHAP extraction, GPU fidelity pass or intervention benefit is claimed.
+training, SHAP extraction or intervention benefit is claimed by that local record.
+The separately linked GPU probe verification is the subsequent empirical result.
 The [candidate novelty analysis](experimental/parallel_execution/NOVELTY_AND_FALSIFICATION.md)
 documents close prior art, conditional claims, simple controls and rejection
 criteria. The [review-status delta](experimental/parallel_execution/REVIEW_STATUS_DELTA.md)
