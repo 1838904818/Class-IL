@@ -76,6 +76,26 @@ class Task0Tests(unittest.TestCase):
         result = p.audit(self.root / "pretrain", self.cohort, self.digest)
         self.assertEqual(result["status"], "AUDIT_PASS")
 
+    def test_metric_transport_failure_preserves_step_without_retraining(self):
+        events = []
+        def fail(event):
+            events.append(event)
+            raise ConnectionError("synthetic uncertain delivery")
+        with self.assertRaises(ConnectionError):
+            self.run_stage("tracked", metric_send=fail)
+        self.assertEqual(r.read_json(self.root / "tracked" / "LATEST.json")["cursor"], 1)
+        self.assertEqual(set(events[0]), {"event_id", "metrics"})
+        self.assertNotIn("row_ids", str(events[0]))
+        resumed_events = []
+        self.run_stage("tracked", resume=True, metric_send=resumed_events.append)
+        self.run_stage("clean")
+        self.assertEqual(resumed_events[0]["metrics"]["pretrain/optimizer_step"], 2)
+        self.assertNotEqual(events[0]["event_id"].split(":")[0], resumed_events[0]["event_id"].split(":")[0])
+        a = r.read_json(self.root / "tracked" / "PRETRAIN_PROFILE.json")
+        b = r.read_json(self.root / "clean" / "PRETRAIN_PROFILE.json")
+        self.assertEqual(a["final_encoder_sha256"], b["final_encoder_sha256"])
+        self.assertEqual(r.read_json(self.root / "tracked" / "pretrain-cost.json")["measurements"]["optimizer_steps"], 6)
+
     def test_pause_resume_matches_clean_state_and_cost(self):
         self.assertEqual(self.run_stage("resumed", max_steps=1)["status"], "PAUSED")
         self.assertFalse((self.root / "resumed" / "COMPLETE.json").exists())

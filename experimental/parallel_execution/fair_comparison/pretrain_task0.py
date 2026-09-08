@@ -153,7 +153,9 @@ def pretrain_cost(output, state):
 
 
 def run(directory, expected_manifest_sha256, config_path, output, *, evidence_kind, runtime_root=None,
-        device_name="cpu", resume=False, max_steps=None, fault_after_steps=None):
+        device_name="cpu", resume=False, max_steps=None, fault_after_steps=None, metric_send=None):
+    import pretrain_metrics
+    emitter = pretrain_metrics.AttemptEmitter(r.uuid.uuid4().hex, metric_send) if metric_send is not None else None
     started = time.perf_counter()
     r.require(evidence_kind in ("synthetic", "real"), "explicit evidence kind required")
     r.require(fault_after_steps is None or evidence_kind == "synthetic", "synthetic-only fault injection")
@@ -282,6 +284,13 @@ def run(directory, expected_manifest_sha256, config_path, output, *, evidence_ki
                     "cuda_allocated_peak_bytes": torch.cuda.max_memory_allocated(device) if device.type == "cuda" else None,
                     "cuda_reserved_peak_bytes": torch.cuda.max_memory_reserved(device) if device.type == "cuda" else None})
             state["cursor"] = step + 1
+            if emitter is not None:
+                try:
+                    emitter.emit(state["measurements"][-1])
+                except Exception:
+                    # Preserve completed computation; an uncertain remote send is not retried.
+                    latest_ref = checkpoint()
+                    raise
             if fault_after_steps is not None and state["cursor"] - start_cursor >= fault_after_steps:
                 raise RuntimeError("synthetic_injected_task0_failure")
             if state["cursor"] % config["checkpoint_every_steps"] == 0 or state["cursor"] == total_steps or (
