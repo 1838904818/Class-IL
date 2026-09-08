@@ -4,7 +4,7 @@
 
 ## Principal changes
 
-Governance has been removed from the title and headline contribution. ETG remains an auditable, method-conditioned ledger. Existing five-seed threshold grids, complementary stability metrics, top-15 policy sensitivity and performance-stratified consensus are now presented. The exact-forward/surrogate-backward limitation is explicit. No new training, attribution, calibration or intervention experiment was executed.
+Governance has been removed from the title and headline contribution. ETG remains an auditable, method-conditioned ledger. Existing five-seed threshold grids, complementary stability metrics, top-15 policy sensitivity and performance-stratified consensus are now presented. The exact-forward/surrogate-backward limitation is explicit. These re-analyses performed no training. A subsequent local common Task-0 encoder run completed eight epochs on 11,118 fitting rows and passed its artifact audit; see prospective_sampling/real_pair_20260908/TRAINING_RESULT.md. That preparatory run provides no new downstream accuracy, attribution, calibration or intervention result.
 
 ## How to read the status
 
