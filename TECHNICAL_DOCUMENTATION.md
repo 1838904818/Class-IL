@@ -2,7 +2,17 @@
 
 ## Current revision: v3.3.1, 7 September 2026
 
-### Prospective data preparation update, 8 September 2026
+### Complete P and O derivation update, 8 September 2026
+
+All four increments of both data policies now pass real local derivation and
+pair checks. P has 149476 fitting rows and O has 268697; both share 68313
+calibration rows and the unchanged 227723-row official test. Attack selections,
+calibration identities and common transform cohorts match. The 119221-row
+difference consists of Task-0 Benign fitting candidates. This is completed data
+preparation, not completed model training or a fair-exposure performance result.
+See [paired derivation evidence](experimental/parallel_execution/prospective_sampling/real_pair_20260908/PAIR_RESULT.md).
+
+### Initial Task 0 preparation record, 8 September 2026
 
 The first real local prospective Task 0 derivation is complete. From 529439
 training rows, it selected 5559 Benign and 5559 DoS GoldenEye fitting rows,
@@ -12,8 +22,8 @@ The common transform cohort has 11118 rows; no transform or encoder was fitted.
 The measured local duration was 83.891 seconds with about 186.3 MiB observed
 peak child working set. These are Windows measurements, not a DICC allocation
 profile. See the [result and evidence](experimental/parallel_execution/prospective_sampling/real_input_preparation_20260908/TASK0_RESULT.md).
-Later increments, the offline comparison arm, model training and performance
-evaluation remain outstanding. Row-identity checks do not prove capture-group
+The subsequent update above completes data derivation; model training and
+performance evaluation remain outstanding. Row-identity checks do not prove capture-group
 independence. No new predictive benefit or algorithmic novelty is established.
 
 ### Infrastructure verification update, 8 September 2026
