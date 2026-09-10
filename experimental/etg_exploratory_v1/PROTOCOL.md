@@ -5,6 +5,10 @@ The original ten-arm, independent-group protocol is unchanged. This is an
 explicitly different **row-level exploratory study without risk certificates**,
 not a workaround that relabels correlated rows as independent captures.
 
+Implementation readiness is tracked in [the stage-2 update](IMPLEMENTATION.md).
+The helper libraries are now synthetic-tested; real-data execution remains
+unreviewed. Numerical settings in synthetic fixtures are not pilot approvals.
+
 ## Small question, fixed architecture
 
 For one fixed OFRA transition, does a method-noise-adjusted explanation gate
@@ -103,18 +107,26 @@ miss and no additional Benign false positive. Otherwise revert to identity.
 This is an empirical guard over 64 rows per class: one row is 1.5625 percentage
 points. It does not certify population non-harm. Do not retry rejected targets.
 
-The future driver must freeze all candidates before fitting; persist row-use,
+The driver must freeze all candidates before fitting; persist row-use,
 attempt, fitted-state and decision hashes; count failed attempts as spent; lock
 every decision before exposing the evaluation labels. Identity is a valid result.
-The current pure predicates do not implement or substitute for that driver.
+The one-use engine now tests this ordering. Real artifact loading, source
+authorization and final resource settings are still the launcher's responsibility.
 
 ## Real target and computational gate
 
 Permutation SHAP is the proposed primary model-agnostic method, because its
 model callable can use the actual scorer instead of an unverified surrogate
-gradient. This is a proposal, **not a completed faithful explanation exporter**.
+gradient. The adapter now uses SHAP 0.51.0 with an exact-equality invariance check
+on the Independent masker; synthetic tests are **not real-target fidelity**.
 Explain the old class's native fused-score margin over its strongest available
 rival at each checkpoint. Bind class order and tie conventions.
+
+The available rival set expands from one old rival to three rivals at checkpoint
+001. Consequently, this is change in the deployed decision margin, which includes
+new-class competition; it is not isolated change in the same old-head function.
+A large explanation distance cannot by itself be called corruption or forgetting.
+The separate error-harm condition is still required before any action.
 
 Because historical Router evaluation can depend on call context, each feature
 mask must replace only the designated row in a frozen parent native batch.

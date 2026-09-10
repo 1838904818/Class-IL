@@ -1,6 +1,20 @@
 # OFRA and ETG technical documentation
 
-## Descriptive ETG pilot preparation, 11 September 2026
+## Native-target and one-use implementation, 11 September 2026
+
+The [implementation update](experimental/etg_exploratory_v1/IMPLEMENTATION.md)
+adds fixed-context native SHAP extraction, same-forward logit capture, an
+identity-exact native-anchored R1 calibrator and persistent one-use stage
+orchestration. Synthetic tests cover route-batch preservation, actual SHAP
+masker dtype/invariance behavior, rollback ordering and spent failed attempts.
+The [lineage metadata](experimental/etg_exploratory_v1/LINEAGE_METADATA.json)
+binds both checkpoints and 16 historical runtime files to archived evidence;
+the latest general runtime must not be substituted. These are software and
+metadata checks, not new experiment results. The full naive attribution plan
+can entail millions of native batch calls; an independently reviewed resource
+profile and verified real-bundle launcher are still required.
+
+## Initial descriptive ETG pilot preparation, 11 September 2026
 
 The [early-checkpoint protocol](experimental/etg_exploratory_v1/PROTOCOL.md)
 fixes native D2 seed 1, checkpoint 000 to 001, and five selectors sharing one
