@@ -1,5 +1,16 @@
 # OFRA and ETG technical documentation
 
+## Input compatibility audit, 11 September 2026
+
+The [read-only ETG input audit](results/etg-input-audit-20260911/README.md)
+verified that equal calibration counts do not imply equal row identities:
+26,770 of the newer P/O calibration rows belong to the native D2 fitting
+selection. Do not transfer that pool or its embeddings to native D2 checkpoints
+as an independent holdout. This does not revise the original P/O results.
+The single Heartbleed calibration row and unestablished capture groups also
+prevent the proposed full strict acceptance study. No new model or governance
+experiment has run; the 10 September protocol's gates remain unchanged.
+
 ## Explanation-governance follow-up, 10 September 2026
 
 The [minimal incremental-utility protocol](docs/ETG_MINIMAL_UTILITY_PROTOCOL_2026-09-10.md)

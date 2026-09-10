@@ -1,6 +1,11 @@
 # OFRA and ETG research code
 
-## Current documentation entry, 10 September 2026
+## Current documentation entry, 11 September 2026
+
+The [ETG input audit](results/etg-input-audit-20260911/README.md) documents why
+the newer P/O calibration pool cannot be used as an independent holdout for
+native D2 checkpoints. It also records rare-class and capture-group limitations.
+No new training or governance result is claimed; the strict protocol is unchanged.
 
 See the [technical documentation](TECHNICAL_DOCUMENTATION.md) for versioned
 evidence and the [explanation-governance follow-up](docs/ETG_MINIMAL_UTILITY_PROTOCOL_2026-09-10.md)
