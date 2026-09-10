@@ -1,5 +1,15 @@
 # OFRA and ETG technical documentation
 
+## Explanation-governance follow-up, 10 September 2026
+
+The [minimal incremental-utility protocol](docs/ETG_MINIMAL_UTILITY_PROTOCOL_2026-09-10.md)
+keeps OFRA fixed and compares the same bounded correction selected by performance
+alone versus performance plus method-conditioned explanation change. This is a
+prospective follow-up, not a new result or a change to the manuscript's RQ/RO.
+The current ETG evidence remains an offline audit; real intervention utility,
+independent capture grouping and the new attribution inputs are not established.
+Architecture and fusion alternatives remain separate diagnostic studies.
+
 ## Current revision: v3.3.1, 7 September 2026
 
 ### Subsequent diagnostic evidence, 9 September 2026

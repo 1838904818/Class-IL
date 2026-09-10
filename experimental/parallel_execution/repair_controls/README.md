@@ -10,7 +10,7 @@ alerts, or demonstrate novelty. Synthetic tests are software tests only.
 ## Source-only release allowlist
 
 Include only `score_core.py`, `runner.py`, `make_demo.py`,
-`adapt_native_exports.py`, `test_score_runner.py`, `requirements.txt`,
+`adapt_native_exports.py`, `test_score_runner.py`, `test_minimal_etg_contrast.py`, `requirements.txt`,
 `README.md`, `PROTOCOL.md`, and `INPUT_CONTRACT.md`.
 Exclude every SQLite database, `_test_scratch/`, `local_checks/`, `local_runs/`, generated demo/input/output
 directory, bytecode file and local run receipt from a source release. No Git or
@@ -22,6 +22,7 @@ From this directory, with the locally tested Python 3.11.9 and NumPy 2.4.6:
 
 ```text
 python -B -m unittest discover -s . -p test_score_runner.py -q
+python -B -m unittest test_minimal_etg_contrast.py -v
 
 python -B make_demo.py --output local_runs/demo-input --seed 23 --groups 12
 python -B runner.py decide --manifest local_runs/demo-input/manifest.json --policy local_runs/demo-input/policy.json --ledger local_runs/study.sqlite --output local_runs/results --study synthetic-demo-23
@@ -42,6 +43,12 @@ one uses a loose tolerance solely to exercise ACCEPT, while a separate ordinary
 random demo can reject or abstain. Neither is evidence of useful repair.
 
 ## What executes
+
+The [10 September focused protocol](../../../docs/ETG_MINIMAL_UTILITY_PROTOCOL_2026-09-10.md)
+selects `error-only` versus `expansion-w0` as the primary attribution-value
+contrast, with `audit-only` as the no-action reference. The seven additional
+synthetic selector tests do not execute R1 fitting or real attribution. The
+runner's ten-arm registration and evidence requirements remain unchanged.
 
 1. Strictly parse JSON, reject duplicate keys and nonfinite/overflowed numbers,
    reject symlink/reparse inputs, and validate the four-partition manifest.

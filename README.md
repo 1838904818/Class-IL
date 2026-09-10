@@ -1,5 +1,15 @@
 # OFRA and ETG research code
 
+## Current documentation entry, 10 September 2026
+
+See the [technical documentation](TECHNICAL_DOCUMENTATION.md) for versioned
+evidence and the [explanation-governance follow-up](docs/ETG_MINIMAL_UTILITY_PROTOCOL_2026-09-10.md)
+for the next focused study. The follow-up tests whether explanation information
+adds value to a fixed-action performance trigger; no new governance benefit is
+claimed. The overview below is retained as a **3 September historical snapshot**;
+its unfinished-v9 and seed-1 status statements are superseded by the technical
+documentation, not current campaign status.
+
 This repository contains the current implementation and validated evidence for
 the OFRA continual-learning study. Four intrusion-detection benchmarks and the
 MalayaNetwork_GT external application-traffic dataset form the registered
