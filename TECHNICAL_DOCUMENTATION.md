@@ -1,5 +1,17 @@
 # OFRA and ETG technical documentation
 
+## Bounded native-context feasibility candidate, 11 September 2026
+
+The [local component profile](experimental/etg_native_profile_v1/README.md) binds
+archived native inputs and the historical source tree, materializes only fixed
+trigger contexts/references, and supervises a create-only bounded worker. The
+workload checks 512-row and 105-row contexts at two checkpoints with 84 native
+calls. It computes no attribution, calibration or efficacy result. The current
+local environment differs from the historical A100 environment: repeat/adapter
+equality must not be reported as archived or full-population parity. Synthetic
+tests cover watchdog limits, durable failure, input changes and process scope;
+independent real-execution review and measured resource output remain pending.
+
 ## Native-target and one-use implementation, 11 September 2026
 
 The [implementation update](experimental/etg_exploratory_v1/IMPLEMENTATION.md)

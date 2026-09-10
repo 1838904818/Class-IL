@@ -2,12 +2,18 @@
 
 ## Current documentation entry, 11 September 2026
 
+The [bounded native-context profile candidate](experimental/etg_native_profile_v1/README.md)
+now adds a hash-bound real-input loader and local one-shot supervisor. It checks
+full/tail batch contexts without producing SHAP/ETG or efficacy results. Synthetic
+tests and input binding checks are not independent approval or a completed run.
+
 The [early-checkpoint ETG preparation](experimental/etg_exploratory_v1/README.md)
 now fixes a small, separately versioned descriptive contrast and source-bound
 row roles. See the [candidate contribution and falsification criteria](docs/ETG_NOVELTY_AND_FALSIFICATION_2026-09-11.md).
 Metadata checks and synthetic tests do not establish intervention benefit;
-native-target and one-use libraries now have synthetic tests, but real-bundle
-loading, measured profiling and independent execution review remain outstanding.
+native-target and one-use libraries now have synthetic tests. The local bundle
+and supervisor candidate is prepared; measured profiling and independent
+execution review remain outstanding.
 See the [implementation update](experimental/etg_exploratory_v1/IMPLEMENTATION.md).
 This does not replace the strict study or primary results.
 
