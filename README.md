@@ -2,6 +2,13 @@
 
 ## Current documentation entry, 11 September 2026
 
+The [early-checkpoint ETG preparation](experimental/etg_exploratory_v1/README.md)
+now fixes a small, separately versioned descriptive contrast and source-bound
+row roles. See the [candidate contribution and falsification criteria](docs/ETG_NOVELTY_AND_FALSIFICATION_2026-09-11.md).
+Metadata checks and synthetic tests do not establish intervention benefit;
+real extraction, the one-use experiment driver and independent execution review
+remain outstanding. This does not replace the strict study or primary results.
+
 The [ETG input audit](results/etg-input-audit-20260911/README.md) documents why
 the newer P/O calibration pool cannot be used as an independent holdout for
 native D2 checkpoints. It also records rare-class and capture-group limitations.

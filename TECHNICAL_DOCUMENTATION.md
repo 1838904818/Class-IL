@@ -1,5 +1,22 @@
 # OFRA and ETG technical documentation
 
+## Descriptive ETG pilot preparation, 11 September 2026
+
+The [early-checkpoint protocol](experimental/etg_exploratory_v1/PROTOCOL.md)
+fixes native D2 seed 1, checkpoint 000 to 001, and five selectors sharing one
+bounded correction. The attribution increment is isolated against performance
+alone; raw drift is the noise-subtraction ablation. The source-bound planner
+verified 896 distinct role rows across four classes and two checkpoint file
+bindings; only 64 old-class trigger rows are planned for paired attribution.
+These are planned sample counts, not newly trained or evaluated populations.
+Fourteen synthetic kernel tests passed. No real attribution, intervention or
+governance utility result is reported. Capture independence remains absent;
+acceptance would be empirical, not a risk certificate. Full native extraction,
+prior-use accounting, sealed one-use execution, resource profiling and independent
+review are required before a real run. The [novelty boundary](docs/ETG_NOVELTY_AND_FALSIFICATION_2026-09-11.md)
+explicitly separates established SHAP, explanation-drift and bias-correction work
+from the proposed explanation-informed selection mechanism.
+
 ## Input compatibility audit, 11 September 2026
 
 The [read-only ETG input audit](results/etg-input-audit-20260911/README.md)
