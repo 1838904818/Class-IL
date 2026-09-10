@@ -2,6 +2,11 @@
 
 ## Bounded native-context feasibility candidate, 11 September 2026
 
+The [additional prior-art boundary](docs/ETG_ADDITIONAL_PRIOR_ART_2026-09-11.md)
+distinguishes established explanation refresh/audits from the proposed downstream
+selection-utility question. It adds no experimental result and changes no bound
+pilot setting. Explanation stability alone cannot certify correct feature reliance.
+
 The [local component profile](experimental/etg_native_profile_v1/README.md) binds
 archived native inputs and the historical source tree, materializes only fixed
 trigger contexts/references, and supervises a create-only bounded worker. The
