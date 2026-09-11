@@ -8,8 +8,9 @@ full extraction and intervention efficacy. Remote access and environment
 metadata were checked read-only. The Linux resource-profile candidate passed
 preparation review, 19 driver tests, nine synthetic SHAP tests and static preflight.
 The authorized upload and exact remote file verification are complete; remote
-validation-only passed. No job has been submitted. Final submission review and
-measured A100 feasibility remain outstanding; no new scientific result is claimed.
+validation-only passed. Following final review and authorization, Job 456207 was
+submitted and is awaiting resources at the first checks. Measured A100 feasibility
+remains outstanding; submission is not execution or a new scientific result.
 
 ## Bounded native-context feasibility candidate, 11 September 2026
 
