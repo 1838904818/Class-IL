@@ -23,6 +23,14 @@ those stages still require their own measured feasibility and execution review.
 
 ## Native-target and one-use implementation, 11 September 2026
 
+The [single-target SHAP resource candidate](experimental/etg_shap_profile_v1/README.md)
+preserves the first Benign trigger's 512-row context, all 32 references and 78
+features. It is independently reviewed for one local explanation estimate only;
+its 900-second call and 960-second process limits are not runtime forecasts.
+Completion and downstream utility must be verified from separate output records.
+Companion features and existing checkpoint probes remain accessible, so this is
+not a blinded evaluation. It does not authorize full extraction or ETG fitting.
+
 The [implementation update](experimental/etg_exploratory_v1/IMPLEMENTATION.md)
 adds fixed-context native SHAP extraction, same-forward logit capture, an
 identity-exact native-anchored R1 calibrator and persistent one-use stage
