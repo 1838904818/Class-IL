@@ -1,5 +1,17 @@
 # OFRA and ETG technical documentation
 
+## Paired extraction components, 11 September 2026
+
+The [chunk preparation components](experimental/etg_chunk_extraction_v1/README.md)
+provide exact-record identities, hash-verified reuse, original native-context
+materialization and bounded own-step accounting. Independent local review
+passed after correcting mutable schedule aliases and a rolling-window boundary
+error. CPU synthetic tests include complete 1,024-record durable round-trip
+verification: 32 passed and one Windows symlink case was skipped.
+This is software evidence only. The full worker/supervisor, scientific input
+binding, target-platform validation and scheduled execution remain pending;
+neither extraction completeness nor ETG efficacy is claimed.
+
 ## HPC execution preparation, 11 September 2026
 
 The [HPC campaign requirements](docs/ETG_HPC_CAMPAIGN_2026-09-11.md) retain the
