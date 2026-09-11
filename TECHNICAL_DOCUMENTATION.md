@@ -15,7 +15,11 @@ calls. It computes no attribution, calibration or efficacy result. The current
 local environment differs from the historical A100 environment: repeat/adapter
 equality must not be reported as archived or full-population parity. Synthetic
 tests cover watchdog limits, durable failure, input changes and process scope;
-independent real-execution review and measured resource output remain pending.
+the independently reviewed execution has now completed. The
+[measured component result](results/etg-native-component-profile-20260911/README.md)
+records 84 native calls, 24 exact repeat/adapter matches and a 17.766-second
+supervised process window. This is not SHAP extraction or ETG efficacy evidence;
+those stages still require their own measured feasibility and execution review.
 
 ## Native-target and one-use implementation, 11 September 2026
 
