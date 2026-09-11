@@ -1,6 +1,6 @@
 # HPC migration and full ETG pilot execution requirements
 
-Prepared 11 September 2026. Status: PREPARATION_ONLY; no upload or job submission.
+Updated 11 September 2026. Status: RESOURCE_PROFILE_VERIFIED; full extraction and intervention efficacy remain unexecuted.
 
 ## Scope retained
 
@@ -24,11 +24,46 @@ A same-batch continuation is permissible only if its complete implementation, re
 
 ## Resource position
 
+### Verified scheduled profile
+
+Job 456207 completed with exit 0 in 209 seconds. The one-target checkpoint-0
+SHAP estimate took 112.80691397469491 seconds: 78 finite signed attributions,
+63 nonzero, 3,088 native calls and 1,581,056 context-row forwards. The native
+margin was 1.999900460243225, base value -0.18956404738128185 and reported
+additive residual zero. This is one feasibility estimate, not an ETG efficacy
+result, a full-population parity test or an independent scientific confirmation.
+
+Peak CUDA allocation was 1,207,541,760 bytes; reservation 1,608,515,584 bytes.
+Slurm step MaxRSS was 4,156,264 KiB (3.96 GiB), materially larger than the
+853,176,320-byte polled worker RSS. Budget from the allocation-level evidence,
+not worker RSS alone. CPU efficiency was 59.33%; later active GPU samples
+were approximately 87-90%, not a whole-job average. W&B was disabled.
+
+All nine protected artifact hashes matched their manifest. Result SHA-256:
+`a7c4ddba4acdf5acc6c979efd0314770bc67159741a306e065936e1928880d51`.
+Protected manifest SHA-256:
+`20a9bd22db1ea93a822afdc1da59c5b000257e870faca8d3cec5bd71ea96d8ed`.
+
+The next candidate is being prepared locally with exclusive per-record writes,
+independently validated commit markers and hash-bound reuse. The full scope
+remains 64 targets x two checkpoints x eight repeats (1,024 estimates).
+The first proposed chunk covers four predetermined targets at both checkpoints;
+it cannot establish completion of the full protocol. An 8 GiB host-memory
+request is proposed from the measured 3.96 GiB peak and remains subject to
+exact-candidate review. Neither this proposal nor the completed profile
+authorizes another job. No full-extraction ETA is inferred from one target.
+
+### Earlier local resource evidence
+
 Use one node, one task and initially one GPU. A larger allocation is not justified by availability alone. The local component test used 1.126 GiB peak CUDA allocation, 1.498 GiB reservation and 0.929 GiB polled process RSS; it completed 84 calls in a 17.766-second supervised window. These establish a starting resource scale, not A100 throughput, SHAP peak memory or an approved Slurm request.
 
 The prospective 5,144,704-call full extraction count is planning arithmetic, not a runtime forecast. Do not reserve a multi-day GPU job from that number without a real profile and reliable resume. Resource thresholds must follow current DICC publications and live limits; the former local desktop idle rule is not an HPC allocation rule.
 
 ## Current live checks and unresolved items
+
+The paragraphs below retain the preparation/submission history. The pending
+snapshot is superseded by the verified completion above. Live account and
+resource limits must still be rechecked before any subsequent submission.
 
 Read-only SSH authenticated as the user's own account; account status FULL, walltime limit 3 days, association free with short/normal/long QoS, own queue empty at the check. These are snapshots and must be refreshed before submission.
 

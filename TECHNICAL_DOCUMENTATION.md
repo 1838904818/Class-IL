@@ -9,8 +9,13 @@ metadata were checked read-only. The Linux resource-profile candidate passed
 preparation review, 19 driver tests, nine synthetic SHAP tests and static preflight.
 The authorized upload and exact remote file verification are complete; remote
 validation-only passed. Following final review and authorization, Job 456207 was
-submitted and is awaiting resources at the first checks. Measured A100 feasibility
-remains outstanding; submission is not execution or a new scientific result.
+completed successfully in 209 seconds. One native-context SHAP estimate took
+112.807 seconds and produced 78 finite attributions (63 nonzero), with 3,088
+native calls and zero reported additive residual. The nine protected artifacts
+passed hash verification. This is resource feasibility, not ETG efficacy or
+archived full-population parity. Slurm recorded 3.96 GiB host memory against
+4 GiB allocated; the next candidate therefore needs additional measured margin.
+Full paired extraction and intervention evaluation remain unexecuted.
 
 ## Bounded native-context feasibility candidate, 11 September 2026
 
