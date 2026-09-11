@@ -36,7 +36,11 @@ Existing HPC environment metadata: SHAP 0.51.0, NumPy 2.2.6, PyTorch 2.6.0+cu118
 
 Own native D2/source manifests, historical runtime and last-epoch seed-1 checkpoint directories exist. Directory existence and metadata do not establish full byte identity; scheduled validation remains required. No remote data were modified.
 
-Still required before a submission-ready candidate: a Linux Slurm worker/supervisor and tests; mapped input/hash closure; exact measured profile resource request; reliable telemetry, failure preservation and protected-copy validation; W&B governance/record scope; local static preflight; current policy/live checks; exact original-gate approval and final user confirmation.
+The Linux Slurm worker/supervisor and 35-file bound package are now prepared. Nineteen driver CPU tests and nine synthetic SHAP helper tests pass; Bash syntax and static preflight pass. The resource-only candidate preserves one 512-row native context, 78 features and 32 references. It requests one A100, two CPUs, 4 GiB host RAM and at most 20 minutes; these are bounded feasibility resources, not measured A100 throughput. W&B is disabled for this profile.
+
+The candidate now normalizes PyTorch 2.6 GPU UUIDs, enforces the complete result contract, and handles TERM/INT with owned-worker cleanup and failure preservation. SIGKILL, node loss and unavailable storage cannot guarantee archival. Mocked CPU lifecycle tests do not establish Slurm integration or scientific validity.
+
+Preparation review passed for candidate SHA-256 dd9ad6856378a0408a651f68ad48b3a4fa3e08e6807977fb2e79d08e6b9f1dc2. This is not upload or submission authorization. No remote upload or execution has occurred. Still required: authorized upload, exact remote byte/directory verification, current live checks and validation-only, final submission review and confirmation, and measured scheduled feasibility before full extraction and intervention evaluation.
 
 ## Current official policy source
 

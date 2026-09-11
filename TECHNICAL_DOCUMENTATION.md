@@ -5,8 +5,10 @@
 The [HPC campaign requirements](docs/ETG_HPC_CAMPAIGN_2026-09-11.md) retain the
 complete descriptive pilot and separate measured SHAP feasibility from
 full extraction and intervention efficacy. Remote access and environment
-metadata were checked read-only. No new HPC upload or submission has occurred;
-the Linux execution/telemetry candidate and exact review are still required.
+metadata were checked read-only. The Linux resource-profile candidate passed
+preparation review, 19 driver tests, nine synthetic SHAP tests and static preflight.
+No upload or submission has occurred. Remote validation, final submission review
+and measured A100 feasibility remain outstanding; no new scientific result is claimed.
 
 ## Bounded native-context feasibility candidate, 11 September 2026
 
