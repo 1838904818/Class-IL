@@ -40,7 +40,7 @@ The Linux Slurm worker/supervisor and 35-file bound package are now prepared. Ni
 
 The candidate now normalizes PyTorch 2.6 GPU UUIDs, enforces the complete result contract, and handles TERM/INT with owned-worker cleanup and failure preservation. SIGKILL, node loss and unavailable storage cannot guarantee archival. Mocked CPU lifecycle tests do not establish Slurm integration or scientific validity.
 
-Preparation review passed for candidate SHA-256 dd9ad6856378a0408a651f68ad48b3a4fa3e08e6807977fb2e79d08e6b9f1dc2. This is not upload or submission authorization. No remote upload or execution has occurred. Still required: authorized upload, exact remote byte/directory verification, current live checks and validation-only, final submission review and confirmation, and measured scheduled feasibility before full extraction and intervention evaluation.
+Preparation review passed for candidate SHA-256 dd9ad6856378a0408a651f68ad48b3a4fa3e08e6807977fb2e79d08e6b9f1dc2. Following explicit upload authorization, all 35 files were transferred and verified remotely; the four dedicated directories are owned by the account holder with mode 700. Live checks on 11 September 2026 at 10:44 UTC showed FULL status, the expected short QoS and GPU partition capability, and an empty own queue. Remote static preflight and validation-only passed. No job was submitted and no model computation ran. Final submission review and confirmation, followed by measured scheduled feasibility, remain required before full extraction and intervention evaluation.
 
 ## Current official policy source
 

@@ -7,8 +7,9 @@ complete descriptive pilot and separate measured SHAP feasibility from
 full extraction and intervention efficacy. Remote access and environment
 metadata were checked read-only. The Linux resource-profile candidate passed
 preparation review, 19 driver tests, nine synthetic SHAP tests and static preflight.
-No upload or submission has occurred. Remote validation, final submission review
-and measured A100 feasibility remain outstanding; no new scientific result is claimed.
+The authorized upload and exact remote file verification are complete; remote
+validation-only passed. No job has been submitted. Final submission review and
+measured A100 feasibility remain outstanding; no new scientific result is claimed.
 
 ## Bounded native-context feasibility candidate, 11 September 2026
 
