@@ -1,16 +1,27 @@
 # OFRA and ETG technical documentation
 
-## Paired extraction components, 11 September 2026
+## Paired extraction deployment, 12 September 2026
 
-The [chunk preparation components](experimental/etg_chunk_extraction_v1/README.md)
-provide exact-record identities, hash-verified reuse, original native-context
-materialization and bounded own-step accounting. Independent local review
-passed after correcting mutable schedule aliases and a rolling-window boundary
-error. CPU synthetic tests include complete 1,024-record durable round-trip
-verification: 32 passed and one Windows symlink case was skipped.
-This is software evidence only. The full worker/supervisor, scientific input
-binding, target-platform validation and scheduled execution remain pending;
-neither extraction completeness nor ETG efficacy is claimed.
+The [decision-value clarification](docs/ETG_DECISION_VALUE_2026-09-12.md)
+states the exact candidate rule, stronger prior-art overlap and the conditions
+under which identical selected corrections cannot demonstrate explanation utility.
+It changes no frozen experiment and reports no positive intervention result.
+
+The first paired extraction chunk is prepared and uploaded; it has not been
+submitted or executed. Its 21-file package passed remote SHA-256 verification
+and read-only validation. Submission review approved the exact candidate,
+subject to separate execution authorization and unchanged live conditions.
+The proposed allocation is one A100, two CPUs and 8 GiB for at most eight hours.
+It covers four predetermined targets at checkpoints 000 and 001 with eight
+shared attribution seeds: 64 estimates, not the complete 1,024-estimate protocol.
+
+The integrated worker and supervisor preserve historical native scoring contexts,
+verify durable record commits and write the protected completion marker last.
+Local tests recorded 55 passes and one Windows symlink-permission skip; CUDA,
+Slurm and outbound tracking were mocked. These are software checks, not
+target-platform execution, full-population parity or intervention efficacy.
+The [component release](experimental/etg_chunk_extraction_v1/README.md) remains
+a smaller published subset. Scheduled execution and ETG fitting remain pending.
 
 ## HPC execution preparation, 11 September 2026
 

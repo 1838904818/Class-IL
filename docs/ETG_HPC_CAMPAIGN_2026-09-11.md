@@ -1,6 +1,6 @@
 # HPC migration and full ETG pilot execution requirements
 
-Updated 11 September 2026. Status: RESOURCE_PROFILE_VERIFIED; full extraction and intervention efficacy remain unexecuted.
+Updated 12 September 2026. Status: RESOURCE_PROFILE_VERIFIED; FIRST_EXTRACTION_CHUNK_UPLOADED_NOT_SUBMITTED. Full paired extraction and intervention efficacy remain unexecuted.
 
 ## Scope retained
 
@@ -44,14 +44,29 @@ All nine protected artifact hashes matched their manifest. Result SHA-256:
 Protected manifest SHA-256:
 `20a9bd22db1ea93a822afdc1da59c5b000257e870faca8d3cec5bd71ea96d8ed`.
 
-The next candidate is being prepared locally with exclusive per-record writes,
-independently validated commit markers and hash-bound reuse. The full scope
-remains 64 targets x two checkpoints x eight repeats (1,024 estimates).
-The first proposed chunk covers four predetermined targets at both checkpoints;
-it cannot establish completion of the full protocol. An 8 GiB host-memory
-request is proposed from the measured 3.96 GiB peak and remains subject to
-exact-candidate review. Neither this proposal nor the completed profile
-authorizes another job. No full-extraction ETA is inferred from one target.
+The first extraction chunk, candidate v2, is uploaded with all 21 files verified
+remotely. Read-only validation passed on 12 September 2026 at 14:44 MYT, followed
+by exact-candidate submission review approval. No job has been submitted; a
+separate single-use execution confirmation and unchanged live conditions are
+required. The allocation is one A100, two CPUs, 8 GiB and at most eight hours.
+
+This chunk covers four predetermined targets at both checkpoints with eight
+shared repeats (64 estimates). The full protocol remains 64 targets x two
+checkpoints x eight repeats (1,024 estimates). The profile estimate is not reused
+as a paired repeat. Exclusive records, independent commit verification and a
+protected completion marker written last preserve incomplete work distinctly.
+
+Local verification recorded 55 passed tests and one Windows symlink-permission
+skip. Platform and tracking services were mocked. Upload, review and validation
+do not establish runtime integration, native full-population parity, extraction
+completeness or ETG efficacy. No full-extraction ETA is inferred from one target.
+
+Candidate sbatch SHA-256:
+`2c724a3e5f729c1818266ffbbdde29775794e7f151612f164d400eb64dea5fb2`.
+Operation SHA-256:
+`4bafc9589071ae7f0e76ae44ceebcf473841fa62ed87fcd76553a02a144f0af8`.
+Upload manifest SHA-256:
+`8d2abcd52f708d6d099c8e1ebd6af3ca25deed6e568297cb945f726c31159401`.
 
 ### Earlier local resource evidence
 
@@ -59,7 +74,7 @@ Use one node, one task and initially one GPU. A larger allocation is not justifi
 
 The prospective 5,144,704-call full extraction count is planning arithmetic, not a runtime forecast. Do not reserve a multi-day GPU job from that number without a real profile and reliable resume. Resource thresholds must follow current DICC publications and live limits; the former local desktop idle rule is not an HPC allocation rule.
 
-## Current live checks and unresolved items
+## Historical resource-profile preparation record
 
 The paragraphs below retain the preparation/submission history. The pending
 snapshot is superseded by the verified completion above. Live account and
