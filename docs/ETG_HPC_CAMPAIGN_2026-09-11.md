@@ -1,6 +1,6 @@
 # HPC migration and full ETG pilot execution requirements
 
-Updated 12 September 2026. Status: RESOURCE_PROFILE_VERIFIED; FIRST_EXTRACTION_CHUNK_UPLOADED_NOT_SUBMITTED. Full paired extraction and intervention efficacy remain unexecuted.
+Updated 12 September 2026. Status: RESOURCE_PROFILE_VERIFIED; SUBMITTED_AWAITING_STARTUP_VERIFICATION (Job 456373). No paired extraction output or intervention efficacy is yet verified.
 
 ## Scope retained
 
@@ -46,9 +46,10 @@ Protected manifest SHA-256:
 
 The first extraction chunk, candidate v2, is uploaded with all 21 files verified
 remotely. Read-only validation passed on 12 September 2026 at 14:44 MYT, followed
-by exact-candidate submission review approval. No job has been submitted; a
-separate single-use execution confirmation and unchanged live conditions are
-required. The allocation is one A100, two CPUs, 8 GiB and at most eight hours.
+by exact-candidate submission review approval. Following separate single-use
+execution authorization, the unchanged candidate was submitted once as
+Job 456373 on 12 September 2026. Startup remains unverified. The request is
+one A100, two CPUs, 8 GiB and at most eight hours under normal QoS.
 
 This chunk covers four predetermined targets at both checkpoints with eight
 shared repeats (64 estimates). The full protocol remains 64 targets x two

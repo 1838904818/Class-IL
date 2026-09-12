@@ -114,10 +114,12 @@ neither explanation drift in Class-IL nor ordinary calibration is new.
 
 ## Execution boundary and next decision
 
-The first 64-estimate native SHAP chunk is uploaded and submission-reviewed,
-but not submitted. No paired explanation-selection or calibration outcome is
-available. Finish and verify the registered extraction, freeze/review the common
-R1 recipe, and run the five-arm locked comparison before strengthening claims.
+The first 64-estimate native SHAP chunk was submitted once as Job 456373 on
+12 September 2026. Status: SUBMITTED_AWAITING_STARTUP_VERIFICATION. No paired
+explanation-selection or calibration outcome is available; ETG fitting is not
+part of this extraction job. Finish and verify the registered extraction,
+freeze/review the common R1 recipe, and run the five-arm locked comparison
+before strengthening claims.
 Do not alter the approved extraction to seek a favorable hypothesis.
 
 If the hypothesis fails, retain the result and identify whether the reason is

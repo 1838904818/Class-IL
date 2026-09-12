@@ -7,11 +7,12 @@ states the exact candidate rule, stronger prior-art overlap and the conditions
 under which identical selected corrections cannot demonstrate explanation utility.
 It changes no frozen experiment and reports no positive intervention result.
 
-The first paired extraction chunk is prepared and uploaded; it has not been
-submitted or executed. Its 21-file package passed remote SHA-256 verification
-and read-only validation. Submission review approved the exact candidate,
-subject to separate execution authorization and unchanged live conditions.
-The proposed allocation is one A100, two CPUs and 8 GiB for at most eight hours.
+The first paired extraction chunk was submitted once as Job 456373 on
+12 September 2026. Status: SUBMITTED_AWAITING_STARTUP_VERIFICATION; submission
+does not establish that the worker has started. Its 21-file package passed
+remote SHA-256 verification, read-only validation and exact-candidate submission
+review before the separate execution authorization. The unchanged request is
+one A100, two CPUs and 8 GiB for at most eight hours.
 It covers four predetermined targets at checkpoints 000 and 001 with eight
 shared attribution seeds: 64 estimates, not the complete 1,024-estimate protocol.
 
@@ -21,7 +22,8 @@ Local tests recorded 55 passes and one Windows symlink-permission skip; CUDA,
 Slurm and outbound tracking were mocked. These are software checks, not
 target-platform execution, full-population parity or intervention efficacy.
 The [component release](experimental/etg_chunk_extraction_v1/README.md) remains
-a smaller published subset. Scheduled execution and ETG fitting remain pending.
+a smaller published subset. Scheduled startup remains unverified; ETG fitting
+is outside this extraction job and remains pending.
 
 ## HPC execution preparation, 11 September 2026
 
