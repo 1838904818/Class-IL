@@ -1,0 +1,119 @@
+{
+  "analysis": "P2 calibration screen with held-out evaluation",
+  "git_commit": "d335fb3d043fa387c900d500fc5698d4880d6c64",
+  "config": "ncd/configs/p2_screen_greedy_nsl_replay_seed1_dos.json",
+  "effective_config": {
+    "dataset": "NSL-KDD",
+    "method": "replay",
+    "seed": 1,
+    "data_root": "../kaggle_leon_release/datasets",
+    "device": "cuda",
+    "hidden": 128,
+    "batch_size": 256,
+    "epochs_per_task": 8,
+    "learning_rate": 0.001,
+    "buffer_per_class": 200,
+    "target_class": 1,
+    "marker_columns": 4,
+    "p2_top_k": 3,
+    "feature_selection": "greedy_joint_recall_drop",
+    "mask_fractions": [
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "masked_replica_multipliers": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "silent_recall_drop": 0.05,
+    "truth_recall_drop": 0.05,
+    "base_checkpoint": "ncd/results/exp2/nsl-kdd/replay/seed1/checkpoint_000.pt",
+    "output_dir": "ncd/results/exp2_p2_screen_greedy/nsl-kdd/replay/seed1/dos",
+    "log_path": "ncd/logs/exp2_p2_screen_greedy_nsl_replay_seed1_dos.log"
+  },
+  "command": "python -I -B ncd/p2_screen.py --config ncd/configs/p2_screen_greedy_nsl_replay_seed1_dos.json",
+  "top_feature_indices": [
+    1,
+    109,
+    36
+  ],
+  "top_feature_names": [
+    "numeric__src_bytes",
+    "categorical__flag_RSTR",
+    "numeric__dst_host_rerror_rate"
+  ],
+  "feature_selection": "greedy_joint_recall_drop",
+  "feature_selection_trace": [
+    {
+      "step": 1,
+      "candidate_feature_index": 1,
+      "candidate_feature_name": "numeric__src_bytes",
+      "joint_recall_drop": 0.05495978552278824
+    },
+    {
+      "step": 2,
+      "candidate_feature_index": 109,
+      "candidate_feature_name": "categorical__flag_RSTR",
+      "joint_recall_drop": 0.10080428954423593
+    },
+    {
+      "step": 3,
+      "candidate_feature_index": 36,
+      "candidate_feature_name": "numeric__dst_host_rerror_rate",
+      "joint_recall_drop": 0.1222520107238606
+    }
+  ],
+  "checkpoint0_calibration": {
+    "recall_original": 0.8525469168900804,
+    "recall_feature_masked": 0.7302949061662198,
+    "recall_drop": 0.1222520107238606
+  },
+  "checkpoint0_evaluation": {
+    "recall_original": 0.8611260053619303,
+    "recall_feature_masked": 0.739142091152815,
+    "recall_drop": 0.12198391420911525
+  },
+  "calibration_rows": 3730,
+  "evaluation_rows": 3730,
+  "candidate_count": 16,
+  "calibration_eligible_count": 9,
+  "selected_candidate": {
+    "candidate_index": 0,
+    "mask_fraction": 0.25,
+    "masked_replica_multiplier": 1,
+    "selected_target_rows": 50,
+    "added_masked_rows": 50,
+    "calibration_checkpoint0_recall": 0.8525469168900804,
+    "calibration_checkpoint1_recall": 0.8126005361930295,
+    "calibration_recall_delta": -0.03994638069705092,
+    "calibration_checkpoint0_mask_drop": 0.1222520107238606,
+    "calibration_checkpoint1_mask_drop": 0.3442359249329759,
+    "calibration_effect_change": 0.22198391420911529,
+    "calibration_truth_positive": true,
+    "calibration_silent_eligible": true,
+    "evaluation_checkpoint0_recall": 0.8611260053619303,
+    "evaluation_checkpoint1_recall": 0.8080428954423593,
+    "evaluation_recall_delta": -0.05308310991957099,
+    "evaluation_checkpoint0_mask_drop": 0.12198391420911525,
+    "evaluation_checkpoint1_mask_drop": 0.3297587131367293,
+    "evaluation_effect_change": 0.20777479892761402,
+    "evaluation_truth_positive": true,
+    "evaluation_silent_eligible": false
+  },
+  "selected_evaluation_pass": false,
+  "artifacts": {
+    "feature_ranking": "ncd/results/exp2_p2_screen_greedy/nsl-kdd/replay/seed1/dos/p2_feature_ranking.csv",
+    "candidate_screen": "ncd/results/exp2_p2_screen_greedy/nsl-kdd/replay/seed1/dos/p2_candidate_screen.csv",
+    "selected_checkpoint": "not published; retained in the private research workspace"
+  },
+  "elapsed_seconds": 23.355782999999064,
+  "limitations": [
+    "Candidate selection used only the calibration half; the evaluation half was not used for ranking.",
+    "This screen selects a P2 construction but does not evaluate explanation-drift detectors.",
+    "The selected construction still requires a full N1/N2/P2 detector run and additional seeds."
+  ]
+}

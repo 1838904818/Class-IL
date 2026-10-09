@@ -1,0 +1,97 @@
+{
+  "analysis": "P2 calibration screen with held-out evaluation",
+  "git_commit": "6bd20b9ea7dc05ff700805aedfaac783264656fe",
+  "config": "ncd/configs/p2_screen_greedy_nsl_replay_seed1.json",
+  "effective_config": {
+    "dataset": "NSL-KDD",
+    "method": "replay",
+    "seed": 1,
+    "data_root": "../kaggle_leon_release/datasets",
+    "device": "cuda",
+    "hidden": 128,
+    "batch_size": 256,
+    "epochs_per_task": 8,
+    "learning_rate": 0.001,
+    "buffer_per_class": 200,
+    "target_class": 0,
+    "marker_columns": 4,
+    "p2_top_k": 3,
+    "feature_selection": "greedy_joint_recall_drop",
+    "mask_fractions": [
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "masked_replica_multipliers": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "silent_recall_drop": 0.05,
+    "truth_recall_drop": 0.05,
+    "base_checkpoint": "ncd/results/exp2/nsl-kdd/replay/seed1/checkpoint_000.pt",
+    "output_dir": "ncd/results/exp2_p2_screen_greedy/nsl-kdd/replay/seed1",
+    "log_path": "ncd/logs/exp2_p2_screen_greedy_nsl_replay_seed1.log"
+  },
+  "command": "python -I -B ncd/p2_screen.py --config ncd/configs/p2_screen_greedy_nsl_replay_seed1.json",
+  "top_feature_indices": [
+    40,
+    114,
+    34
+  ],
+  "top_feature_names": [
+    "categorical__protocol_type_udp",
+    "categorical__flag_SF",
+    "numeric__dst_host_serror_rate"
+  ],
+  "feature_selection": "greedy_joint_recall_drop",
+  "feature_selection_trace": [
+    {
+      "step": 1,
+      "candidate_feature_index": 40,
+      "candidate_feature_name": "categorical__protocol_type_udp",
+      "joint_recall_drop": 0.018537590113285263
+    },
+    {
+      "step": 2,
+      "candidate_feature_index": 114,
+      "candidate_feature_name": "categorical__flag_SF",
+      "joint_recall_drop": 0.02409886714727083
+    },
+    {
+      "step": 3,
+      "candidate_feature_index": 34,
+      "candidate_feature_name": "numeric__dst_host_serror_rate",
+      "joint_recall_drop": 0.03027806385169929
+    }
+  ],
+  "checkpoint0_calibration": {
+    "recall_original": 0.9676622039134912,
+    "recall_feature_masked": 0.9373841400617919,
+    "recall_drop": 0.03027806385169929
+  },
+  "checkpoint0_evaluation": {
+    "recall_original": 0.9666392092257001,
+    "recall_feature_masked": 0.9394563426688632,
+    "recall_drop": 0.027182866556836882
+  },
+  "calibration_rows": 4855,
+  "evaluation_rows": 4856,
+  "candidate_count": 16,
+  "calibration_eligible_count": 0,
+  "selected_candidate": null,
+  "selected_evaluation_pass": false,
+  "artifacts": {
+    "feature_ranking": "ncd/results/exp2_p2_screen_greedy/nsl-kdd/replay/seed1/p2_feature_ranking.csv",
+    "candidate_screen": "ncd/results/exp2_p2_screen_greedy/nsl-kdd/replay/seed1/p2_candidate_screen.csv",
+    "selected_checkpoint": null
+  },
+  "elapsed_seconds": 25.181647800000064,
+  "limitations": [
+    "Candidate selection used only the calibration half; the evaluation half was not used for ranking.",
+    "This screen selects a P2 construction but does not evaluate explanation-drift detectors.",
+    "The selected construction still requires a full N1/N2/P2 detector run and additional seeds."
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "analysis": "P2 calibration screen with held-out evaluation",
+  "git_commit": "c6d5bf914145ecc84649b1a6bc9050f8916eb267",
+  "config": "ncd/configs/p2_screen_nsl_replay_seed1.json",
+  "effective_config": {
+    "dataset": "NSL-KDD",
+    "method": "replay",
+    "seed": 1,
+    "data_root": "../kaggle_leon_release/datasets",
+    "device": "cuda",
+    "hidden": 128,
+    "batch_size": 256,
+    "epochs_per_task": 8,
+    "learning_rate": 0.001,
+    "buffer_per_class": 200,
+    "target_class": 0,
+    "marker_columns": 4,
+    "p2_top_k": 3,
+    "mask_fractions": [
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "masked_replica_multipliers": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "silent_recall_drop": 0.05,
+    "truth_recall_drop": 0.05,
+    "base_checkpoint": "ncd/results/exp2/nsl-kdd/replay/seed1/checkpoint_000.pt",
+    "output_dir": "ncd/results/exp2_p2_screen/nsl-kdd/replay/seed1",
+    "log_path": "ncd/logs/exp2_p2_screen_nsl_replay_seed1.log"
+  },
+  "command": "python -I -B ncd/p2_screen.py --config ncd/configs/p2_screen_nsl_replay_seed1.json",
+  "top_feature_indices": [
+    40,
+    29,
+    34
+  ],
+  "top_feature_names": [
+    "categorical__protocol_type_udp",
+    "numeric__dst_host_srv_count",
+    "numeric__dst_host_serror_rate"
+  ],
+  "checkpoint0_calibration": {
+    "recall_original": 0.9676622039134912,
+    "recall_feature_masked": 0.9423274974253347,
+    "recall_drop": 0.0253347064881565
+  },
+  "checkpoint0_evaluation": {
+    "recall_original": 0.9666392092257001,
+    "recall_feature_masked": 0.943986820428336,
+    "recall_drop": 0.022652388797364087
+  },
+  "calibration_rows": 4855,
+  "evaluation_rows": 4856,
+  "candidate_count": 16,
+  "calibration_eligible_count": 0,
+  "selected_candidate": null,
+  "selected_evaluation_pass": false,
+  "artifacts": {
+    "feature_ranking": "ncd/results/exp2_p2_screen/nsl-kdd/replay/seed1/p2_feature_ranking.csv",
+    "candidate_screen": "ncd/results/exp2_p2_screen/nsl-kdd/replay/seed1/p2_candidate_screen.csv",
+    "selected_checkpoint": null
+  },
+  "elapsed_seconds": 20.511778299998696,
+  "limitations": [
+    "Candidate selection used only the calibration half; the evaluation half was not used for ranking.",
+    "This screen selects a P2 construction but does not evaluate explanation-drift detectors.",
+    "The selected construction still requires a full N1/N2/P2 detector run and additional seeds."
+  ]
+}

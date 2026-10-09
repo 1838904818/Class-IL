@@ -778,35 +778,54 @@ def run(config: dict, config_path: Path) -> None:
     # carrying checkpoint-0's three most important real input features.  The
     # attribution only selects the candidate features; the truth label comes
     # from the independently measured recall intervention below.
+    p2_target = int(config.get("p2_target_class", target))
     p2_test_marker = pure_noise_markers(len(data.x_test), marker_columns, seed + 900)
     p2_test_augmented = append_markers(data.x_test, p2_test_marker)
-    p2_probe = p2_test_augmented[probe_indices]
-    p2_scorer0 = scorer_for(model0, n_classes, device)
-    p2_selection_explanations0 = explain_estimates(
-        p2_scorer0,
-        target=target,
-        probe=p2_probe,
-        background=background,
-        repeats=int(config["repeats"]),
-        bootstraps=int(config["bootstraps"]),
-        eg_nsamples=int(config["expected_gradients_nsamples"]),
-        seed=seed * 1_000_000 + 410_000,
-        device=device,
+    p2_probe_candidates = np.flatnonzero(data.y_test == p2_target)
+    p2_probe_rng = np.random.default_rng(seed + 1300 + p2_target)
+    p2_probe_indices = (
+        p2_probe_candidates
+        if len(p2_probe_candidates) <= int(config["probe_per_class"])
+        else np.sort(
+            p2_probe_rng.choice(
+                p2_probe_candidates, int(config["probe_per_class"]), replace=False
+            )
+        )
     )
+    p2_probe = p2_test_augmented[p2_probe_indices]
+    p2_scorer0 = scorer_for(model0, n_classes, device)
     real_feature_count = data.x_train.shape[1]
     p2_top_k = int(config["p2_top_k"])
-    p2_top_features = np.argsort(
-        -p2_selection_explanations0["feature_ablation"]["repeat_mean_vector"][
-            :real_feature_count
-        ],
-        kind="stable",
-    )[:p2_top_k]
+    if "p2_feature_indices" in config:
+        p2_top_features = np.asarray(config["p2_feature_indices"], dtype=np.int64)
+        if len(p2_top_features) != p2_top_k:
+            raise ValueError("p2_feature_indices length must equal p2_top_k")
+        if np.any(p2_top_features < 0) or np.any(p2_top_features >= real_feature_count):
+            raise ValueError("p2_feature_indices contains an out-of-range feature")
+    else:
+        p2_selection_explanations0 = explain_estimates(
+            p2_scorer0,
+            target=p2_target,
+            probe=p2_probe,
+            background=background,
+            repeats=int(config["repeats"]),
+            bootstraps=int(config["bootstraps"]),
+            eg_nsamples=int(config["expected_gradients_nsamples"]),
+            seed=seed * 1_000_000 + 410_000,
+            device=device,
+        )
+        p2_top_features = np.argsort(
+            -p2_selection_explanations0["feature_ablation"]["repeat_mean_vector"][
+                :real_feature_count
+            ],
+            kind="stable",
+        )[:p2_top_k]
     p2_feature_names = [str(data.feature_names[index]) for index in p2_top_features]
     p2_effect0 = feature_mask_effect(
         p2_scorer0,
         p2_test_augmented[seen0_test],
         data.y_test[seen0_test],
-        target=target,
+        target=p2_target,
         feature_indices=p2_top_features,
         device=device,
         batch_size=batch_size,
@@ -817,25 +836,46 @@ def run(config: dict, config_path: Path) -> None:
         fraction = float(fraction_value)
         scenario_seed = seed * 1_000_000 + 500_000 + fraction_index * 100_000
         p2_train_x = replay_x_base.copy()
-        target_rows = np.flatnonzero(replay_y_base == target)
+        p2_train_y = replay_y_base.copy()
+        target_rows = np.flatnonzero(replay_y_base == p2_target)
         fraction_rng = np.random.default_rng(scenario_seed + 1)
         selected_target_rows = target_rows[
             fraction_rng.random(len(target_rows)) < fraction
         ]
-        p2_train_x[np.ix_(selected_target_rows, p2_top_features)] = 0.0
+        p2_training_mode = str(
+            config.get("p2_training_mode", "replace_target_buffer_rows")
+        )
+        added_masked_rows = 0
+        if p2_training_mode == "replace_target_buffer_rows":
+            p2_train_x[np.ix_(selected_target_rows, p2_top_features)] = 0.0
+        elif p2_training_mode == "append_masked_replay_copies":
+            multiplier = int(config.get("p2_masked_replica_multiplier", 1))
+            if multiplier < 1:
+                raise ValueError("p2_masked_replica_multiplier must be positive")
+            masked_copies = replay_x_base[selected_target_rows].copy()
+            masked_copies[:, p2_top_features] = 0.0
+            masked_copies = np.tile(masked_copies, (multiplier, 1))
+            masked_labels = np.tile(replay_y_base[selected_target_rows], multiplier)
+            p2_train_x = np.concatenate([p2_train_x, masked_copies], axis=0)
+            p2_train_y = np.concatenate([p2_train_y, masked_labels], axis=0)
+            added_masked_rows = len(masked_copies)
+        else:
+            raise ValueError(f"unsupported p2_training_mode: {p2_training_mode}")
+        p2_marker_seed = int(config.get("p2_marker_seed", scenario_seed + 2))
+        p2_train_seed = int(config.get("p2_train_seed", seed + 2000))
         p2_train_marker = pure_noise_markers(
-            len(p2_train_x), marker_columns, scenario_seed + 2
+            len(p2_train_x), marker_columns, p2_marker_seed
         )
         p2_model1 = copy.deepcopy(model0).to(device)
         train_epoch(
             p2_model1,
             append_markers(p2_train_x, p2_train_marker),
-            replay_y_base,
+            p2_train_y,
             device=device,
             batch_size=batch_size,
             lr=float(config["learning_rate"]),
             epochs=int(config["epochs_per_task"]),
-            seed=seed + 2000,
+            seed=p2_train_seed,
         )
         p2_checkpoint_path = output_dir / f"checkpoint_001_p2_mask_{fraction:.2f}.pt"
         torch.save(
@@ -851,7 +891,7 @@ def run(config: dict, config_path: Path) -> None:
             p2_scorer1,
             p2_test_augmented[seen1_test],
             data.y_test[seen1_test],
-            target=target,
+            target=p2_target,
             feature_indices=p2_top_features,
             device=device,
             batch_size=batch_size,
@@ -862,7 +902,7 @@ def run(config: dict, config_path: Path) -> None:
         p2_truth_positive = p2_effect_change >= float(config["truth_recall_drop"])
         p2_explanations0 = explain_estimates(
             p2_scorer0,
-            target=target,
+            target=p2_target,
             probe=p2_probe,
             background=background,
             repeats=int(config["repeats"]),
@@ -873,7 +913,7 @@ def run(config: dict, config_path: Path) -> None:
         )
         p2_explanations1 = explain_estimates(
             p2_scorer1,
-            target=target,
+            target=p2_target,
             probe=p2_probe,
             background=background,
             repeats=int(config["repeats"]),
@@ -884,7 +924,7 @@ def run(config: dict, config_path: Path) -> None:
         )
         p2_explanations1_independent = explain_estimates(
             p2_scorer1,
-            target=target,
+            target=p2_target,
             probe=p2_probe,
             background=background,
             repeats=int(config["repeats"]),
@@ -912,7 +952,7 @@ def run(config: dict, config_path: Path) -> None:
             )
         p2_explanations1_reparameterized = explain_estimates(
             p2_reparameterized_scorer,
-            target=target,
+            target=p2_target,
             probe=p2_probe,
             background=background,
             repeats=int(config["repeats"]),
@@ -924,7 +964,7 @@ def run(config: dict, config_path: Path) -> None:
         p2_truth = {
             "truth_positive": p2_truth_positive,
             "silent_eligible": p2_silent,
-            "intervention_kind": "P2_top_feature_zero",
+            "intervention_kind": f"P2_top_feature_zero_{p2_training_mode}",
             "checkpoint0_intervention_recall_drop": p2_effect0["recall_drop"],
             "checkpoint1_intervention_recall_drop": p2_effect1["recall_drop"],
             "intervention_effect_change": p2_effect_change,
@@ -984,9 +1024,14 @@ def run(config: dict, config_path: Path) -> None:
         p2_scenario = {
             "condition": "P2_feature_mask",
             "mask_fraction": fraction,
+            "target_class": p2_target,
             "top_feature_indices": p2_top_features.tolist(),
             "top_feature_names": p2_feature_names,
             "masked_target_buffer_rows": len(selected_target_rows),
+            "training_mode": p2_training_mode,
+            "added_masked_rows": added_masked_rows,
+            "marker_seed": p2_marker_seed,
+            "train_seed": p2_train_seed,
             "checkpoint0": p2_effect0,
             "checkpoint1": p2_effect1,
             "intervention_effect_change": p2_effect_change,
