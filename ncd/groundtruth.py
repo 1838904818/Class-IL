@@ -32,6 +32,7 @@ if str(REPO_ROOT) not in sys.path:
 import numpy as np
 import torch
 from scipy.stats import kendalltau, rankdata
+from sklearn.metrics import roc_auc_score
 
 from ncd.data import PreparedData, prepare_dataset
 from ncd.explain import (
@@ -67,12 +68,24 @@ def jaccard(left: np.ndarray, right: np.ndarray, k: int) -> float:
 
 def cosine_distance(left: np.ndarray, right: np.ndarray) -> float:
     denom = np.linalg.norm(left) * np.linalg.norm(right)
-    return float(1.0 - np.dot(left, right) / max(float(denom), 1e-12))
+    similarity = np.dot(left, right) / max(float(denom), 1e-12)
+    return float(1.0 - np.clip(similarity, -1.0, 1.0))
 
 
 def kendall_distance(left: np.ndarray, right: np.ndarray) -> float:
     value = kendalltau(left, right, variant="b").statistic
     return float(1.0 - value) if np.isfinite(value) else float("nan")
+
+
+def clex_explanation_drift(left: np.ndarray, right: np.ndarray) -> float:
+    """CLEX ED from Cossu et al., Neurocomputing 597 (2024) 127960.
+
+    Equation 6 compares the total positive contribution of two explanations
+    and divides their squared difference by the feature count.
+    """
+    left_mass = float(np.maximum(left, 0.0).sum())
+    right_mass = float(np.maximum(right, 0.0).sum())
+    return (left_mass - right_mass) ** 2 / len(left)
 
 
 def rank_unit_vectors(estimates: np.ndarray) -> np.ndarray:
@@ -219,6 +232,27 @@ def marker_effect(
     }
 
 
+def feature_mask_effect(
+    scorer: DecisionScore,
+    features: np.ndarray,
+    labels: np.ndarray,
+    *,
+    target: int,
+    feature_indices: np.ndarray,
+    device: torch.device,
+    batch_size: int,
+) -> dict[str, float]:
+    original = class_recall(predictions(scorer, features, device, batch_size), labels, target)
+    masked = features.copy()
+    masked[:, feature_indices] = 0.0
+    intervened = class_recall(predictions(scorer, masked, device, batch_size), labels, target)
+    return {
+        "recall_original": original,
+        "recall_feature_masked": intervened,
+        "recall_drop": original - intervened,
+    }
+
+
 def function_preserving_rescaling(model: MLP, seed: int) -> MLP:
     """Apply a non-identity, function-preserving ReLU reparameterization.
 
@@ -293,10 +327,14 @@ def explain_estimates(
         estimates, repeat_ids, bootstrap_ids = bootstrap_estimates(
             attributes, bootstraps, item_seed + 57
         )
+        repeat_estimates = np.abs(attributes).mean(axis=1)
+        repeat_estimates /= repeat_estimates.sum(axis=1, keepdims=True) + 1e-12
         result[explainer] = {
             "estimates": estimates,
+            "repeat_estimates": repeat_estimates.astype(np.float32),
             "single_vector": normalize(np.abs(attributes[0]).mean(axis=0)).astype(np.float32),
             "repeat_mean_vector": normalize(np.abs(attributes).mean(axis=(0, 1))).astype(np.float32),
+            "signed_mean_vector": attributes.mean(axis=(0, 1)).astype(np.float32),
             "repeat_ids": repeat_ids,
             "bootstrap_ids": bootstrap_ids,
         }
@@ -305,7 +343,7 @@ def explain_estimates(
 
 def comparison_rows(
     condition: str,
-    rho: float,
+    strength: float,
     left: dict[str, dict[str, np.ndarray]],
     right: dict[str, dict[str, np.ndarray]],
     *,
@@ -322,6 +360,20 @@ def comparison_rows(
             permutations=int(config["permutations"]),
             seed=seed + explainer_index * 1000,
         )
+        no_bootstrap_test = ncd_permutation_test(
+            left_item["repeat_estimates"],
+            right_item["repeat_estimates"],
+            permutations=int(config["permutations"]),
+            seed=seed + 10000 + explainer_index * 1000,
+        )
+        left_first_repeat = left_item["estimates"][left_item["repeat_ids"] == 0]
+        right_first_repeat = right_item["estimates"][right_item["repeat_ids"] == 0]
+        no_repeats_test = ncd_permutation_test(
+            left_first_repeat,
+            right_first_repeat,
+            permutations=int(config["permutations"]),
+            seed=seed + 20000 + explainer_index * 1000,
+        )
         b1 = jaccard(
             left_item["single_vector"], right_item["single_vector"], int(config["top_k"])
         )
@@ -333,23 +385,36 @@ def comparison_rows(
         rows.append(
             {
                 "condition": condition,
-                "rho": rho,
+                "strength": strength,
                 "explainer": explainer,
                 "truth_positive": bool(truth["truth_positive"]),
                 "silent_eligible": bool(truth["silent_eligible"]),
-                "checkpoint0_marker_recall_drop": truth["checkpoint0_marker_recall_drop"],
-                "checkpoint1_marker_recall_drop": truth["checkpoint1_marker_recall_drop"],
+                "intervention_kind": truth["intervention_kind"],
+                "checkpoint0_intervention_recall_drop": truth[
+                    "checkpoint0_intervention_recall_drop"
+                ],
+                "checkpoint1_intervention_recall_drop": truth[
+                    "checkpoint1_intervention_recall_drop"
+                ],
+                "intervention_effect_change": truth["intervention_effect_change"],
                 "recall_delta": truth["recall_delta"],
                 "b1_single_jaccard": b1,
                 "b1_fixed_drift": b1 < float(config["fixed_jaccard_threshold"]),
                 "b2_repeat_mean_jaccard": b2,
                 "b2_fixed_drift": b2 < float(config["fixed_jaccard_threshold"]),
+                "b3_clex_ed": clex_explanation_drift(
+                    left_item["signed_mean_vector"], right_item["signed_mean_vector"]
+                ),
                 "b4_cosine_distance": cosine_distance(
                     left_item["repeat_mean_vector"], right_item["repeat_mean_vector"]
                 ),
                 "b4_kendall_distance": kendall_distance(
                     left_item["repeat_mean_vector"], right_item["repeat_mean_vector"]
                 ),
+                "ncd_no_bootstrap_effect": no_bootstrap_test["ncd_effect"],
+                "ncd_no_bootstrap_p_value": no_bootstrap_test["p_value"],
+                "ncd_no_repeats_effect": no_repeats_test["ncd_effect"],
+                "ncd_no_repeats_p_value": no_repeats_test["p_value"],
                 **test,
             }
         )
@@ -357,10 +422,60 @@ def comparison_rows(
 
 
 def write_csv(path: Path, rows: list[dict]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def discrimination_metrics(rows: list[dict]) -> list[dict]:
+    """Compute per-explainer AUROC and TPR at a negative-control FPR <= 5%."""
+    metric_getters = {
+        "B1_single_Jaccard": lambda row: 1.0 - float(row["b1_single_jaccard"]),
+        "B2_repeat_mean_Jaccard": lambda row: 1.0
+        - float(row["b2_repeat_mean_jaccard"]),
+        "B3_CLEX_ED": lambda row: float(row["b3_clex_ed"]),
+        "B4_cosine": lambda row: float(row["b4_cosine_distance"]),
+        "B4_Kendall": lambda row: float(row["b4_kendall_distance"]),
+        "NCD": lambda row: float(row["ncd_effect"]),
+    }
+    output: list[dict] = []
+    for explainer in EXPLAINERS:
+        explainer_rows = [row for row in rows if row["explainer"] == explainer]
+        negatives = [row for row in explainer_rows if row["condition"].startswith("N")]
+        positives = [
+            row
+            for row in explainer_rows
+            if row["condition"].startswith("P")
+            and row["truth_positive"]
+            and row["silent_eligible"]
+        ]
+        for metric, getter in metric_getters.items():
+            negative_scores = np.asarray([getter(row) for row in negatives], dtype=np.float64)
+            positive_scores = np.asarray([getter(row) for row in positives], dtype=np.float64)
+            if not len(negative_scores) or not len(positive_scores):
+                continue
+            labels = np.concatenate(
+                [np.zeros(len(negative_scores)), np.ones(len(positive_scores))]
+            )
+            scores = np.concatenate([negative_scores, positive_scores])
+            threshold = float(np.quantile(negative_scores, 0.95, method="higher"))
+            output.append(
+                {
+                    "explainer": explainer,
+                    "metric": metric,
+                    "negative_count": len(negative_scores),
+                    "positive_count": len(positive_scores),
+                    "auroc": float(roc_auc_score(labels, scores)),
+                    "matched_threshold": threshold,
+                    "matched_fpr": float(np.mean(negative_scores > threshold)),
+                    "matched_tpr": float(np.mean(positive_scores > threshold)),
+                }
+            )
+    return output
 
 
 def effective_config(config: dict, smoke: bool) -> dict:
@@ -370,6 +485,7 @@ def effective_config(config: dict, smoke: bool) -> dict:
             {
                 "epochs_per_task": 1,
                 "rho_values": [0.9],
+                "p2_mask_fractions": [1.0],
                 "probe_per_class": 24,
                 "background_rows": 16,
                 "repeats": 2,
@@ -581,8 +697,10 @@ def run(config: dict, config_path: Path) -> None:
         truth = {
             "truth_positive": truth_positive,
             "silent_eligible": silent,
-            "checkpoint0_marker_recall_drop": effect0["recall_drop"],
-            "checkpoint1_marker_recall_drop": effect1["recall_drop"],
+            "intervention_kind": "P1_marker_permutation",
+            "checkpoint0_intervention_recall_drop": effect0["recall_drop"],
+            "checkpoint1_intervention_recall_drop": effect1["recall_drop"],
+            "intervention_effect_change": abs(effect1["recall_drop"] - effect0["recall_drop"]),
             "recall_delta": recall_delta,
         }
         all_rows.extend(
@@ -629,13 +747,20 @@ def run(config: dict, config_path: Path) -> None:
                 compact[f"{prefix}_estimates"] = collection[explainer]["estimates"].astype(
                     np.float16
                 )
+                compact[f"{prefix}_repeat_estimates"] = collection[explainer][
+                    "repeat_estimates"
+                ].astype(np.float16)
                 compact[f"{prefix}_single"] = collection[explainer]["single_vector"].astype(
                     np.float16
                 )
                 compact[f"{prefix}_repeat_mean"] = collection[explainer][
                     "repeat_mean_vector"
                 ].astype(np.float16)
+                compact[f"{prefix}_signed_mean"] = collection[explainer][
+                    "signed_mean_vector"
+                ].astype(np.float16)
         scenario = {
+            "condition": "P1_shortcut",
             "rho": rho,
             "checkpoint0": effect0,
             "checkpoint1": effect1,
@@ -649,50 +774,332 @@ def run(config: dict, config_path: Path) -> None:
         del model1, scorer0, scorer1, reparameterized_model, reparameterized_scorer
         torch.cuda.empty_cache()
 
+    # P2: force the checkpoint-1 replay examples for the target class to stop
+    # carrying checkpoint-0's three most important real input features.  The
+    # attribution only selects the candidate features; the truth label comes
+    # from the independently measured recall intervention below.
+    p2_test_marker = pure_noise_markers(len(data.x_test), marker_columns, seed + 900)
+    p2_test_augmented = append_markers(data.x_test, p2_test_marker)
+    p2_probe = p2_test_augmented[probe_indices]
+    p2_scorer0 = scorer_for(model0, n_classes, device)
+    p2_selection_explanations0 = explain_estimates(
+        p2_scorer0,
+        target=target,
+        probe=p2_probe,
+        background=background,
+        repeats=int(config["repeats"]),
+        bootstraps=int(config["bootstraps"]),
+        eg_nsamples=int(config["expected_gradients_nsamples"]),
+        seed=seed * 1_000_000 + 410_000,
+        device=device,
+    )
+    real_feature_count = data.x_train.shape[1]
+    p2_top_k = int(config["p2_top_k"])
+    p2_top_features = np.argsort(
+        -p2_selection_explanations0["feature_ablation"]["repeat_mean_vector"][
+            :real_feature_count
+        ],
+        kind="stable",
+    )[:p2_top_k]
+    p2_feature_names = [str(data.feature_names[index]) for index in p2_top_features]
+    p2_effect0 = feature_mask_effect(
+        p2_scorer0,
+        p2_test_augmented[seen0_test],
+        data.y_test[seen0_test],
+        target=target,
+        feature_indices=p2_top_features,
+        device=device,
+        batch_size=batch_size,
+    )
+    replay_x_base = np.concatenate([current_x, buffer_x], axis=0)
+    replay_y_base = np.concatenate([current_y, buffer_y], axis=0)
+    for fraction_index, fraction_value in enumerate(config["p2_mask_fractions"]):
+        fraction = float(fraction_value)
+        scenario_seed = seed * 1_000_000 + 500_000 + fraction_index * 100_000
+        p2_train_x = replay_x_base.copy()
+        target_rows = np.flatnonzero(replay_y_base == target)
+        fraction_rng = np.random.default_rng(scenario_seed + 1)
+        selected_target_rows = target_rows[
+            fraction_rng.random(len(target_rows)) < fraction
+        ]
+        p2_train_x[np.ix_(selected_target_rows, p2_top_features)] = 0.0
+        p2_train_marker = pure_noise_markers(
+            len(p2_train_x), marker_columns, scenario_seed + 2
+        )
+        p2_model1 = copy.deepcopy(model0).to(device)
+        train_epoch(
+            p2_model1,
+            append_markers(p2_train_x, p2_train_marker),
+            replay_y_base,
+            device=device,
+            batch_size=batch_size,
+            lr=float(config["learning_rate"]),
+            epochs=int(config["epochs_per_task"]),
+            seed=seed + 2000,
+        )
+        p2_checkpoint_path = output_dir / f"checkpoint_001_p2_mask_{fraction:.2f}.pt"
+        torch.save(
+            {
+                "model_state": p2_model1.state_dict(),
+                "mask_fraction": fraction,
+                "feature_indices": p2_top_features.tolist(),
+            },
+            p2_checkpoint_path,
+        )
+        p2_scorer1 = scorer_for(p2_model1, n_classes, device)
+        p2_effect1 = feature_mask_effect(
+            p2_scorer1,
+            p2_test_augmented[seen1_test],
+            data.y_test[seen1_test],
+            target=target,
+            feature_indices=p2_top_features,
+            device=device,
+            batch_size=batch_size,
+        )
+        p2_recall_delta = p2_effect1["recall_original"] - p2_effect0["recall_original"]
+        p2_effect_change = abs(p2_effect1["recall_drop"] - p2_effect0["recall_drop"])
+        p2_silent = p2_recall_delta > -float(config["silent_recall_drop"])
+        p2_truth_positive = p2_effect_change >= float(config["truth_recall_drop"])
+        p2_explanations0 = explain_estimates(
+            p2_scorer0,
+            target=target,
+            probe=p2_probe,
+            background=background,
+            repeats=int(config["repeats"]),
+            bootstraps=int(config["bootstraps"]),
+            eg_nsamples=int(config["expected_gradients_nsamples"]),
+            seed=scenario_seed + 10,
+            device=device,
+        )
+        p2_explanations1 = explain_estimates(
+            p2_scorer1,
+            target=target,
+            probe=p2_probe,
+            background=background,
+            repeats=int(config["repeats"]),
+            bootstraps=int(config["bootstraps"]),
+            eg_nsamples=int(config["expected_gradients_nsamples"]),
+            seed=scenario_seed + 10,
+            device=device,
+        )
+        p2_explanations1_independent = explain_estimates(
+            p2_scorer1,
+            target=target,
+            probe=p2_probe,
+            background=background,
+            repeats=int(config["repeats"]),
+            bootstraps=int(config["bootstraps"]),
+            eg_nsamples=int(config["expected_gradients_nsamples"]),
+            seed=scenario_seed + 50000,
+            device=device,
+        )
+        p2_reparameterized_model = function_preserving_rescaling(
+            p2_model1, scenario_seed + 7
+        ).to(device)
+        p2_reparameterized_scorer = scorer_for(
+            p2_reparameterized_model, n_classes, device
+        )
+        p2_max_error = maximum_logit_error(
+            p2_scorer1,
+            p2_reparameterized_scorer,
+            p2_test_augmented[seen1_test],
+            device,
+            batch_size,
+        )
+        if p2_max_error >= 1e-5:
+            raise RuntimeError(
+                f"P2 N2 function preservation failed: max logit error {p2_max_error}"
+            )
+        p2_explanations1_reparameterized = explain_estimates(
+            p2_reparameterized_scorer,
+            target=target,
+            probe=p2_probe,
+            background=background,
+            repeats=int(config["repeats"]),
+            bootstraps=int(config["bootstraps"]),
+            eg_nsamples=int(config["expected_gradients_nsamples"]),
+            seed=scenario_seed + 10,
+            device=device,
+        )
+        p2_truth = {
+            "truth_positive": p2_truth_positive,
+            "silent_eligible": p2_silent,
+            "intervention_kind": "P2_top_feature_zero",
+            "checkpoint0_intervention_recall_drop": p2_effect0["recall_drop"],
+            "checkpoint1_intervention_recall_drop": p2_effect1["recall_drop"],
+            "intervention_effect_change": p2_effect_change,
+            "recall_delta": p2_recall_delta,
+        }
+        all_rows.extend(
+            comparison_rows(
+                "N1_same_checkpoint_P2",
+                fraction,
+                p2_explanations1,
+                p2_explanations1_independent,
+                truth={**p2_truth, "truth_positive": False},
+                config=config,
+                seed=scenario_seed + 60000,
+            )
+        )
+        all_rows.extend(
+            comparison_rows(
+                "N2_function_preserving_P2",
+                fraction,
+                p2_explanations1,
+                p2_explanations1_reparameterized,
+                truth={**p2_truth, "truth_positive": False},
+                config=config,
+                seed=scenario_seed + 70000,
+            )
+        )
+        all_rows.extend(
+            comparison_rows(
+                "P2_feature_mask",
+                fraction,
+                p2_explanations0,
+                p2_explanations1,
+                truth=p2_truth,
+                config=config,
+                seed=scenario_seed + 80000,
+            )
+        )
+        for label, collection in (
+            ("checkpoint0", p2_explanations0),
+            ("checkpoint1", p2_explanations1),
+            ("n1_independent", p2_explanations1_independent),
+            ("n2_reparameterized", p2_explanations1_reparameterized),
+        ):
+            for explainer in EXPLAINERS:
+                prefix = f"p2_{fraction_index}_{label}_{explainer}"
+                for key in (
+                    "estimates",
+                    "repeat_estimates",
+                    "single_vector",
+                    "repeat_mean_vector",
+                    "signed_mean_vector",
+                ):
+                    compact[f"{prefix}_{key}"] = collection[explainer][key].astype(
+                        np.float16
+                    )
+        p2_scenario = {
+            "condition": "P2_feature_mask",
+            "mask_fraction": fraction,
+            "top_feature_indices": p2_top_features.tolist(),
+            "top_feature_names": p2_feature_names,
+            "masked_target_buffer_rows": len(selected_target_rows),
+            "checkpoint0": p2_effect0,
+            "checkpoint1": p2_effect1,
+            "intervention_effect_change": p2_effect_change,
+            "recall_delta": p2_recall_delta,
+            "silent_eligible": p2_silent,
+            "truth_positive": p2_truth_positive,
+            "n2_max_abs_logit_error": p2_max_error,
+        }
+        scenario_records.append(p2_scenario)
+        print(json.dumps(p2_scenario, sort_keys=True), flush=True)
+        del (
+            p2_model1,
+            p2_scorer1,
+            p2_reparameterized_model,
+            p2_reparameterized_scorer,
+        )
+        torch.cuda.empty_cache()
+    del p2_scorer0
+
     for explainer in EXPLAINERS:
         indices = [index for index, row in enumerate(all_rows) if row["explainer"] == explainer]
-        adjusted = benjamini_hochberg([float(all_rows[index]["p_value"]) for index in indices])
-        for index, q_value in zip(indices, adjusted):
-            all_rows[index]["q_value"] = q_value
-            all_rows[index]["ncd_drift"] = q_value < 0.05 and all_rows[index]["ncd_effect"] > 0
+        for prefix, p_field, effect_field in (
+            ("ncd", "p_value", "ncd_effect"),
+            (
+                "ncd_no_bootstrap",
+                "ncd_no_bootstrap_p_value",
+                "ncd_no_bootstrap_effect",
+            ),
+            ("ncd_no_repeats", "ncd_no_repeats_p_value", "ncd_no_repeats_effect"),
+        ):
+            adjusted = benjamini_hochberg(
+                [float(all_rows[index][p_field]) for index in indices]
+            )
+            for index, q_value in zip(indices, adjusted):
+                all_rows[index][f"{prefix}_q_value"] = q_value
+                all_rows[index][f"{prefix}_drift"] = (
+                    q_value < 0.05 and all_rows[index][effect_field] > 0
+                )
+        for index in indices:
+            all_rows[index]["ncd_no_fdr_drift"] = (
+                all_rows[index]["p_value"] < 0.05
+                and all_rows[index]["ncd_effect"] > 0
+            )
 
     consensus_rows: list[dict] = []
-    for condition in ("N1_same_checkpoint", "N2_function_preserving", "P1_shortcut"):
-        for rho in [float(value) for value in config["rho_values"]]:
-            subset = [row for row in all_rows if row["condition"] == condition and row["rho"] == rho]
-            consensus_rows.append(
-                {
-                    "condition": condition,
-                    "rho": rho,
-                    "truth_positive": subset[0]["truth_positive"],
-                    "silent_eligible": subset[0]["silent_eligible"],
-                    "b1_consensus_drift": sum(row["b1_fixed_drift"] for row in subset) >= 2,
-                    "b2_consensus_drift": sum(row["b2_fixed_drift"] for row in subset) >= 2,
-                    "ncd_consensus_drift": sum(row["ncd_drift"] for row in subset) >= 2,
-                    "ncd_explainer_votes": sum(row["ncd_drift"] for row in subset),
-                }
-            )
+    scenario_keys = list(
+        dict.fromkeys((row["condition"], row["strength"]) for row in all_rows)
+    )
+    for condition, strength in scenario_keys:
+        subset = [
+            row
+            for row in all_rows
+            if row["condition"] == condition and row["strength"] == strength
+        ]
+        consensus_rows.append(
+            {
+                "condition": condition,
+                "strength": strength,
+                "truth_positive": subset[0]["truth_positive"],
+                "silent_eligible": subset[0]["silent_eligible"],
+                "b1_consensus_drift": sum(row["b1_fixed_drift"] for row in subset) >= 2,
+                "b2_consensus_drift": sum(row["b2_fixed_drift"] for row in subset) >= 2,
+                "ncd_consensus_drift": sum(row["ncd_drift"] for row in subset) >= 2,
+                "ncd_explainer_votes": sum(row["ncd_drift"] for row in subset),
+                "ncd_no_bootstrap_consensus_drift": sum(
+                    row["ncd_no_bootstrap_drift"] for row in subset
+                )
+                >= 2,
+                "ncd_no_repeats_consensus_drift": sum(
+                    row["ncd_no_repeats_drift"] for row in subset
+                )
+                >= 2,
+                "ncd_no_fdr_consensus_drift": sum(
+                    row["ncd_no_fdr_drift"] for row in subset
+                )
+                >= 2,
+            }
+        )
 
     negatives = [row for row in consensus_rows if row["condition"].startswith("N")]
     strong_positives = [
         row
         for row in consensus_rows
         if row["condition"] == "P1_shortcut"
-        and row["rho"] >= 0.9
+        and row["strength"] >= 0.9
         and row["truth_positive"]
         and row["silent_eligible"]
     ]
+    p2_positives = [
+        row
+        for row in consensus_rows
+        if row["condition"] == "P2_feature_mask"
+        and row["truth_positive"]
+        and row["silent_eligible"]
+    ]
+    discrimination = discrimination_metrics(all_rows)
     compact_path = output_dir / "exp2_groundtruth_compact.npz"
     np.savez_compressed(compact_path, **compact)
     if compact_path.stat().st_size >= 5 * 1024 * 1024:
         raise RuntimeError("compact Exp 2 artifact exceeds 5 MiB")
     table_path = output_dir / "exp2_groundtruth_table.csv"
     consensus_path = output_dir / "exp2_groundtruth_consensus.csv"
+    discrimination_path = output_dir / "exp2_groundtruth_discrimination.csv"
     write_csv(table_path, all_rows)
     write_csv(consensus_path, consensus_rows)
+    write_csv(discrimination_path, discrimination)
+
+    def rate(rows: list[dict], field: str) -> float | None:
+        return float(np.mean([row[field] for row in rows])) if rows else None
+
     result = {
-        "analysis": "Exp 2 first intervention-ground-truth slice",
-        "scope": "NSL-KDD Replay seed 1; target Normal; transition 0->1; N1/N2/P1",
+        "analysis": "Exp 2 intervention-ground-truth slice with P1/P2 and ablations",
+        "scope": "NSL-KDD Replay seed 1; target Normal; transition 0->1; N1/N2/P1/P2",
         "git_commit": git_commit(),
         "config": str(config_path.relative_to(REPO_ROOT)).replace("\\", "/"),
         "effective_config": config,
@@ -700,24 +1107,57 @@ def run(config: dict, config_path: Path) -> None:
         "log_path": config["log_path"],
         "scenario_records": scenario_records,
         "consensus": consensus_rows,
+        "discrimination": discrimination,
+        "b3_reference": {
+            "name": "CLEX Explanation Drift (Equation 6)",
+            "doi": "10.1016/j.neucom.2024.127960",
+            "adaptation": "same positive-attribution-mass distance applied to the paired checkpoint explanations",
+        },
         "pilot_summary": {
-            "ncd_negative_fpr": float(np.mean([row["ncd_consensus_drift"] for row in negatives])),
-            "b2_negative_fpr": float(np.mean([row["b2_consensus_drift"] for row in negatives])),
+            "negative_control_count": len(negatives),
+            "ncd_negative_fpr": rate(negatives, "ncd_consensus_drift"),
+            "b2_negative_fpr": rate(negatives, "b2_consensus_drift"),
             "strong_truth_positive_count": len(strong_positives),
-            "ncd_strong_positive_tpr": (
-                float(np.mean([row["ncd_consensus_drift"] for row in strong_positives]))
-                if strong_positives
-                else None
-            ),
-            "b2_strong_positive_tpr": (
-                float(np.mean([row["b2_consensus_drift"] for row in strong_positives]))
-                if strong_positives
-                else None
-            ),
+            "ncd_strong_positive_tpr": rate(strong_positives, "ncd_consensus_drift"),
+            "b2_strong_positive_tpr": rate(strong_positives, "b2_consensus_drift"),
+            "p2_silent_truth_positive_count": len(p2_positives),
+            "ncd_p2_tpr": rate(p2_positives, "ncd_consensus_drift"),
+            "b2_p2_tpr": rate(p2_positives, "b2_consensus_drift"),
+            "ablations": {
+                "full": {
+                    "negative_fpr": rate(negatives, "ncd_consensus_drift"),
+                    "strong_p1_tpr": rate(strong_positives, "ncd_consensus_drift"),
+                },
+                "no_probe_bootstrap": {
+                    "negative_fpr": rate(
+                        negatives, "ncd_no_bootstrap_consensus_drift"
+                    ),
+                    "strong_p1_tpr": rate(
+                        strong_positives, "ncd_no_bootstrap_consensus_drift"
+                    ),
+                },
+                "no_explainer_repeats": {
+                    "negative_fpr": rate(
+                        negatives, "ncd_no_repeats_consensus_drift"
+                    ),
+                    "strong_p1_tpr": rate(
+                        strong_positives, "ncd_no_repeats_consensus_drift"
+                    ),
+                },
+                "no_fdr": {
+                    "negative_fpr": rate(negatives, "ncd_no_fdr_consensus_drift"),
+                    "strong_p1_tpr": rate(
+                        strong_positives, "ncd_no_fdr_consensus_drift"
+                    ),
+                },
+            },
         },
         "artifacts": {
             "table": str(table_path.relative_to(REPO_ROOT)).replace("\\", "/"),
             "consensus": str(consensus_path.relative_to(REPO_ROOT)).replace("\\", "/"),
+            "discrimination": str(discrimination_path.relative_to(REPO_ROOT)).replace(
+                "\\", "/"
+            ),
             "compact": str(compact_path.relative_to(REPO_ROOT)).replace("\\", "/"),
             "compact_bytes": compact_path.stat().st_size,
             "local_checkpoints": str(output_dir),
@@ -725,7 +1165,8 @@ def run(config: dict, config_path: Path) -> None:
         "elapsed_seconds": time.perf_counter() - started,
         "limitations": [
             "This is a one-dataset, one-method, one-seed, one-transition pilot.",
-            "P2, CLEX, additional targets, and matched-FPR threshold calibration remain pending.",
+            "Matched-FPR thresholds are calibrated and evaluated on the same small negative-control slice.",
+            "Additional targets, datasets, methods, seeds, and an external calibration split remain pending.",
             "No publication-level TPR/FPR claim is made from this pilot alone.",
         ],
     }
