@@ -1,8 +1,8 @@
-"""Run the first real-data Exp 2 intervention-ground-truth slice.
+"""Run a real-data Exp 2 intervention-ground-truth slice.
 
 The implementation follows WORK_ORDER_2026-10-09 section 4.  It trains a
-Replay model on the first NSL-KDD task, injects a synthetic shortcut while the
-next class is learned, measures dependence by permuting the marker at test
+Replay model on the first dataset task, injects a synthetic shortcut while the
+next task is learned, measures dependence by permuting the marker at test
 time, and compares B1/B2/B4 with a permutation-calibrated NCD statistic.  N1
 and a function-preserving N2 reparameterization are evaluated alongside P1.
 """
@@ -170,6 +170,18 @@ def correlated_markers(
 
 def append_markers(features: np.ndarray, markers: np.ndarray) -> np.ndarray:
     return np.concatenate([features.astype(np.float32, copy=False), markers], axis=1)
+
+
+def target_evaluation_split(labels: np.ndarray, target: int, seed: int) -> np.ndarray:
+    """Return the held-out half of target-class rows for a frozen split seed."""
+    indices = np.flatnonzero(labels == target)
+    rng = np.random.default_rng(seed)
+    shuffled = indices.copy()
+    rng.shuffle(shuffled)
+    midpoint = len(shuffled) // 2
+    if midpoint == 0 or midpoint == len(shuffled):
+        raise RuntimeError("target-class evaluation split is empty")
+    return np.sort(shuffled[midpoint:])
 
 
 def replay_indices(
@@ -500,8 +512,8 @@ def effective_config(config: dict, smoke: bool) -> dict:
 
 
 def run(config: dict, config_path: Path) -> None:
-    if config["dataset"] != "NSL-KDD" or config["method"] != "replay":
-        raise ValueError("the first Exp 2 slice is fixed to NSL-KDD Replay")
+    if config["dataset"] not in {"NSL-KDD", "UNSW-NB15"} or config["method"] != "replay":
+        raise ValueError("Exp 2 currently supports NSL-KDD/UNSW-NB15 Replay")
     if int(config["transition_before"]) != 0:
         raise ValueError("the first Exp 2 slice requires transition 0 -> 1")
     seed = int(config["seed"])
@@ -781,7 +793,14 @@ def run(config: dict, config_path: Path) -> None:
     p2_target = int(config.get("p2_target_class", target))
     p2_test_marker = pure_noise_markers(len(data.x_test), marker_columns, seed + 900)
     p2_test_augmented = append_markers(data.x_test, p2_test_marker)
-    p2_probe_candidates = np.flatnonzero(data.y_test == p2_target)
+    if "p2_evaluation_split_seed" in config:
+        p2_probe_candidates = target_evaluation_split(
+            data.y_test,
+            p2_target,
+            int(config["p2_evaluation_split_seed"]),
+        )
+    else:
+        p2_probe_candidates = np.flatnonzero(data.y_test == p2_target)
     p2_probe_rng = np.random.default_rng(seed + 1300 + p2_target)
     p2_probe_indices = (
         p2_probe_candidates
@@ -823,8 +842,8 @@ def run(config: dict, config_path: Path) -> None:
     p2_feature_names = [str(data.feature_names[index]) for index in p2_top_features]
     p2_effect0 = feature_mask_effect(
         p2_scorer0,
-        p2_test_augmented[seen0_test],
-        data.y_test[seen0_test],
+        p2_test_augmented[p2_probe_candidates],
+        data.y_test[p2_probe_candidates],
         target=p2_target,
         feature_indices=p2_top_features,
         device=device,
@@ -838,10 +857,12 @@ def run(config: dict, config_path: Path) -> None:
         p2_train_x = replay_x_base.copy()
         p2_train_y = replay_y_base.copy()
         target_rows = np.flatnonzero(replay_y_base == p2_target)
-        fraction_rng = np.random.default_rng(scenario_seed + 1)
-        selected_target_rows = target_rows[
-            fraction_rng.random(len(target_rows)) < fraction
-        ]
+        p2_selection_seed = int(config.get("p2_selection_seed", scenario_seed + 1))
+        fraction_rng = np.random.default_rng(p2_selection_seed)
+        selected_count = max(1, int(round(len(target_rows) * fraction)))
+        selected_target_rows = np.sort(
+            fraction_rng.choice(target_rows, selected_count, replace=False)
+        )
         p2_training_mode = str(
             config.get("p2_training_mode", "replace_target_buffer_rows")
         )
@@ -889,8 +910,8 @@ def run(config: dict, config_path: Path) -> None:
         p2_scorer1 = scorer_for(p2_model1, n_classes, device)
         p2_effect1 = feature_mask_effect(
             p2_scorer1,
-            p2_test_augmented[seen1_test],
-            data.y_test[seen1_test],
+            p2_test_augmented[p2_probe_candidates],
+            data.y_test[p2_probe_candidates],
             target=p2_target,
             feature_indices=p2_top_features,
             device=device,
@@ -1030,8 +1051,11 @@ def run(config: dict, config_path: Path) -> None:
             "masked_target_buffer_rows": len(selected_target_rows),
             "training_mode": p2_training_mode,
             "added_masked_rows": added_masked_rows,
+            "selection_seed": p2_selection_seed,
             "marker_seed": p2_marker_seed,
             "train_seed": p2_train_seed,
+            "evaluation_split_seed": config.get("p2_evaluation_split_seed"),
+            "evaluation_rows": len(p2_probe_candidates),
             "checkpoint0": p2_effect0,
             "checkpoint1": p2_effect1,
             "intervention_effect_change": p2_effect_change,

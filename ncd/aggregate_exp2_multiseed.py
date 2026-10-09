@@ -64,6 +64,8 @@ def draw_roc(
     curves: list[tuple[str, np.ndarray, np.ndarray, float]],
     negative_count: int,
     positive_count: int,
+    dataset_label: str,
+    method_label: str,
 ) -> None:
     width, height = 960, 640
     left, top, plot_width, plot_height = 92, 96, 560, 430
@@ -108,8 +110,8 @@ def draw_roc(
             '<rect x="118" y="225" width="305" height="113" rx="8" fill="#FFFFFF" stroke="#BCC5CF"/>',
             '<text class="note" x="137" y="252" font-weight="700">Detector ranking is descriptive</text>',
             f'<text class="note" x="137" y="278">{negative_count} N1/N2 controls · {positive_count} eligible positives</text>',
-            '<text class="note" x="137" y="304">NSL-KDD · Replay · seeds 1/2/3/4/42</text>',
-            '<text class="note" x="137" y="330">Selection and evaluation are not independent</text>',
+            f'<text class="note" x="137" y="304">{escape(dataset_label)} · {escape(method_label)} · seeds 1/2/3/4/42</text>',
+            '<text class="note" x="137" y="330">Internal held-out split; no external calibration</text>',
             '<text x="92" y="618" font-size="12.5" fill="#5A6470">Positive set: intervention-positive and silent P1/P2 scenarios; true but non-silent constructions are excluded by definition.</text>',
             '</svg>',
         ]
@@ -121,20 +123,40 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default="ncd/results/exp2_v2/nsl-kdd/replay")
     parser.add_argument("--output", default="ncd/results/exp2_v2/nsl-kdd/replay/multiseed")
+    parser.add_argument(
+        "--seed-dir",
+        action="append",
+        default=[],
+        metavar="SEED=DIR",
+        help="override a seed directory name, for example 1=seed1_matched",
+    )
     args = parser.parse_args()
     root = Path(args.root)
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
+    seed_dirs = {seed: f"seed{seed}" for seed in SEEDS}
+    for mapping in args.seed_dir:
+        seed_text, separator, directory = mapping.partition("=")
+        if not separator or int(seed_text) not in seed_dirs or not directory:
+            raise ValueError(f"invalid --seed-dir mapping: {mapping!r}")
+        seed_dirs[int(seed_text)] = directory
 
     consensus_rows: list[dict[str, object]] = []
     measurement_rows: list[dict[str, str]] = []
     scenario_rows: list[dict[str, object]] = []
     seed_rows: list[dict[str, object]] = []
     max_n2_error = 0.0
+    dataset_labels: set[str] = set()
+    method_labels: set[str] = set()
+    scope_mismatches: list[int] = []
 
     for seed in SEEDS:
-        seed_dir = root / f"seed{seed}"
+        seed_dir = root / seed_dirs[seed]
         result = json.loads((seed_dir / "exp2_groundtruth_result.json").read_text(encoding="utf-8"))
+        dataset_labels.add(str(result["effective_config"]["dataset"]))
+        method_labels.add(str(result["effective_config"]["method"]))
+        if f"seed {seed}" not in str(result.get("scope", "")):
+            scope_mismatches.append(seed)
         with (seed_dir / "exp2_groundtruth_table.csv").open(newline="", encoding="utf-8") as handle:
             seed_measurements = list(csv.DictReader(handle))
         measurement_rows.extend({"seed": str(seed), **row} for row in seed_measurements)
@@ -226,6 +248,23 @@ def main() -> None:
     positives = [row for row in eligible if str(row["condition"]).startswith("P")]
     positive_p1 = [row for row in positives if row["condition"] == "P1_shortcut" and float(row["strength"]) >= 0.9]
     positive_p2 = [row for row in positives if row["condition"] == "P2_feature_mask"]
+    true_non_silent_p1 = [
+        row
+        for row in consensus_rows
+        if row["condition"] == "P1_shortcut"
+        and parse_bool(row["truth_positive"])
+        and not parse_bool(row["silent_eligible"])
+    ]
+    excluded_p2 = [
+        row
+        for row in consensus_rows
+        if row["condition"] == "P2_feature_mask"
+        and not (parse_bool(row["truth_positive"]) and parse_bool(row["silent_eligible"]))
+    ]
+    if len(dataset_labels) != 1 or len(method_labels) != 1:
+        raise RuntimeError(f"mixed dataset/method aggregation: {dataset_labels}, {method_labels}")
+    dataset_label = next(iter(dataset_labels))
+    method_label = next(iter(method_labels))
 
     detector_fields = {
         "B1 fixed J@15": "b1_consensus_drift",
@@ -299,7 +338,14 @@ def main() -> None:
     write_csv(output / "exp2_multiseed_scenarios.csv", scenario_rows)
     write_csv(output / "exp2_multiseed_detector_summary.csv", detector_rows)
     write_csv(output / "exp2_multiseed_roc_summary.csv", roc_rows)
-    draw_roc(output / "exp2_multiseed_roc.svg", curves, len(negatives), len(positives))
+    draw_roc(
+        output / "exp2_multiseed_roc.svg",
+        curves,
+        len(negatives),
+        len(positives),
+        dataset_label,
+        method_label,
+    )
 
     ncd = next(row for row in detector_rows if row["detector"] == "NCD")
     b2 = next(row for row in detector_rows if row["detector"] == "B2 repeat-mean J@15")
@@ -310,7 +356,7 @@ def main() -> None:
 
 ## What ran
 
-NSL-KDD Replay, seeds 1/2/3/4/42, transition 0->1, N1 same-checkpoint controls, N2 function-preserving controls, strong P1 shortcuts (rho >= 0.9), and the screened DoS P2 top-3 feature-mask construction. Each detector uses three explainers. P2 feature selection and evaluation use the same official dataset and are not independent.
+{dataset_label} {method_label}, seeds 1/2/3/4/42, transition 0->1, N1 same-checkpoint controls, N2 function-preserving controls, strong P1 shortcuts (rho >= 0.9), and the screened P2 top-3 feature-mask construction. Each detector uses three explainers. P2 candidate selection and held-out evaluation use disjoint row halves, but both come from the same official dataset and do not constitute external validation.
 
 ## Main numbers
 
@@ -320,7 +366,7 @@ NSL-KDD Replay, seeds 1/2/3/4/42, transition 0->1, N1 same-checkpoint controls, 
 | Eligible strong P1 | {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])} ({100 * float(ncd['observed_strong_p1_tpr']):.1f}%) | {int(b2['strong_p1_detected'])}/{int(b2['eligible_strong_p1_count'])} ({100 * float(b2['observed_strong_p1_tpr']):.1f}%) |
 | Eligible P2 | {int(ncd['p2_detected'])}/{int(ncd['eligible_p2_count'])} ({100 * float(ncd['observed_p2_tpr']):.1f}%) | {int(b2['p2_detected'])}/{int(b2['eligible_p2_count'])} ({100 * float(b2['observed_p2_tpr']):.1f}%) |
 
-Seed 2 generated two intervention-positive P1 cases, but both were non-silent (recall drop exceeded 5 percentage points), so they are excluded from the silent-positive TPR denominator rather than counted as detector misses. All five P2 cases were intervention-positive and silent. Maximum N2 logit error was {max_n2_error:.3g}.
+Across the five seeds, {len(true_non_silent_p1)} intervention-positive P1 cases were non-silent (recall drop exceeded 5 percentage points), so they are excluded from the silent-positive TPR denominator rather than counted as detector misses. P2 cases failing the joint intervention-positive-and-silent eligibility rule: {len(excluded_p2)}. They were also excluded. Maximum N2 logit error was {max_n2_error:.3g}.
 
 | Ablation | False positives | Strong P1 detected | P2 detected |
 |---|---:|---:|---:|
@@ -331,15 +377,15 @@ Seed 2 generated two intervention-positive P1 cases, but both were non-silent (r
 
 ## Decision
 
-The point-estimate gate passes: observed NCD FPR is at most 5%, and its strong-P1 TPR is not below B2. However, NCD does not beat B1 or B2: all three are tied at every primary count above. All six continuous scores have pooled descriptive AUROC 1.000, so the ROC also provides no evidence that NCD ranks cases better. The 95% Wilson upper bound for an observed 0/{len(negatives)} FPR is {100 * float(ncd['fpr_wilson95_high']):.1f}%, so these data do not establish a population FPR below 5%. The pooled ROC is descriptive and not externally calibrated. Removing bootstrap reduces P1 detection from 8/8 to 6/8 and P2 from 5/5 to 3/5; removing repeats or FDR changes none of the pooled binary outcomes on this slice.
+The point-estimate gate passes: observed NCD FPR is at most 5%, and its strong-P1 TPR is not below B2. However, NCD does not beat B1 or B2: all three are tied at every primary count above. All six continuous scores have pooled descriptive AUROC 1.000, so the ROC also provides no evidence that NCD ranks cases better. The 95% Wilson upper bound for an observed 0/{len(negatives)} FPR is {100 * float(ncd['fpr_wilson95_high']):.1f}%, so these data do not establish a population FPR below 5%. The pooled ROC is descriptive and not externally calibrated. Removing bootstrap reduces P1 detection from {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])} to {int(no_bootstrap['strong_p1_detected'])}/{int(no_bootstrap['eligible_strong_p1_count'])} and P2 from {int(ncd['p2_detected'])}/{int(ncd['eligible_p2_count'])} to {int(no_bootstrap['p2_detected'])}/{int(no_bootstrap['eligible_p2_count'])}; removing repeats or FDR changes none of the pooled binary outcomes on this slice.
 
-This is evidence that the benchmark constructions and silent-drift measurement work on this bounded slice. It is not evidence of substantive innovation, NCD superiority, cross-dataset generality, or publication readiness.
+This is evidence that the benchmark constructions and silent-drift measurement work on this bounded slice. It is not evidence of substantive innovation, NCD superiority, broad method generality, or publication readiness.
 
-The raw seed 2/3/4/42 JSON files retain an incorrect static seed-1 scope label emitted by the runner. Their `effective_config`, config path, command, logs, and tables identify the actual seed. The source label has been fixed for future runs; raw completed artifacts were not rewritten.
+{f"Scope-label mismatches remain in raw completed seeds {scope_mismatches}; their effective configs and tables identify the actual seed, and the artifacts were not rewritten." if scope_mismatches else "All five raw result scope labels match their effective seed."}
 
 ## Next
 
-Run the same frozen intervention benchmark on UNSW-NB15 and iCaRL, with an independent calibration/evaluation split. If B2 remains tied, the defensible conclusion is that repeat averaging is sufficient and NCD should not be claimed as the novel mechanism.
+Complete the remaining frozen dataset/method cells required by the work order and add external threshold calibration. If B2 remains tied, the defensible conclusion is that repeat averaging is sufficient and NCD should not be claimed as the novel mechanism.
 """
     (output / "EXP2_MULTI_SEED_REPORT.md").write_text(report, encoding="utf-8")
 
@@ -347,6 +393,9 @@ Run the same frozen intervention benchmark on UNSW-NB15 and iCaRL, with an indep
         json.dumps(
             {
                 "seeds": list(SEEDS),
+                "seed_dirs": seed_dirs,
+                "dataset": dataset_label,
+                "method": method_label,
                 "negative_controls": len(negatives),
                 "eligible_strong_p1": len(positive_p1),
                 "eligible_p2": len(positive_p2),

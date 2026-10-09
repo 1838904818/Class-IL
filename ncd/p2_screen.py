@@ -91,8 +91,8 @@ def effect_on_indices(
 
 
 def run(config: dict, config_path: Path) -> None:
-    if config["dataset"] != "NSL-KDD" or config["method"] != "replay":
-        raise ValueError("this P2 screen is fixed to NSL-KDD Replay")
+    if config["dataset"] not in {"NSL-KDD", "UNSW-NB15"} or config["method"] != "replay":
+        raise ValueError("the P2 screen currently supports NSL-KDD/UNSW-NB15 Replay")
     seed = int(config["seed"])
     seed_everything(seed)
     device = torch.device(config["device"])
@@ -232,9 +232,14 @@ def run(config: dict, config_path: Path) -> None:
     candidate_rows: list[dict] = []
     candidate_states: dict[tuple[float, int], dict[str, torch.Tensor]] = {}
     candidate_index = 0
-    for fraction_value in config["mask_fractions"]:
+    for fraction_index, fraction_value in enumerate(config["mask_fractions"]):
         fraction = float(fraction_value)
-        selection_rng = np.random.default_rng(seed * 1_000_000 + 600_000 + candidate_index)
+        selection_seed = (
+            int(config.get("selection_seed_base", seed * 1_000_000 + 600_000))
+            + fraction_index * 100_000
+            + 1
+        )
+        selection_rng = np.random.default_rng(selection_seed)
         selected_count = max(1, int(round(len(target_buffer_x) * fraction)))
         selected = np.sort(
             selection_rng.choice(len(target_buffer_x), selected_count, replace=False)
@@ -249,7 +254,9 @@ def run(config: dict, config_path: Path) -> None:
             extra_y = np.tile(corrupted_y, multiplier)
             train_x = np.concatenate([base_x, extra_x], axis=0)
             train_y = np.concatenate([base_y, extra_y], axis=0)
-            train_markers = pure_noise_markers(len(train_x), marker_columns, scenario_seed + 1)
+            marker_seed = int(config.get("fixed_marker_seed", scenario_seed + 1))
+            train_seed = int(config.get("fixed_train_seed", seed + 3000))
+            train_markers = pure_noise_markers(len(train_x), marker_columns, marker_seed)
             model1 = copy.deepcopy(model0).to(device)
             train_epoch(
                 model1,
@@ -259,7 +266,7 @@ def run(config: dict, config_path: Path) -> None:
                 batch_size=batch_size,
                 lr=float(config["learning_rate"]),
                 epochs=int(config["epochs_per_task"]),
-                seed=seed + 3000,
+                seed=train_seed,
             )
             scorer1 = scorer_for(model1, n_classes, device)
             calibration = effect_on_indices(
@@ -302,6 +309,9 @@ def run(config: dict, config_path: Path) -> None:
                 "masked_replica_multiplier": multiplier,
                 "selected_target_rows": selected_count,
                 "added_masked_rows": len(extra_x),
+                "selection_seed": selection_seed,
+                "marker_seed": marker_seed,
+                "train_seed": train_seed,
                 "calibration_checkpoint0_recall": checkpoint0_calibration["recall_original"],
                 "calibration_checkpoint1_recall": calibration["recall_original"],
                 "calibration_recall_delta": calibration_recall_delta,
@@ -336,14 +346,32 @@ def run(config: dict, config_path: Path) -> None:
     ]
     selected_row = None
     if eligible:
-        selected_row = sorted(
-            eligible,
-            key=lambda row: (
-                -float(row["calibration_effect_change"]),
-                -float(row["calibration_recall_delta"]),
-                int(row["added_masked_rows"]),
-            ),
-        )[0]
+        candidate_selection = str(config.get("candidate_selection", "largest_effect"))
+        if candidate_selection == "largest_effect":
+            selected_row = sorted(
+                eligible,
+                key=lambda row: (
+                    -float(row["calibration_effect_change"]),
+                    -float(row["calibration_recall_delta"]),
+                    int(row["added_masked_rows"]),
+                ),
+            )[0]
+        elif candidate_selection == "robust_margin":
+            truth_threshold = float(config["truth_recall_drop"])
+            silent_threshold = float(config["silent_recall_drop"])
+            selected_row = sorted(
+                eligible,
+                key=lambda row: (
+                    -min(
+                        float(row["calibration_effect_change"]) - truth_threshold,
+                        float(row["calibration_recall_delta"]) + silent_threshold,
+                    ),
+                    -float(row["calibration_effect_change"]),
+                    int(row["added_masked_rows"]),
+                ),
+            )[0]
+        else:
+            raise ValueError(f"unsupported candidate_selection: {candidate_selection}")
 
     output_dir = (REPO_ROOT / config["output_dir"]).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -377,6 +405,7 @@ def run(config: dict, config_path: Path) -> None:
         "top_feature_indices": top_features.tolist(),
         "top_feature_names": top_feature_names,
         "feature_selection": selection_mode,
+        "candidate_selection": str(config.get("candidate_selection", "largest_effect")),
         "feature_selection_trace": selection_trace,
         "checkpoint0_calibration": checkpoint0_calibration,
         "checkpoint0_evaluation": checkpoint0_evaluation,
