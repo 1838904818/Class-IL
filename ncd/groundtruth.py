@@ -1144,7 +1144,13 @@ def run(config: dict, config_path: Path) -> None:
 
     result = {
         "analysis": "Exp 2 intervention-ground-truth slice with P1/P2 and ablations",
-        "scope": "NSL-KDD Replay seed 1; target Normal; transition 0->1; N1/N2/P1/P2",
+        "scope": (
+            f"{config['dataset']} {config['method']} seed {config['seed']}; "
+            f"P1 target class {config['target_class']}; "
+            f"P2 target class {config['p2_target_class']}; "
+            f"transition {config['transition_before']}->{config['transition_before'] + 1}; "
+            "N1/N2/P1/P2"
+        ),
         "git_commit": git_commit(),
         "config": str(config_path.relative_to(REPO_ROOT)).replace("\\", "/"),
         "effective_config": config,
