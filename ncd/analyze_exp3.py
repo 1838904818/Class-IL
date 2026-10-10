@@ -13,6 +13,7 @@ import json
 import math
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -96,6 +97,8 @@ def load_run(explanation_path: Path, permutations: int) -> tuple[list[dict], dic
 
     checkpoints = sorted(recalls)
     rows: list[dict] = []
+    fixed_rule_seconds = 0.0
+    ncd_permutation_seconds = 0.0
     run_seed = int(explanation["seed"])
     for transition_index, (before, after) in enumerate(zip(checkpoints, checkpoints[1:])):
         shared = sorted(set(recalls[before]) & set(recalls[after]))
@@ -112,12 +115,14 @@ def load_run(explanation_path: Path, permutations: int) -> tuple[list[dict], dic
             for explainer_index, explainer in enumerate(EXPLAINERS):
                 left = artifacts[(before, class_id, explainer)]
                 right = artifacts[(after, class_id, explainer)]
+                ncd_started = time.perf_counter()
                 test = ncd_permutation_test(
                     left["estimates"],
                     right["estimates"],
                     permutations=permutations,
                     seed=run_seed * 1_000_000 + before * 10_000 + class_id * 100 + explainer_index,
                 )
+                ncd_permutation_seconds += time.perf_counter() - ncd_started
                 row = {
                     "dataset": explanation["dataset"],
                     "method": explanation["method"],
@@ -137,6 +142,7 @@ def load_run(explanation_path: Path, permutations: int) -> tuple[list[dict], dic
                     "explainer": explainer,
                     **test,
                 }
+                fixed_started = time.perf_counter()
                 for top_k in TOP_K_VALUES:
                     row[f"b1_jaccard_k{top_k}"] = jaccard(
                         left["single"], right["single"], top_k
@@ -146,6 +152,7 @@ def load_run(explanation_path: Path, permutations: int) -> tuple[list[dict], dic
                     )
                 row["b1_fixed_drift"] = row["b1_jaccard_k15"] < 0.70
                 row["b2_fixed_drift"] = row["b2_jaccard_k15"] < 0.70
+                fixed_rule_seconds += time.perf_counter() - fixed_started
                 rows.append(row)
 
     for explainer in EXPLAINERS:
@@ -164,6 +171,8 @@ def load_run(explanation_path: Path, permutations: int) -> tuple[list[dict], dic
         "training_seconds": float(training["elapsed_seconds"]),
         "explanation_seconds": float(explanation["elapsed_seconds"]),
         "record_explanation_seconds": explanation_seconds,
+        "fixed_rule_seconds": fixed_rule_seconds,
+        "ncd_permutation_seconds": ncd_permutation_seconds,
         "decision_score": explanation["decision_score"],
     }
     return rows, run_info
@@ -327,6 +336,7 @@ def main() -> None:
         with redirect_stdout(Tee(sys.__stdout__, log_file)), redirect_stderr(
             Tee(sys.__stderr__, log_file)
         ):
+            analysis_started = time.perf_counter()
             output_dir = resolve(args.output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             rows: list[dict] = []
@@ -356,6 +366,7 @@ def main() -> None:
                 "fdr_q": 0.05,
                 "fixed_rule": "Jaccard@15 < 0.70",
                 "silence_primary": "recall_after - recall_before > -0.05",
+                "analysis_seconds": time.perf_counter() - analysis_started,
                 "runs": run_info,
                 "run_summaries": summaries,
                 "artifacts": {
