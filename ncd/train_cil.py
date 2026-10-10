@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import random
 import subprocess
 import sys
@@ -12,6 +13,10 @@ import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+
+# PyTorch requires this before the first CUDA context is created when
+# deterministic algorithms are enabled.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 # ``python -I ncd/train_cil.py`` intentionally ignores the current directory.
 # Add only this checked-out repository so the announced isolated command works.
@@ -307,6 +312,8 @@ def run(config: dict, config_path: Path) -> None:
         "log_path": config["log_path"],
         "data_sources": data.source_files,
         "task0_only_preprocessing": True,
+        "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+        "deterministic_algorithms_enabled": torch.are_deterministic_algorithms_enabled(),
         "class_order": data.class_order,
         "tasks": data.tasks,
         "feature_count": len(data.feature_names),
@@ -340,3 +347,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
