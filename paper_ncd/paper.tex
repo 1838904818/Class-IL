@@ -235,9 +235,18 @@ novelty.
 \section{Interim real class-incremental measurement}
 
 Table~\ref{tab:exp3partial} is an interim slice: two datasets, Replay and
-iCaRL, five seeds, or 20 of the registered 140 Phase-I runs.  Accuracy,
-balanced accuracy, macro F1, and forgetting are seed means.  Drift rates use
-silent class--transition units as the denominator.
+iCaRL, five seeds, or 20 of the active 140-run Phase-I batch
+($4$ datasets $\times 7$ Phase-I learners $\times 5$ seeds).  The conditional
+OFRA arm in the work order is not part of this batch: the current NCD artifact
+loader consumes a single differentiable MLP checkpoint, whereas the maintained
+OFRA implementation combines a frozen encoder, per-class binary heads, and a
+non-differentiable router and does not emit the same checkpoint artifact.  The
+older head-path SHAP pilot excludes the router and only supplies one explainer,
+so it is not a conforming substitute for the registered three-explainer NCD
+measurement.  This is an explicit scope limitation, not evidence that OFRA is
+infeasible or a waiver of the optional follow-up.  Accuracy, balanced accuracy,
+macro F1, and forgetting are seed means.  Drift rates use silent
+class--transition units as the denominator.
 
 Figure~\ref{fig:partial-confusion} reports the corresponding pooled,
 row-normalized final-checkpoint confusion matrices.  Each panel sums raw counts
@@ -300,9 +309,11 @@ sensitivity.  NCD permutation time totals 46.99--106.86 seconds per
 dataset--method cell over five seeds, 3.29--3.65\% of explanation-extraction
 time but 3568.60--4057.29 times the negligible fixed-rule decision time.
 
-\pending{Replace Table~\ref{tab:exp3partial} with the complete 140-run table,
-complete four-dataset per-class confusion matrices, and final resource-cost
-accounting after all registered HPC jobs reach terminal success.}
+\pending{Replace Table~\ref{tab:exp3partial} with the complete active 140-run
+Phase-I table, complete four-dataset per-class confusion matrices, and final
+resource-cost accounting after all registered HPC jobs reach terminal success.
+Report the conditional OFRA arm separately if and only if a conforming
+three-explainer checkpoint adapter is completed and run.}
 
 \section{Discussion}
 
@@ -333,12 +344,13 @@ The intervention benchmark is constructed and uses the same public datasets
 as evaluation; it is not an independent deployment study.  Some P2 cells have
 no eligible construction.  The current real-data table covers only 20 of 140
 runs, excludes the two CIC datasets and five learners, and provides no
-independent calibration split.  Silent drift is operationalized through a
-recall tolerance and is sensitive to probe population, explainer, distance,
-and aggregation choices.  NCD significance is not equivalent to causal
-dependency change.  No current result establishes substantive innovation,
-cross-domain generality, publication acceptance, or a validated governance
-mechanism.
+independent calibration split.  It also excludes the work order's conditional
+OFRA arm; no conforming OFRA NCD run is claimed.  Silent drift is
+operationalized through a recall tolerance and is sensitive to probe
+population, explainer, distance, and aggregation choices.  NCD significance is
+not equivalent to causal dependency change.  No current result establishes
+substantive innovation, cross-domain generality, publication acceptance, or a
+validated governance mechanism.
 
 \section{Conclusion}
 
