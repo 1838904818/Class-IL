@@ -50,6 +50,43 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def portable_source_id(path: Path, source_root: Path | None = None) -> str:
+    """Return a traceable source identifier without publishing host-local paths."""
+    resolved = path.resolve(strict=True)
+    root = (source_root or Path.cwd()).resolve()
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        return f"external/{sha256(resolved)[:12]}-{resolved.name}"
+
+
+def provenance_record(
+    role: str,
+    path: Path,
+    result: dict[str, object],
+    source_root: Path | None = None,
+) -> dict[str, object]:
+    """Bind an input hash and scientific identity while excluding personal paths."""
+    datasets = set()
+    if result.get("dataset"):
+        datasets.add(str(result["dataset"]))
+    for key in ("run_summaries", "runs"):
+        for row in result.get(key, []):
+            if isinstance(row, dict) and row.get("dataset"):
+                datasets.add(str(row["dataset"]))
+    record: dict[str, object] = {
+        "role": role,
+        "source": portable_source_id(path, source_root),
+        "sha256": sha256(path),
+        "datasets": sorted(datasets),
+    }
+    for key in ("job_id", "source_commit"):
+        value = result.get(key)
+        if value not in (None, ""):
+            record[key] = value
+    return record
+
+
 def locate_artifact(result_path: Path, result: dict[str, object], key: str) -> Path:
     recorded = Path(str(result["artifacts"][key]))
     candidates = [recorded, result_path.parent / recorded.name]
@@ -307,6 +344,7 @@ def aggregate(
     drift_paths: list[Path],
     performance_paths: list[Path],
     allow_partial: bool,
+    source_root: Path | None = None,
 ) -> dict[str, object]:
     drift: dict[tuple[str, str, int], dict[str, object]] = {}
     performance: dict[tuple[str, str, int], dict[str, object]] = {}
@@ -319,7 +357,7 @@ def aggregate(
     for path in drift_paths:
         resolved = path.resolve(strict=True)
         result = read_json(resolved)
-        inputs.append({"role": "drift", "path": str(resolved), "sha256": sha256(resolved)})
+        inputs.append(provenance_record("drift", resolved, result, source_root))
         for row in result["run_summaries"]:
             key = identity(row)
             if key in drift:
@@ -337,7 +375,7 @@ def aggregate(
     for path in performance_paths:
         resolved = path.resolve(strict=True)
         result = read_json(resolved)
-        inputs.append({"role": "performance", "path": str(resolved), "sha256": sha256(resolved)})
+        inputs.append(provenance_record("performance", resolved, result, source_root))
         dataset = str(result["dataset"])
         for raw in result["runs"]:
             row = {"dataset": dataset, **raw}
@@ -399,9 +437,20 @@ def main() -> None:
     parser.add_argument("--performance-result", type=Path, action="append", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--allow-partial", action="store_true")
+    parser.add_argument(
+        "--source-root",
+        type=Path,
+        default=Path.cwd(),
+        help="root used to record portable input paths (default: current directory)",
+    )
     args = parser.parse_args()
 
-    result = aggregate(args.drift_result, args.performance_result, args.allow_partial)
+    result = aggregate(
+        args.drift_result,
+        args.performance_result,
+        args.allow_partial,
+        source_root=args.source_root,
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     result_path = args.output_dir / "exp3_full_result.json"
     result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

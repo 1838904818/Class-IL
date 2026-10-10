@@ -1,17 +1,47 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from ncd.aggregate_exp3_full import (
     check_coverage,
     fixed_consensus_sensitivity_rows,
     mean_std,
     ncd_q_sensitivity_rows,
+    portable_source_id,
+    provenance_record,
     summarize_group,
 )
 
 
 class NcdAggregateExp3FullTest(unittest.TestCase):
+    def test_provenance_is_hash_bound_and_portable(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "ncd" / "results" / "exp3" / "slice" / "exp3_result.json"
+            source.parent.mkdir(parents=True)
+            source.write_text("{}\n", encoding="utf-8")
+            self.assertEqual(
+                portable_source_id(source, root),
+                "ncd/results/exp3/slice/exp3_result.json",
+            )
+            record = provenance_record(
+                "drift",
+                source,
+                {
+                    "job_id": "483686",
+                    "source_commit": "d3a9db2",
+                    "run_summaries": [{"dataset": "NSL-KDD"}],
+                },
+                root,
+            )
+            self.assertEqual(record["source"], "ncd/results/exp3/slice/exp3_result.json")
+            self.assertEqual(record["datasets"], ["NSL-KDD"])
+            self.assertEqual(record["job_id"], "483686")
+            self.assertEqual(len(record["sha256"]), 64)
+            self.assertNotIn(str(root), str(record))
+
     def test_mean_std_and_weighted_summary(self) -> None:
         drift = [
             {
