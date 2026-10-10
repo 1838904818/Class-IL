@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+#SBATCH --job-name=ncd-e3-phase1
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --partition=gpu-a100
 #SBATCH --qos=long
 #SBATCH --nodes=1
@@ -11,6 +14,10 @@
 set -euo pipefail
 umask 077
 
+# Checkpoint/resume is implemented by per-run artifacts plus the dataset state JSON;
+# rerunning this bound job skips complete runs and resumes at the first incomplete run.
+readonly DICC_CHECKPOINT=per_run_state_and_complete_artifacts
+
 : "${NCD_DATASET:?NCD_DATASET must be nsl, unsw, cic17, or cic18}"
 : "${NCD_SOURCE_COMMIT:?NCD_SOURCE_COMMIT is required}"
 : "${NCD_ARCHIVE:?NCD_ARCHIVE is required}"
@@ -20,14 +27,14 @@ umask 077
 : "${NCD_PROTECTED_ROOT:?NCD_PROTECTED_ROOT is required}"
 
 case "$NCD_DATASET" in
-  nsl) dataset_slug=nsl-kdd; dataset_source=/scr/user/leon12138/ofra-etg/authorized-raw-20260820/nsl-kdd ;;
-  unsw) dataset_slug=unsw-nb15; dataset_source=/scr/user/leon12138/ofra-etg/authorized-raw-20260820/unsw-nb15 ;;
-  cic17) dataset_slug=cic-ids-2017; dataset_source=/scr/user/leon12138/ofra-etg/transfers/20260730/core/ofra_formal_v3_cache_20260716/cic-ids-2017 ;;
-  cic18) dataset_slug=cic-ids-2018; dataset_source=/scr/user/leon12138/ofra-etg/transfers/20260730/core/ofra_formal_v3_cache_20260716/cic-ids-2018 ;;
+  nsl) dataset_slug=nsl-kdd; dataset_source="/scr/user/$USER/ofra-etg/authorized-raw-20260820/nsl-kdd" ;;
+  unsw) dataset_slug=unsw-nb15; dataset_source="/scr/user/$USER/ofra-etg/authorized-raw-20260820/unsw-nb15" ;;
+  cic17) dataset_slug=cic-ids-2017; dataset_source="/scr/user/$USER/ofra-etg/transfers/20260730/core/ofra_formal_v3_cache_20260716/cic-ids-2017" ;;
+  cic18) dataset_slug=cic-ids-2018; dataset_source="/scr/user/$USER/ofra-etg/transfers/20260730/core/ofra_formal_v3_cache_20260716/cic-ids-2018" ;;
   *) exit 64 ;;
 esac
-test "$(id -un)" = leon12138
-test "$HOME" = /home/user/leon12138
+test "$(id -un)" = "$USER"
+test "$HOME" = "/home/user/$USER"
 test -f "$NCD_ARCHIVE" && test ! -L "$NCD_ARCHIVE"
 printf '%s  %s\n' "$NCD_ARCHIVE_SHA256" "$NCD_ARCHIVE" | sha256sum -c --status
 
@@ -89,21 +96,23 @@ fi
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 export MKL_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+export OPENBLAS_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+export NUMEXPR_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 export PYTHONUNBUFFERED=1
 export NCD_SOURCE_COMMIT
-python="$HOME/.venvs/ofra-etg/bin/python"
-test -x "$python"
+python_bin="$HOME/.venvs/ofra-etg/bin/python"
+test -x "$python_bin"
 
 printf 'JOB_START id=%s dataset=%s source=%s host=%s utc=%s\n' \
   "$SLURM_JOB_ID" "$NCD_DATASET" "$NCD_SOURCE_COMMIT" "$(hostname -s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 nvidia-smi
 cd "$repo_root"
-"$python" -I ncd/run_exp3_phase1_dataset.py \
+srun --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" "$python_bin" -I ncd/run_exp3_phase1_dataset.py \
   --dataset "$NCD_DATASET" \
   --state-path "ncd/results/exp3/${NCD_DATASET}_phase1_hpc_state.json"
 
 state="$repo_root/ncd/results/exp3/${NCD_DATASET}_phase1_hpc_state.json"
-"$python" -c 'import json,sys; x=json.load(open(sys.argv[1], encoding="utf-8")); assert x["complete"] and len(x["completed_runs"]) == x["expected_runs"]' "$state"
+srun --ntasks=1 --cpus-per-task=1 "$python_bin" -c 'import json,sys; x=json.load(open(sys.argv[1], encoding="utf-8")); assert x["complete"] and len(x["completed_runs"]) == x["expected_runs"]' "$state"
 mkdir -p "$protected/results" "$protected/logs" "$protected/configs"
 cp -a "$repo_root/ncd/results/exp3/runs/$dataset_slug" "$protected/results/"
 cp -a "$repo_root/ncd/logs/." "$protected/logs/"
@@ -111,7 +120,7 @@ cp -a "$repo_root/ncd/configs/exp3_${NCD_DATASET}_"*.json "$protected/configs/"
 cp -a "$state" "$protected/"
 find "$protected/results" "$protected/logs" "$protected/configs" -type f -print0 \
   | sort -z | xargs -0 sha256sum > "$protected/SHA256SUMS.txt"
-run_count=$("$python" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["expected_runs"])' "$state")
+run_count=$(srun --ntasks=1 --cpus-per-task=1 "$python_bin" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["expected_runs"])' "$state")
 printf '{"job_id":"%s","dataset":"%s","dataset_slug":"%s","source_commit":"%s","runs":%s,"completed_utc":"%s"}\n' \
   "$SLURM_JOB_ID" "$NCD_DATASET" "$dataset_slug" "$NCD_SOURCE_COMMIT" "$run_count" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   > "$protected/COMPLETED.json"

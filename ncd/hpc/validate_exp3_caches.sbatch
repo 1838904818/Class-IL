@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+#SBATCH --job-name=ncd-e3-cache
+#SBATCH --output=slurm-%x-%j.out
+#SBATCH --error=slurm-%x-%j.err
 #SBATCH --partition=cpu-epyc
 #SBATCH --qos=short
 #SBATCH --nodes=1
@@ -16,8 +19,8 @@ umask 077
 : "${NCD_SCRATCH_ROOT:?NCD_SCRATCH_ROOT is required}"
 : "${NCD_PROTECTED_ROOT:?NCD_PROTECTED_ROOT is required}"
 
-test "$(id -un)" = leon12138
-test "$HOME" = /home/user/leon12138
+test "$(id -un)" = "$USER"
+test "$HOME" = "/home/user/$USER"
 test -f "$NCD_ARCHIVE" && test ! -L "$NCD_ARCHIVE"
 printf '%s  %s\n' "$NCD_ARCHIVE_SHA256" "$NCD_ARCHIVE" | sha256sum -c --status
 
@@ -41,7 +44,7 @@ trap archive_evidence EXIT
 tar -xf "$NCD_ARCHIVE" -C "$repo_root"
 test -f "$repo_root/ncd/validate_cache_data.py"
 
-cache_base=/scr/user/leon12138/ofra-etg/transfers/20260730/core/ofra_formal_v3_cache_20260716
+cache_base="/scr/user/$USER/ofra-etg/transfers/20260730/core/ofra_formal_v3_cache_20260716"
 ln -s "$cache_base/cic-ids-2017" "$data_root/cic-ids-2017"
 ln -s "$cache_base/cic-ids-2018" "$data_root/cic-ids-2018"
 test "$(realpath -e "$data_root/cic-ids-2017")" = "$cache_base/cic-ids-2017"
@@ -58,15 +61,17 @@ printf '%s  %s\n' ac2fa15c57546f320a414e258fae16ce928f457c75a91d357179e0c99458fc
 
 export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 export MKL_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+export OPENBLAS_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+export NUMEXPR_NUM_THREADS="$SLURM_CPUS_PER_TASK"
 export PYTHONUNBUFFERED=1
 export NCD_SOURCE_COMMIT
-python="$HOME/.venvs/ofra-etg/bin/python"
-test -x "$python"
+python_bin="$HOME/.venvs/ofra-etg/bin/python"
+test -x "$python_bin"
 
 printf 'CACHE_JOB_START id=%s source=%s host=%s utc=%s\n' \
   "$SLURM_JOB_ID" "$NCD_SOURCE_COMMIT" "$(hostname -s)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cd "$repo_root"
-"$python" -I ncd/validate_cache_data.py \
+srun --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" "$python_bin" -I ncd/validate_cache_data.py \
   --data-root "$data_root" \
   --datasets CIC-IDS-2017 CSE-CIC-IDS2018 \
   --output "$run_root/cache_validation.json"
