@@ -17,6 +17,10 @@ from typing import Iterable
 DATASETS = ["NSL-KDD", "UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018"]
 METHODS = ["naive", "ewc", "lwf", "replay", "replay-herding", "replay-dpmeans", "icarl"]
 SEEDS = [1, 2, 3, 4, 42]
+SILENCE_TOLERANCES = [0.0, 0.02, 0.05, 0.10]
+NCD_Q_THRESHOLDS = [0.01, 0.025, 0.05, 0.10]
+TOP_K_VALUES = [5, 10, 15, 20]
+JACCARD_THRESHOLDS = [0.50, 0.60, 0.70, 0.80]
 
 
 def identity(row: dict[str, object]) -> tuple[str, str, int]:
@@ -93,6 +97,125 @@ def weighted_rate(rows: list[dict[str, object]], rate_key: str, weight_key: str)
     if not weight:
         return None
     return sum(float(row[rate_key]) * int(row[weight_key]) for row in rows) / weight
+
+
+def group_explainer_units(
+    explainer_rows: list[dict[str, str]],
+) -> dict[tuple[str, str, int], list[tuple[float, list[dict[str, str]]]]]:
+    units: dict[tuple[str, str, int, int, int, int], list[dict[str, str]]] = defaultdict(list)
+    for row in explainer_rows:
+        key = (
+            row["dataset"],
+            row["method"],
+            int(row["seed"]),
+            int(row["checkpoint_before"]),
+            int(row["checkpoint_after"]),
+            int(row["class_id"]),
+        )
+        units[key].append(row)
+
+    by_run: dict[tuple[str, str, int], list[tuple[float, list[dict[str, str]]]]] = defaultdict(list)
+    for key, rows in units.items():
+        explainers = {row["explainer"] for row in rows}
+        if len(rows) != 3 or len(explainers) != 3:
+            raise ValueError(f"incomplete three-explainer unit for {key}: {sorted(explainers)}")
+        recall_deltas = {float(row["recall_delta"]) for row in rows}
+        if len(recall_deltas) != 1:
+            raise ValueError(f"inconsistent recall delta for {key}")
+        by_run[key[:3]].append((recall_deltas.pop(), rows))
+    return by_run
+
+
+def ncd_q_sensitivity_rows(explainer_rows: list[dict[str, str]]) -> list[dict[str, object]]:
+    """Recompute cross-explainer NCD consensus over registered FDR thresholds."""
+    by_run = group_explainer_units(explainer_rows)
+
+    output: list[dict[str, object]] = []
+    for (dataset, method, seed), run_units in sorted(by_run.items()):
+        for tolerance in SILENCE_TOLERANCES:
+            silent = [rows for recall_delta, rows in run_units if recall_delta > -tolerance]
+            for threshold in NCD_Q_THRESHOLDS:
+                votes = [
+                    sum(
+                        float(row["q_value"]) < threshold
+                        and float(row["ncd_effect"]) > 0.0
+                        for row in rows
+                    )
+                    for rows in silent
+                ]
+                drift_units = sum(vote_count >= 2 for vote_count in votes)
+                agreement_units = sum(vote_count in (0, 3) for vote_count in votes)
+                output.append(
+                    {
+                        "dataset": dataset,
+                        "method": method,
+                        "seed": seed,
+                        "silence_tolerance": tolerance,
+                        "q_threshold": threshold,
+                        "silent_units": len(silent),
+                        "ncd_consensus_drift_units": drift_units,
+                        "ncd_consensus_drift_rate": (
+                            drift_units / len(silent) if silent else None
+                        ),
+                        "ncd_all_explainer_agreement_rate": (
+                            agreement_units / len(silent) if silent else None
+                        ),
+                    }
+                )
+    return output
+
+
+def fixed_consensus_sensitivity_rows(
+    explainer_rows: list[dict[str, str]],
+) -> list[dict[str, object]]:
+    """Recompute B1/B2 consensus sensitivity over top-k and Jaccard thresholds."""
+    by_run = group_explainer_units(explainer_rows)
+    output: list[dict[str, object]] = []
+    for (dataset, method, seed), run_units in sorted(by_run.items()):
+        for tolerance in SILENCE_TOLERANCES:
+            silent = [rows for recall_delta, rows in run_units if recall_delta > -tolerance]
+            for top_k in TOP_K_VALUES:
+                for threshold in JACCARD_THRESHOLDS:
+                    b1_votes = [
+                        sum(float(row[f"b1_jaccard_k{top_k}"]) < threshold for row in rows)
+                        for rows in silent
+                    ]
+                    b2_votes = [
+                        sum(float(row[f"b2_jaccard_k{top_k}"]) < threshold for row in rows)
+                        for rows in silent
+                    ]
+                    b1_drift = sum(votes >= 2 for votes in b1_votes)
+                    b2_drift = sum(votes >= 2 for votes in b2_votes)
+                    output.append(
+                        {
+                            "dataset": dataset,
+                            "method": method,
+                            "seed": seed,
+                            "silence_tolerance": tolerance,
+                            "top_k": top_k,
+                            "jaccard_threshold": threshold,
+                            "silent_units": len(silent),
+                            "b1_consensus_drift_units": b1_drift,
+                            "b1_consensus_drift_rate": (
+                                b1_drift / len(silent) if silent else None
+                            ),
+                            "b2_consensus_drift_units": b2_drift,
+                            "b2_consensus_drift_rate": (
+                                b2_drift / len(silent) if silent else None
+                            ),
+                            "b1_all_explainer_agreement_rate": (
+                                sum(votes in (0, 3) for votes in b1_votes) / len(silent)
+                                if silent
+                                else None
+                            ),
+                            "b2_all_explainer_agreement_rate": (
+                                sum(votes in (0, 3) for votes in b2_votes) / len(silent)
+                                if silent
+                                else None
+                            ),
+                        }
+                    )
+    return output
 
 
 def summarize_group(
@@ -190,6 +313,7 @@ def aggregate(
     costs: dict[tuple[str, str, int], dict[str, object]] = {}
     consensus: list[dict[str, str]] = []
     sensitivity: list[dict[str, str]] = []
+    explainer_units: list[dict[str, str]] = []
     inputs: list[dict[str, str]] = []
 
     for path in drift_paths:
@@ -208,6 +332,7 @@ def aggregate(
             costs[key] = row
         consensus.extend(read_csv(locate_artifact(resolved, result, "consensus_units")))
         sensitivity.extend(read_csv(locate_artifact(resolved, result, "threshold_sensitivity")))
+        explainer_units.extend(read_csv(locate_artifact(resolved, result, "explainer_units")))
 
     for path in performance_paths:
         resolved = path.resolve(strict=True)
@@ -222,6 +347,8 @@ def aggregate(
             performance[key] = row
 
     coverage = check_coverage(drift, performance, allow_partial)
+    ncd_sensitivity = ncd_q_sensitivity_rows(explainer_units)
+    fixed_consensus_sensitivity = fixed_consensus_sensitivity_rows(explainer_units)
     summaries: list[dict[str, object]] = []
     observed_groups = sorted(
         {(dataset, method) for dataset, method, _ in drift},
@@ -256,6 +383,8 @@ def aggregate(
         "method_summaries": summaries,
         "consensus_units": consensus,
         "threshold_sensitivity_rows": sensitivity,
+        "ncd_q_sensitivity_rows": ncd_sensitivity,
+        "fixed_consensus_sensitivity_rows": fixed_consensus_sensitivity,
         "limitations": [
             "Drift-to-future-recall comparisons are descriptive and do not establish prediction or causality.",
             "NCD significance or agreement does not by itself establish detector validity or substantive innovation.",
@@ -279,6 +408,11 @@ def main() -> None:
     write_csv(args.output_dir / "exp3_method_summary.csv", result["method_summaries"])
     write_csv(args.output_dir / "exp3_consensus_units.csv", result["consensus_units"])
     write_csv(args.output_dir / "exp3_threshold_sensitivity.csv", result["threshold_sensitivity_rows"])
+    write_csv(args.output_dir / "exp3_ncd_q_sensitivity.csv", result["ncd_q_sensitivity_rows"])
+    write_csv(
+        args.output_dir / "exp3_fixed_consensus_sensitivity.csv",
+        result["fixed_consensus_sensitivity_rows"],
+    )
     print(
         "EXP3_AGGREGATION_COMPLETE "
         f"observed_runs={result['coverage']['observed_runs']} "

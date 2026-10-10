@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from ncd.aggregate_exp3_full import check_coverage, mean_std, summarize_group
+from ncd.aggregate_exp3_full import (
+    check_coverage,
+    fixed_consensus_sensitivity_rows,
+    mean_std,
+    ncd_q_sensitivity_rows,
+    summarize_group,
+)
 
 
 class NcdAggregateExp3FullTest(unittest.TestCase):
@@ -62,6 +68,69 @@ class NcdAggregateExp3FullTest(unittest.TestCase):
     def test_drift_and_performance_identities_must_match(self) -> None:
         with self.assertRaisesRegex(ValueError, "identity mismatch"):
             check_coverage({("NSL-KDD", "replay", 1): {}}, {}, allow_partial=True)
+
+    def test_ncd_q_sensitivity_recomputes_cross_explainer_consensus(self) -> None:
+        rows = []
+        for class_id, recall_delta, q_values in (
+            (0, -0.01, (0.001, 0.02, 0.20)),
+            (1, -0.07, (0.001, 0.002, 0.003)),
+        ):
+            for index, q_value in enumerate(q_values):
+                rows.append(
+                    {
+                        "dataset": "NSL-KDD",
+                        "method": "replay",
+                        "seed": "1",
+                        "checkpoint_before": "0",
+                        "checkpoint_after": "1",
+                        "class_id": str(class_id),
+                        "explainer": f"e{index}",
+                        "recall_delta": str(recall_delta),
+                        "q_value": str(q_value),
+                        "ncd_effect": "0.1",
+                    }
+                )
+        result = ncd_q_sensitivity_rows(rows)
+        primary = next(
+            row
+            for row in result
+            if row["silence_tolerance"] == 0.05 and row["q_threshold"] == 0.025
+        )
+        self.assertEqual(primary["silent_units"], 1)
+        self.assertEqual(primary["ncd_consensus_drift_units"], 1)
+        self.assertEqual(primary["ncd_consensus_drift_rate"], 1.0)
+        self.assertEqual(primary["ncd_all_explainer_agreement_rate"], 0.0)
+
+    def test_fixed_consensus_sensitivity_uses_two_of_three_vote(self) -> None:
+        rows = []
+        for index, b1 in enumerate((0.4, 0.6, 0.9)):
+            row = {
+                "dataset": "NSL-KDD",
+                "method": "replay",
+                "seed": "1",
+                "checkpoint_before": "0",
+                "checkpoint_after": "1",
+                "class_id": "0",
+                "explainer": f"e{index}",
+                "recall_delta": "-0.01",
+                "q_value": "0.1",
+                "ncd_effect": "0.1",
+            }
+            for top_k in (5, 10, 15, 20):
+                row[f"b1_jaccard_k{top_k}"] = str(b1)
+                row[f"b2_jaccard_k{top_k}"] = str(1.0 - b1)
+            rows.append(row)
+        result = fixed_consensus_sensitivity_rows(rows)
+        primary = next(
+            row
+            for row in result
+            if row["silence_tolerance"] == 0.05
+            and row["top_k"] == 15
+            and row["jaccard_threshold"] == 0.7
+        )
+        self.assertEqual(primary["silent_units"], 1)
+        self.assertEqual(primary["b1_consensus_drift_units"], 1)
+        self.assertEqual(primary["b2_consensus_drift_units"], 1)
 
 
 if __name__ == "__main__":
