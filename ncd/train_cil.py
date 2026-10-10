@@ -7,7 +7,6 @@ import copy
 import json
 import os
 import random
-import subprocess
 import sys
 import time
 import traceback
@@ -31,6 +30,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from ncd.data import PreparedData, prepare_dataset
 from ncd.model import DecisionScore, MLP
+from ncd.source_commit import source_commit
 from src.methods.replay_dpmeans import _dpmeans_select
 
 
@@ -234,10 +234,6 @@ def evaluate_recalls(
     return recalls
 
 
-def git_commit(repo_root: Path) -> str:
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_root, text=True).strip()
-
-
 def save_probe_background(data: PreparedData, output: Path, seed: int) -> Path:
     rng = np.random.default_rng(seed + 991)
     probe_x: list[np.ndarray] = []
@@ -411,7 +407,7 @@ def run(config: dict, config_path: Path) -> None:
         "dataset": config["dataset"],
         "method": method,
         "seed": seed,
-        "git_commit": git_commit(repo_root),
+        "git_commit": source_commit(repo_root),
         "config": str(config_path.relative_to(repo_root)).replace("\\", "/"),
         "command": " ".join(sys.argv),
         "log_path": config["log_path"],

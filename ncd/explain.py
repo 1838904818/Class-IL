@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import time
 import traceback
@@ -25,6 +24,7 @@ import torch
 from torch import nn
 
 from ncd.model import DecisionScore, MLP
+from ncd.source_commit import source_commit
 from ncd.train_cil import Tee, seed_everything
 
 
@@ -39,10 +39,6 @@ class TargetScore(nn.Module):
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         return self.scorer(inputs)[:, self.target : self.target + 1]
-
-
-def git_commit() -> str:
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
 
 
 def as_feature_matrix(values: object, n_rows: int, n_features: int) -> np.ndarray:
@@ -232,7 +228,7 @@ def run(args: argparse.Namespace) -> None:
         "dataset": training["dataset"],
         "method": training["method"],
         "seed": training["seed"],
-        "git_commit": git_commit(),
+        "git_commit": source_commit(REPO_ROOT),
         "training_result": str(result_path.relative_to(REPO_ROOT)).replace("\\", "/"),
         "training_git_commit": training["git_commit"],
         "command": " ".join(sys.argv),
