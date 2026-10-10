@@ -295,7 +295,27 @@ function buildDeck(notes = []) {
     addNotes(s, notes, 7);
   }
 
-  // Slide 9 — bounded conclusion and current execution.
+  // Slide 9 — completed NSL-KDD drift-only slice.
+  {
+    const s = pptx.addSlide();
+    s.background = { color: C.white };
+    addTitle(s, 'NSL-KDD 25-run drift slice: saturation persists', 'Five learners × five seeds; matched performance aggregation remains queued.');
+    s.addImage({ path: path.join(FIG, 'nsl_25run_drift_saturation.png'), x: 0.48, y: 1.28, w: 8.72, h: 4.82 });
+    addCard(s, 9.48, 1.42, 3.04, 4.64, { fill: C.pale, line: C.grid });
+    addText(s, '154 / 157', 9.78, 1.82, 2.44, 0.62, { fontFace: 'Cambria', fontSize: 33, bold: true, color: C.red, align: 'center' });
+    addText(s, 'silent units marked by NCD', 9.82, 2.47, 2.36, 0.36, { fontSize: 12.5, color: C.ink, align: 'center' });
+    addText(s, '147 / 157', 9.82, 3.18, 2.36, 0.44, { fontFace: 'Cambria', fontSize: 26, bold: true, color: C.berry, align: 'center' });
+    addText(s, 'still marked at q = 0.01', 9.82, 3.66, 2.36, 0.34, { fontSize: 12.5, color: C.ink, align: 'center' });
+    addText(s, '68 / 68', 9.82, 4.32, 2.36, 0.44, { fontFace: 'Cambria', fontSize: 26, bold: true, color: C.gold, align: 'center' });
+    addText(s, 'future-observed units are positive; no comparison group', 9.82, 4.82, 2.36, 0.62, { fontSize: 12.5, color: C.ink, align: 'center', valign: 'top' });
+    addPill(s, 'NOT DETECTOR VALIDITY', 9.74, 5.58, 2.52, C.berry);
+    addCard(s, 1.50, 6.40, 10.36, 0.52, { fill: C.navy, line: C.navy, shadow: false });
+    addText(s, 'Finding: a completed larger slice confirms saturation; it does not establish prediction, causality, governance, or innovation.', 1.75, 6.48, 9.86, 0.30, { fontSize: 14.5, bold: true, color: C.white, align: 'center' });
+    addFooter(s, 'Source: DICC jobs 483664 and 483686; protected 25-run NSL-KDD drift evidence', 9);
+    addNotes(s, notes, 8);
+  }
+
+  // Slide 10 — bounded conclusion and current execution.
   {
     const s = pptx.addSlide();
     s.background = { color: C.navy };
@@ -303,8 +323,8 @@ function buildDeck(notes = []) {
     addText(s, 'The measurement works.\nThe innovation claim does not—yet.', 0.78, 1.18, 7.35, 1.28, { fontFace: 'Cambria', fontSize: 36, bold: true, color: C.white, valign: 'top' });
     const items = [
       ['SUPPORTED', 'Repeated explanations and intervention constructions are auditable.'],
-      ['NEGATIVE', 'NCD ties B2 on eligible positives, adds one false positive, and saturates on the interim real-data slice.'],
-      ['OPEN', 'Full 4-dataset × 7-method × 5-seed comparison, cross-explainer validity, future-recall relation, and RQ3 governance.'],
+      ['NEGATIVE', 'NCD ties B2 on eligible positives, adds one false positive, and marks 154/157 silent units in the completed NSL drift slice.'],
+      ['OPEN', 'Matched NSL performance, the other three datasets, cross-explainer validity, future-recall relation, and RQ3 governance.'],
     ];
     items.forEach((it, i) => {
       const y = 2.92 + i * 1.03;
@@ -314,10 +334,10 @@ function buildDeck(notes = []) {
     });
     addCard(s, 9.20, 1.18, 3.20, 4.96, { fill: '132D45', line: '26445D', shadow: false });
     addText(s, 'HPC completion path', 9.52, 1.55, 2.55, 0.44, { fontFace: 'Cambria', fontSize: 21, bold: true, color: C.white, align: 'center' });
-    addText(s, '12 registered owned jobs\n\n4 primary training/explanation\n4 performance aggregation\n4 drift aggregation\n\nNo duplicate submission.\nFinal paper and deck update only after terminal, hash-verified evidence.', 9.54, 2.22, 2.50, 3.38, { fontSize: 14, color: 'D7E2EB', align: 'center', valign: 'top' });
+    addText(s, '12 registered owned jobs\n\n2 complete\n10 queued or dependency-held\n\n4 primary runs\n4 performance aggregations\n4 drift aggregations\n\nNo duplicate submission.', 9.54, 2.22, 2.50, 3.38, { fontSize: 14, color: 'D7E2EB', align: 'center', valign: 'top' });
     addText(s, 'No current result establishes substantive innovation, cross-domain generality, or validated governance.', 0.82, 6.40, 11.38, 0.48, { fontSize: 15, bold: true, color: 'F0C8DE' });
-    addFooter(s, 'Next: replace interim tables only after all registered jobs complete and protected artifacts pass audit', 9, true);
-    addNotes(s, notes, 8);
+    addFooter(s, 'Next: audit matched NSL performance and each remaining terminal protected result before replacing interim tables', 10, true);
+    addNotes(s, notes, 9);
   }
 
   return pptx;
@@ -328,7 +348,7 @@ async function main() {
   let notes = [];
   if (args.notes) {
     notes = JSON.parse(fs.readFileSync(args.notes, 'utf8'));
-    if (!Array.isArray(notes) || notes.length !== 9) throw new Error('Speaker notes JSON must contain exactly 9 strings.');
+    if (!Array.isArray(notes) || notes.length !== 10) throw new Error('Speaker notes JSON must contain exactly 10 strings.');
   }
   fs.mkdirSync(path.dirname(args.output), { recursive: true });
   const pptx = buildDeck(notes);
