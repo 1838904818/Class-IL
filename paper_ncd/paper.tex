@@ -1,0 +1,326 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.78in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\ncd}{\textsc{NCD}}
+\newcommand{\pending}[1]{\textcolor{red!70!black}{[Pending: #1]}}
+\newcommand{\mean}[1]{\overline{#1}}
+
+\title{Measuring Silent Explanation Drift in Task-Free\\
+Class-Incremental Network Intrusion Detection}
+\author{Research draft}
+\date{Evidence freeze: 10 October 2026 (partial Exp.~3)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Predictive accuracy and catastrophic forgetting do not reveal whether a
+continually learned intrusion detector preserves the feature evidence behind
+an otherwise stable class decision.  We study \emph{silent explanation drift}:
+an adjacent-checkpoint change in class-level feature attribution while class
+recall drops by less than five percentage points.  Our audit repeats three
+direct PyTorch attribution methods over fixed probes and backgrounds, compares
+the conventional fixed Jaccard rule with repeat averaging, and evaluates a
+noise-calibrated permutation test (\ncd) with within-run false-discovery-rate
+control and cross-explainer consensus.  An intervention-grounded benchmark on
+NSL-KDD and UNSW-NB15 gives \ncd{} one false positive in 104 known-negative
+cases, while a repeat-mean baseline gives none; both detect all 26 eligible
+strong shortcut cases and all nine eligible feature-masking cases.  Thus the
+current \ncd{} mechanism does not outperform simple repeat averaging.  In an
+interim 20-run real class-incremental slice, \ncd{} labels 96.97--100\% of
+silent units as drift, indicating saturation rather than established detector
+validity.  These negative results bound the contribution to an auditable
+measurement study and motivate intervention-based validation before any
+governance or innovation claim.  The full four-dataset, seven-method,
+five-seed measurement remains in progress and is excluded from final claims.
+\end{abstract}
+
+\section{Introduction}
+
+Class-incremental network intrusion detection (NIDS) is normally assessed by
+final predictive performance and catastrophic forgetting.  This is necessary
+but incomplete: an update may preserve a class prediction or recall while
+changing the evidence used to support it.  Such a change matters when an
+explanation is used for audit, analyst communication, or governance, yet a raw
+difference between two stochastic explanations is not automatically a model
+change.
+
+The scientific object in this study is the predictive, retention,
+explanatory, and governance behaviour of task-free class-incremental NIDS over
+successive checkpoints.  The implementation, explainer, and detector are
+instruments rather than the research object.  We ask three locked questions:
+(RQ1) how often silent explanation drift occurs and how it varies across data,
+learners, and thresholds; (RQ2) what prediction, class-safety, forgetting,
+memory, and cost trade-offs the learners exhibit; and (RQ3) whether explanation
+evidence can support an auditable non-suppressive governance process.  The
+present paper directly addresses RQ1 and reports a bounded RQ2 measurement.
+RQ3 remains unanswered by the current evidence and is not replaced by the
+drift detector.
+
+The study makes three evidence-bounded contributions.  First, it defines a
+fixed-probe, adjacent-checkpoint audit of the actual class logit rather than a
+surrogate backward pass.  Second, it introduces an intervention benchmark with
+known negative and positive dependency changes, allowing explanation-change
+rules to be evaluated as detectors.  Third, it reports a negative mechanism
+result: on the completed intervention cells, simple repeat averaging matches or
+outperforms the current permutation-based \ncd{} decision.  These contributions
+do not establish substantive algorithmic innovation or publication readiness.
+
+\section{Related work and exact distinction}
+
+CLEX established explanation drift as a continual-learning problem and showed
+that similar predictive performance need not imply similar explanations
+\cite{cossu2024clex}.  RRR instead constrains continual training to preserve
+stored explanations \cite{ebrahimi2021rrr}.  E2D2 monitors explanation
+fingerprints for drift in unsupervised NIDS \cite{nugraha2026e2d2}, while
+Drift2Act studies budgeted responses and online risk certification rather than
+attribution-drift validity \cite{lamaakal2026drift2act}.
+
+Estimator uncertainty is also established prior art.  Covert and Lee derive
+convergence and uncertainty estimates for KernelSHAP \cite{covert2021kernel},
+GPEC combines approximation uncertainty with decision-boundary complexity
+\cite{hill2024gpec}, and population Shapley inference provides confidence
+intervals and hypothesis tests for a global estimand
+\cite{williamson2020spvim}.  Recent work on SHAP multiplicity explicitly
+separates repeated-explainer randomness from model/training multiplicity and
+uses randomized baselines \cite{hwang2026multiplicity}.  This is material
+novelty risk.  Our narrower distinction is the conjunction of adjacent
+class-incremental checkpoints, class--transition-level label permutation,
+within-run FDR, cross-explainer consensus, silent-recall conditioning, and
+intervention-derived truth in NIDS.  A targeted ten-source review found no
+exact match, but that bounded search is not proof of novelty.
+
+\section{Experimental design}
+
+\subsection{Datasets and continual learners}
+
+The registered real-data matrix contains NSL-KDD, UNSW-NB15, CIC-IDS-2017,
+and CSE-CIC-IDS2018.  Task order, split, preprocessing, memory limits, and seeds
+$\{1,2,3,4,42\}$ are fixed within each dataset.  The seven Phase-I learners are
+Naive fine-tuning, EWC, LwF, Replay, Replay-Herding, Replay-DPMeans, and iCaRL.
+Each task boundary produces a checkpoint.  The official test population is
+used only for frozen post-training evaluation, not model selection.
+
+We report accuracy on currently seen classes, balanced accuracy, macro F1,
+per-class recall, Normal-class recall, and signed average forgetting.  For
+class $c$, forgetting at the final checkpoint is
+\begin{equation}
+F_c = \max_{t<T} R_{c,t} - R_{c,T},
+\end{equation}
+averaged over classes observed before the final checkpoint.  Negative values
+are retained rather than clipped because later performance may exceed all
+earlier recorded values.
+
+\subsection{Explanation audit}
+
+For every checkpoint and class, the audit uses at most 200 fixed test probes
+and a fixed background of 100 Task-0 training rows.  Expected Gradients,
+Feature Ablation, and Gradient$\times$Input operate on the true PyTorch class
+logit.  Each checkpoint generates ten explainer repetitions and ten probe
+bootstraps.  Class-level mean absolute attributions are normalized to sum to
+one.
+
+For an adjacent checkpoint pair, the primary distance is one minus Spearman
+rank correlation over all features.  Jaccard distances at
+$k\in\{5,10,15,20\}$ are secondary.  A transition is silent at the primary
+tolerance when
+\begin{equation}
+\Delta R_c = R_{c,t+1}-R_{c,t} > -0.05.
+\end{equation}
+Sensitivity is retained at tolerances $\{0,0.02,0.05,0.10\}$.
+
+\subsection{Detectors}
+
+B1 is the single-estimate rule $J@15<0.70$.  B2 applies the same threshold to
+the mean of repeated attribution estimates.  For \ncd, let $D_B$ be the
+between-checkpoint distances and $D_W$ the within-checkpoint distances.  The
+test statistic is
+\begin{equation}
+T = \operatorname{median}(D_B)-\operatorname{median}(D_W).
+\end{equation}
+The two checkpoint labels are permuted over the pooled estimates at least 1000
+times.  Benjamini--Hochberg correction is applied across all class--transition
+tests inside each dataset--method--seed run at $q=0.05$.  The primary decision
+requires significance from at least two of the three explainers; a Cauchy
+combination is retained as a secondary analysis.
+
+\subsection{Intervention-derived truth}
+
+N1 re-explains the same checkpoint.  N2 applies a function-preserving hidden
+unit permutation or positive ReLU scaling and verifies a maximum logit
+difference below $10^{-5}$.  P1 injects a synthetic marker that becomes
+class-correlated at the later task; marker permutation at test time must reduce
+class accuracy by at least five percentage points to establish a positive
+dependency change.  P2 masks or perturbs selected features and uses the same
+interventional criterion.  Only positive constructions satisfying the silent
+recall condition enter the positive detector denominator.
+
+\section{Intervention-grounded results}
+
+Table~\ref{tab:exp2} reports the frozen five-seed matrix.  The prespecified
+point gate is met, including UNSW-NB15 iCaRL exactly at the 5\% boundary.
+However, B2 detects every eligible positive detected by \ncd{} and has fewer
+negative-control false positives.  With only 20--34 negative controls per
+cell, the observed proportions do not establish a population FPR below 5\%.
+
+\begin{table}[ht]
+\centering
+\caption{Frozen Exp.~2 detector counts.  P1 denotes strong shortcuts
+($\rho\geq0.9$); P2 is unavailable when no eligible intervention was found.}
+\label{tab:exp2}
+\small
+\begin{tabular}{llrrrrrr}
+\toprule
+Dataset & Learner & \multicolumn{2}{c}{Negative FP} & \multicolumn{2}{c}{P1 detected} & \multicolumn{2}{c}{P2 detected} \\
+ & & \ncd & B2 & \ncd & B2 & \ncd & B2 \\
+\midrule
+NSL-KDD & Replay & 0/34 & 0/34 & 8/8 & 8/8 & 5/5 & 5/5 \\
+UNSW-NB15 & Replay & 0/30 & 0/30 & 5/5 & 5/5 & 4/4 & 4/4 \\
+NSL-KDD & iCaRL & 0/20 & 0/20 & 9/9 & 9/9 & -- & -- \\
+UNSW-NB15 & iCaRL & 1/20 & 0/20 & 4/4 & 4/4 & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Removing probe bootstrap reduces eligible positive detections in all four
+cells, whereas removing explainer repeats preserves every eligible positive
+and removes the single UNSW-NB15 iCaRL false positive.  This ablation does not
+uniquely validate the full mechanism.  The supported interpretation is that
+repeated explanation measurement detects these benchmark interventions, while
+the simpler repeat-mean rule is sufficient on the observed cases.
+
+\section{Interim real class-incremental measurement}
+
+Table~\ref{tab:exp3partial} is an interim slice: two datasets, Replay and
+iCaRL, five seeds, or 20 of the registered 140 Phase-I runs.  Accuracy,
+balanced accuracy, macro F1, and forgetting are seed means.  Drift rates use
+silent class--transition units as the denominator.
+
+\begin{table}[ht]
+\centering
+\caption{Interim Exp.~3 frozen-test and silent-drift measurements.  These
+numbers are not the final four-dataset comparison.}
+\label{tab:exp3partial}
+\small
+\begin{tabular}{llrrrrrrr}
+\toprule
+Dataset & Learner & Acc. & BAcc. & Macro F1 & Forget. & B1 drift & B2 drift & \ncd{} drift \\
+\midrule
+NSL-KDD & Replay & 79.98 & 59.96 & 59.73 & 2.82 & 62.96 & 59.26 & 100.00 \\
+NSL-KDD & iCaRL & 77.54 & 70.90 & 62.68 & 6.57 & 30.30 & 30.30 & 96.97 \\
+UNSW-NB15 & Replay & 63.30 & 42.13 & 34.00 & 33.44 & 31.67 & 30.00 & 98.33 \\
+UNSW-NB15 & iCaRL & 51.22 & 46.06 & 28.15 & 35.45 & 18.87 & 18.87 & 98.11 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The calibrated decision is nearly saturated, not selectively conservative.
+Its all-explainer agreement is 93.94--100\% in this slice, but agreement on a
+saturated decision is not validity.  Descriptive future-recall contrasts are
+also uninformative when almost no non-drift units remain.  Consequently, these
+data cannot support a prediction, causal, or governance claim for \ncd.
+
+\pending{Replace Table~\ref{tab:exp3partial} with the complete 140-run table,
+per-class confusion matrices, threshold-sensitivity curves, and resource-cost
+accounting after all registered HPC jobs reach terminal success.}
+
+\section{Discussion}
+
+The main empirical result is negative but useful.  Noise calibration is
+technically feasible and the intervention benchmark is auditable, yet the
+current combination does not add identifiable decision value over repeat
+averaging.  Exp.~2 ties B2 on every eligible positive endpoint and incurs one
+additional false positive.  Exp.~3's interim saturation further argues against
+promoting \ncd{} as the project's substantive innovation.
+
+This does not erase RQ1.  It narrows the next scientific question from
+``can estimator noise be calibrated?'' to ``which explanation or aggregation
+rule tracks intervention-confirmed dependency change without saturation?''
+Any replacement mechanism must keep matched data roles, seeds, thresholds,
+resource accounting, and B2 as a mandatory control.  A metric bundle,
+threshold adjustment, or additional classifier alone would not satisfy that
+requirement.
+
+RQ3 also remains open.  A governance layer may record evidence without
+suppressing alerts, but no current result shows that the drift evidence is
+faithful enough to drive admission, suspension, escalation, refusal, or
+recertification.  Governance evaluation must therefore remain downstream of
+detector validity and must prove binary decision invariance.
+
+\section{Limitations}
+
+The intervention benchmark is constructed and uses the same public datasets
+as evaluation; it is not an independent deployment study.  Some P2 cells have
+no eligible construction.  The current real-data table covers only 20 of 140
+runs, excludes the two CIC datasets and five learners, and provides no
+independent calibration split.  Silent drift is operationalized through a
+recall tolerance and is sensitive to probe population, explainer, distance,
+and aggregation choices.  NCD significance is not equivalent to causal
+dependency change.  No current result establishes substantive innovation,
+cross-domain generality, publication acceptance, or a validated governance
+mechanism.
+
+\section{Conclusion}
+
+An explanation-drift study becomes scientifically interpretable only when it
+separates estimator variability from model change and evaluates the resulting
+decision against known dependency changes.  On the completed intervention
+matrix, repeated explanations work, but the proposed permutation/FDR decision
+does not improve on repeat averaging.  Interim real class-incremental results
+show near-total drift calls.  The honest conclusion is therefore a bounded
+measurement result and a rejected superiority claim, pending the complete
+registered matrix and a mechanism that demonstrates incremental value on the
+endpoint it claims to affect.
+
+\begin{thebibliography}{10}
+\bibitem{cossu2024clex}
+A.~Cossu, F.~Spinnato, R.~Guidotti, and D.~Bacciu.
+\newblock Drifting explanations in continual learning.
+\newblock \emph{Neurocomputing}, 597:127960, 2024.
+\newblock \url{https://doi.org/10.1016/j.neucom.2024.127960}.
+
+\bibitem{ebrahimi2021rrr}
+S.~Ebrahimi et al.
+\newblock Remembering for the right reasons: Explanations reduce catastrophic forgetting.
+\newblock \emph{Applied AI Letters}, 2(4):e44, 2021.
+\newblock \url{https://doi.org/10.1002/ail2.44}.
+
+\bibitem{nugraha2026e2d2}
+B.~Nugraha and T.~Bauschert.
+\newblock E2D2: A modular framework for explanation-based drift detection in unsupervised network intrusion detection.
+\newblock \emph{IFIP Networking}, 2026.
+\newblock \url{https://doi.org/10.23919/IFIPNetworking70592.2026.11578962}.
+
+\bibitem{lamaakal2026drift2act}
+I.~Lamaakal, C.~Yahyati, K.~El~Makkaoui, I.~Ouahbi, and Y.~Maleh.
+\newblock Drift-to-action controllers: Budgeted interventions with online risk certificates.
+\newblock arXiv:2603.08578, 2026.
+
+\bibitem{covert2021kernel}
+I.~Covert and S.-I. Lee.
+\newblock Improving KernelSHAP: Practical Shapley value estimation using linear regression.
+\newblock In \emph{AISTATS}, pages 3457--3465, 2021.
+
+\bibitem{hill2024gpec}
+D.~Hill, A.~Masoomi, M.~Torop, S.~Ghimire, and J.~Dy.
+\newblock Boundary-aware uncertainty for feature attribution explainers.
+\newblock In \emph{AISTATS}, pages 55--63, 2024.
+
+\bibitem{williamson2020spvim}
+B.~Williamson and J.~Feng.
+\newblock Efficient nonparametric statistical inference on population feature importance using Shapley values.
+\newblock In \emph{ICML}, pages 10282--10291, 2020.
+
+\bibitem{hwang2026multiplicity}
+H.~Hwang, S.~Lee, L.~Rosenblatt, J.~Stoyanovich, and S.~E. Whang.
+\newblock Explanation multiplicity in SHAP: Characterization and assessment.
+\newblock arXiv:2601.12654, 2026.
+\end{thebibliography}
+
+\end{document}
