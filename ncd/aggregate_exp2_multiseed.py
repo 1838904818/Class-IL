@@ -40,9 +40,11 @@ def parse_bool(value: object) -> bool:
     return str(value).strip().lower() == "true"
 
 
-def wilson_interval(successes: int, total: int, z: float = 1.959963984540054) -> tuple[float, float]:
+def wilson_interval(
+    successes: int, total: int, z: float = 1.959963984540054
+) -> tuple[float | None, float | None]:
     if total == 0:
-        return math.nan, math.nan
+        return None, None
     p = successes / total
     denominator = 1.0 + z * z / total
     centre = (p + z * z / (2.0 * total)) / denominator
@@ -112,7 +114,7 @@ def draw_roc(
             f'<text class="note" x="137" y="278">{negative_count} N1/N2 controls · {positive_count} eligible positives</text>',
             f'<text class="note" x="137" y="304">{escape(dataset_label)} · {escape(method_label)} · seeds 1/2/3/4/42</text>',
             '<text class="note" x="137" y="330">Internal held-out split; no external calibration</text>',
-            '<text x="92" y="618" font-size="12.5" fill="#5A6470">Positive set: intervention-positive and silent P1/P2 scenarios; true but non-silent constructions are excluded by definition.</text>',
+            '<text x="92" y="618" font-size="12.5" fill="#5A6470">Positive set: eligible intervention-positive and silent scenarios; true but non-silent constructions are excluded by definition.</text>',
             '</svg>',
         ]
     )
@@ -149,12 +151,18 @@ def main() -> None:
     dataset_labels: set[str] = set()
     method_labels: set[str] = set()
     scope_mismatches: list[int] = []
+    p2_construction_statuses: set[str] = set()
+    p2_screen_results: set[str] = set()
 
     for seed in SEEDS:
         seed_dir = root / seed_dirs[seed]
         result = json.loads((seed_dir / "exp2_groundtruth_result.json").read_text(encoding="utf-8"))
         dataset_labels.add(str(result["effective_config"]["dataset"]))
         method_labels.add(str(result["effective_config"]["method"]))
+        p2_construction = result.get("p2_construction", {})
+        p2_construction_statuses.add(str(p2_construction.get("status", "legacy_unspecified")))
+        if p2_construction.get("screen_result"):
+            p2_screen_results.add(str(p2_construction["screen_result"]))
         if f"seed {seed}" not in str(result.get("scope", "")):
             scope_mismatches.append(seed)
         with (seed_dir / "exp2_groundtruth_table.csv").open(newline="", encoding="utf-8") as handle:
@@ -297,7 +305,7 @@ def main() -> None:
                 "strong_p1_tpr_wilson95_high": p1_high,
                 "eligible_p2_count": len(positive_p2),
                 "p2_detected": tp_p2,
-                "observed_p2_tpr": tp_p2 / len(positive_p2),
+                "observed_p2_tpr": tp_p2 / len(positive_p2) if positive_p2 else None,
                 "p2_tpr_wilson95_low": p2_low,
                 "p2_tpr_wilson95_high": p2_high,
             }
@@ -348,15 +356,58 @@ def main() -> None:
     )
 
     ncd = next(row for row in detector_rows if row["detector"] == "NCD")
+    b1 = next(row for row in detector_rows if row["detector"] == "B1 fixed J@15")
     b2 = next(row for row in detector_rows if row["detector"] == "B2 repeat-mean J@15")
     no_bootstrap = next(row for row in detector_rows if row["detector"] == "NCD no bootstrap")
     no_repeats = next(row for row in detector_rows if row["detector"] == "NCD no repeats")
     no_fdr = next(row for row in detector_rows if row["detector"] == "NCD no FDR")
+    p2_available = bool(positive_p2)
+
+    def count_rate(row: dict[str, object], detected: str, total: str, rate: str) -> str:
+        denominator = int(row[total])
+        if denominator == 0:
+            return "n/a"
+        return f"{int(row[detected])}/{denominator} ({100 * float(row[rate]):.1f}%)"
+
+    def count_only(row: dict[str, object], detected: str, total: str) -> str:
+        denominator = int(row[total])
+        return "n/a" if denominator == 0 else f"{int(row[detected])}/{denominator}"
+
+    p2_scope_text = (
+        "the screened P2 top-3 feature-mask construction"
+        if p2_available
+        else "no P2 detector case because the frozen P2 screen produced no eligible construction"
+    )
+    p2_screen_note = (
+        "P2 candidate selection and held-out evaluation use disjoint row halves, but both come from the same official dataset and do not constitute external validation."
+        if p2_available
+        else f"Frozen P2 screen status: {', '.join(sorted(p2_construction_statuses))}; screen evidence: {', '.join(sorted(p2_screen_results)) or 'recorded in the raw results'}."
+    )
+    ablation_p2_sentence = (
+        f" and P2 from {int(ncd['p2_detected'])}/{int(ncd['eligible_p2_count'])} to {int(no_bootstrap['p2_detected'])}/{int(no_bootstrap['eligible_p2_count'])}"
+        if p2_available
+        else ""
+    )
+    p2_population_note = (
+        f"P2 cases failing the joint intervention-positive-and-silent eligibility rule: {len(excluded_p2)}. They were also excluded."
+        if p2_available or excluded_p2
+        else "P2 has no detector denominator because the frozen screen found no eligible construction."
+    )
+    point_gate_passes = (
+        float(ncd["observed_fpr"]) <= 0.05
+        and float(ncd["observed_strong_p1_tpr"]) >= float(b2["observed_strong_p1_tpr"])
+    )
+    gate_text = "passes" if point_gate_passes else "does not pass"
+    available_evidence_text = (
+        "This is bounded evidence that the available benchmark constructions and silent-drift measurement operate on this slice."
+        if point_gate_passes
+        else "This slice does not satisfy the frozen detector gate."
+    )
     report = f"""# Exp 2 five-seed intervention-ground-truth result
 
 ## What ran
 
-{dataset_label} {method_label}, seeds 1/2/3/4/42, transition 0->1, N1 same-checkpoint controls, N2 function-preserving controls, strong P1 shortcuts (rho >= 0.9), and the screened P2 top-3 feature-mask construction. Each detector uses three explainers. P2 candidate selection and held-out evaluation use disjoint row halves, but both come from the same official dataset and do not constitute external validation.
+{dataset_label} {method_label}, seeds 1/2/3/4/42, transition 0->1, N1 same-checkpoint controls, N2 function-preserving controls, strong P1 shortcuts (rho >= 0.9), and {p2_scope_text}. Each detector uses three explainers. {p2_screen_note}
 
 ## Main numbers
 
@@ -364,22 +415,22 @@ def main() -> None:
 |---|---:|---:|
 | Negative controls | {int(ncd['false_positives'])}/{int(ncd['negative_count'])} false positives ({100 * float(ncd['observed_fpr']):.1f}%) | {int(b2['false_positives'])}/{int(b2['negative_count'])} ({100 * float(b2['observed_fpr']):.1f}%) |
 | Eligible strong P1 | {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])} ({100 * float(ncd['observed_strong_p1_tpr']):.1f}%) | {int(b2['strong_p1_detected'])}/{int(b2['eligible_strong_p1_count'])} ({100 * float(b2['observed_strong_p1_tpr']):.1f}%) |
-| Eligible P2 | {int(ncd['p2_detected'])}/{int(ncd['eligible_p2_count'])} ({100 * float(ncd['observed_p2_tpr']):.1f}%) | {int(b2['p2_detected'])}/{int(b2['eligible_p2_count'])} ({100 * float(b2['observed_p2_tpr']):.1f}%) |
+| Eligible P2 | {count_rate(ncd, 'p2_detected', 'eligible_p2_count', 'observed_p2_tpr')} | {count_rate(b2, 'p2_detected', 'eligible_p2_count', 'observed_p2_tpr')} |
 
-Across the five seeds, {len(true_non_silent_p1)} intervention-positive P1 cases were non-silent (recall drop exceeded 5 percentage points), so they are excluded from the silent-positive TPR denominator rather than counted as detector misses. P2 cases failing the joint intervention-positive-and-silent eligibility rule: {len(excluded_p2)}. They were also excluded. Maximum N2 logit error was {max_n2_error:.3g}.
+Across the five seeds, {len(true_non_silent_p1)} intervention-positive P1 cases were non-silent (recall drop exceeded 5 percentage points), so they are excluded from the silent-positive TPR denominator rather than counted as detector misses. {p2_population_note} Maximum N2 logit error was {max_n2_error:.3g}.
 
 | Ablation | False positives | Strong P1 detected | P2 detected |
 |---|---:|---:|---:|
-| Full NCD | {int(ncd['false_positives'])}/{int(ncd['negative_count'])} | {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])} | {int(ncd['p2_detected'])}/{int(ncd['eligible_p2_count'])} |
-| No probe bootstrap | {int(no_bootstrap['false_positives'])}/{int(no_bootstrap['negative_count'])} | {int(no_bootstrap['strong_p1_detected'])}/{int(no_bootstrap['eligible_strong_p1_count'])} | {int(no_bootstrap['p2_detected'])}/{int(no_bootstrap['eligible_p2_count'])} |
-| No explainer repeats | {int(no_repeats['false_positives'])}/{int(no_repeats['negative_count'])} | {int(no_repeats['strong_p1_detected'])}/{int(no_repeats['eligible_strong_p1_count'])} | {int(no_repeats['p2_detected'])}/{int(no_repeats['eligible_p2_count'])} |
-| No FDR | {int(no_fdr['false_positives'])}/{int(no_fdr['negative_count'])} | {int(no_fdr['strong_p1_detected'])}/{int(no_fdr['eligible_strong_p1_count'])} | {int(no_fdr['p2_detected'])}/{int(no_fdr['eligible_p2_count'])} |
+| Full NCD | {int(ncd['false_positives'])}/{int(ncd['negative_count'])} | {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])} | {count_only(ncd, 'p2_detected', 'eligible_p2_count')} |
+| No probe bootstrap | {int(no_bootstrap['false_positives'])}/{int(no_bootstrap['negative_count'])} | {int(no_bootstrap['strong_p1_detected'])}/{int(no_bootstrap['eligible_strong_p1_count'])} | {count_only(no_bootstrap, 'p2_detected', 'eligible_p2_count')} |
+| No explainer repeats | {int(no_repeats['false_positives'])}/{int(no_repeats['negative_count'])} | {int(no_repeats['strong_p1_detected'])}/{int(no_repeats['eligible_strong_p1_count'])} | {count_only(no_repeats, 'p2_detected', 'eligible_p2_count')} |
+| No FDR | {int(no_fdr['false_positives'])}/{int(no_fdr['negative_count'])} | {int(no_fdr['strong_p1_detected'])}/{int(no_fdr['eligible_strong_p1_count'])} | {count_only(no_fdr, 'p2_detected', 'eligible_p2_count')} |
 
 ## Decision
 
-The point-estimate gate passes: observed NCD FPR is at most 5%, and its strong-P1 TPR is not below B2. However, NCD does not beat B1 or B2: all three are tied at every primary count above. All six continuous scores have pooled descriptive AUROC 1.000, so the ROC also provides no evidence that NCD ranks cases better. The 95% Wilson upper bound for an observed 0/{len(negatives)} FPR is {100 * float(ncd['fpr_wilson95_high']):.1f}%, so these data do not establish a population FPR below 5%. The pooled ROC is descriptive and not externally calibrated. Removing bootstrap reduces P1 detection from {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])} to {int(no_bootstrap['strong_p1_detected'])}/{int(no_bootstrap['eligible_strong_p1_count'])} and P2 from {int(ncd['p2_detected'])}/{int(ncd['eligible_p2_count'])} to {int(no_bootstrap['p2_detected'])}/{int(no_bootstrap['eligible_p2_count'])}; removing repeats or FDR changes none of the pooled binary outcomes on this slice.
+The frozen point-estimate gate {gate_text}: NCD FPR is {100 * float(ncd['observed_fpr']):.1f}%, strong-P1 detection is {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])}, B2 is {int(b2['strong_p1_detected'])}/{int(b2['eligible_strong_p1_count'])}, and B1 is {int(b1['strong_p1_detected'])}/{int(b1['eligible_strong_p1_count'])}. All six continuous scores are reported as pooled descriptive AUROC values, not external validation. The 95% Wilson upper bound for the observed {int(ncd['false_positives'])}/{len(negatives)} FPR is {100 * float(ncd['fpr_wilson95_high']):.1f}%, so these data do not by themselves establish a population FPR below 5%. The pooled ROC is descriptive and not externally calibrated. Removing bootstrap changes P1 detection from {int(ncd['strong_p1_detected'])}/{int(ncd['eligible_strong_p1_count'])} to {int(no_bootstrap['strong_p1_detected'])}/{int(no_bootstrap['eligible_strong_p1_count'])}{ablation_p2_sentence}; the remaining ablation counts are reported above.
 
-This is evidence that the benchmark constructions and silent-drift measurement work on this bounded slice. It is not evidence of substantive innovation, NCD superiority, broad method generality, or publication readiness.
+{available_evidence_text} It is not evidence of substantive innovation, NCD superiority, broad method generality, or publication readiness.
 
 {f"Scope-label mismatches remain in raw completed seeds {scope_mismatches}; their effective configs and tables identify the actual seed, and the artifacts were not rewritten." if scope_mismatches else "All five raw result scope labels match their effective seed."}
 

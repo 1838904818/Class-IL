@@ -1,10 +1,10 @@
 """Run a real-data Exp 2 intervention-ground-truth slice.
 
 The implementation follows WORK_ORDER_2026-10-09 section 4.  It trains a
-Replay model on the first dataset task, injects a synthetic shortcut while the
-next task is learned, measures dependence by permuting the marker at test
-time, and compares B1/B2/B4 with a permutation-calibrated NCD statistic.  N1
-and a function-preserving N2 reparameterization are evaluated alongside P1.
+Replay or iCaRL model on the first dataset task, injects a synthetic shortcut
+while the next task is learned, measures dependence by permuting the marker at
+test time, and compares B1/B2/B4 with a permutation-calibrated NCD statistic.
+N1 and a function-preserving N2 reparameterization are evaluated alongside P1.
 """
 
 from __future__ import annotations
@@ -43,7 +43,14 @@ from ncd.explain import (
     grad_x_input,
 )
 from ncd.model import DecisionScore, MLP
-from ncd.train_cil import Tee, seed_everything, train_epoch
+from ncd.train_cil import (
+    Tee,
+    extract_features,
+    herding_select,
+    prototypes_from_buffer,
+    seed_everything,
+    train_epoch,
+)
 
 
 def git_commit() -> str:
@@ -200,8 +207,83 @@ def replay_indices(
     return np.concatenate(selected)
 
 
-def scorer_for(model: MLP, n_classes: int, device: torch.device) -> DecisionScore:
-    return DecisionScore(model, "logit", n_classes).to(device).eval()
+def exemplar_indices(
+    method: str,
+    model: MLP,
+    augmented_features: np.ndarray,
+    labels: np.ndarray,
+    classes: list[int],
+    *,
+    per_class: int,
+    seed: int,
+    device: torch.device,
+    batch_size: int,
+) -> np.ndarray:
+    if method == "replay":
+        return replay_indices(
+            augmented_features,
+            labels,
+            classes,
+            per_class=per_class,
+            seed=seed,
+        )
+    if method != "icarl":
+        raise ValueError(f"unsupported method: {method}")
+    embeddings = extract_features(model, augmented_features, device, batch_size)
+    selected: list[np.ndarray] = []
+    for class_id in classes:
+        local = np.flatnonzero(labels == class_id)
+        selected.append(local[herding_select(embeddings[local], per_class)])
+    return np.concatenate(selected)
+
+
+def transition_prototypes(
+    method: str,
+    model: MLP,
+    old_augmented: np.ndarray,
+    old_labels: np.ndarray,
+    current_augmented: np.ndarray,
+    current_labels: np.ndarray,
+    current_classes: list[int],
+    *,
+    per_class: int,
+    seed: int,
+    device: torch.device,
+    batch_size: int,
+) -> dict[int, torch.Tensor] | None:
+    if method == "replay":
+        return None
+    current_indices = exemplar_indices(
+        method,
+        model,
+        current_augmented,
+        current_labels,
+        current_classes,
+        per_class=per_class,
+        seed=seed,
+        device=device,
+        batch_size=batch_size,
+    )
+    return prototypes_from_buffer(
+        model,
+        [old_augmented, current_augmented[current_indices]],
+        [old_labels, current_labels[current_indices]],
+        device,
+        batch_size,
+    )
+
+
+def scorer_for(
+    model: MLP,
+    n_classes: int,
+    device: torch.device,
+    method: str = "replay",
+    prototypes: dict[int, torch.Tensor] | None = None,
+) -> DecisionScore:
+    inference = "nme" if method == "icarl" else "logit"
+    if inference == "nme" and not prototypes:
+        raise RuntimeError("iCaRL scorer requires exemplar prototypes")
+    return DecisionScore(model, inference, n_classes, prototypes).to(device).eval()
 
 
 def predictions(
@@ -497,7 +579,7 @@ def effective_config(config: dict, smoke: bool) -> dict:
             {
                 "epochs_per_task": 1,
                 "rho_values": [0.9],
-                "p2_mask_fractions": [1.0],
+                "p2_mask_fractions": [1.0] if result.get("p2_enabled", True) else [],
                 "probe_per_class": 24,
                 "background_rows": 16,
                 "repeats": 2,
@@ -512,11 +594,16 @@ def effective_config(config: dict, smoke: bool) -> dict:
 
 
 def run(config: dict, config_path: Path) -> None:
-    if config["dataset"] not in {"NSL-KDD", "UNSW-NB15"} or config["method"] != "replay":
-        raise ValueError("Exp 2 currently supports NSL-KDD/UNSW-NB15 Replay")
+    if config["dataset"] not in {"NSL-KDD", "UNSW-NB15"} or config["method"] not in {
+        "replay",
+        "icarl",
+    }:
+        raise ValueError("Exp 2 currently supports NSL-KDD/UNSW-NB15 Replay or iCaRL")
     if int(config["transition_before"]) != 0:
         raise ValueError("the first Exp 2 slice requires transition 0 -> 1")
     seed = int(config["seed"])
+    method = str(config["method"])
+    p2_enabled = bool(config.get("p2_enabled", True))
     seed_everything(seed)
     device = torch.device(config["device"])
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -552,17 +639,44 @@ def run(config: dict, config_path: Path) -> None:
         epochs=int(config["epochs_per_task"]),
         seed=seed,
     )
-    checkpoint0_path = output_dir / "checkpoint_000.pt"
-    torch.save({"model_state": model0.state_dict(), "marker_columns": marker_columns}, checkpoint0_path)
-    selected_local = replay_indices(
-        task0_x,
+    selected_local = exemplar_indices(
+        method,
+        model0,
+        task0_augmented,
         task0_y,
         task0_classes,
         per_class=int(config["buffer_per_class"]),
         seed=seed,
+        device=device,
+        batch_size=batch_size,
     )
     buffer_x = task0_x[selected_local]
     buffer_y = task0_y[selected_local]
+    buffer_augmented0 = task0_augmented[selected_local]
+    checkpoint0_prototypes = (
+        prototypes_from_buffer(
+            model0,
+            [buffer_augmented0],
+            [buffer_y],
+            device,
+            batch_size,
+        )
+        if method == "icarl"
+        else None
+    )
+    checkpoint0_path = output_dir / "checkpoint_000.pt"
+    torch.save(
+        {
+            "model_state": model0.state_dict(),
+            "marker_columns": marker_columns,
+            "inference": "nme" if method == "icarl" else "logit",
+            "prototypes": checkpoint0_prototypes,
+        },
+        checkpoint0_path,
+    )
+    frozen_model0 = copy.deepcopy(model0).to(device).eval()
+    for parameter in frozen_model0.parameters():
+        parameter.requires_grad_(False)
 
     probe_candidates = np.flatnonzero(data.y_test == target)
     rng = np.random.default_rng(seed + 300)
@@ -599,21 +713,47 @@ def run(config: dict, config_path: Path) -> None:
             columns=marker_columns,
             seed=scenario_seed + 1,
         )
+        train_augmented = append_markers(replay_x, train_marker)
         model1 = copy.deepcopy(model0).to(device)
         train_epoch(
             model1,
-            append_markers(replay_x, train_marker),
+            train_augmented,
             replay_y,
             device=device,
             batch_size=batch_size,
             lr=float(config["learning_rate"]),
             epochs=int(config["epochs_per_task"]),
             seed=seed + 1000,
+            old_model=frozen_model0 if method == "icarl" else None,
+            old_classes=task0_classes if method == "icarl" else None,
+        )
+        checkpoint1_prototypes = transition_prototypes(
+            method,
+            model1,
+            train_augmented[len(current_x) : len(current_x) + len(buffer_x)],
+            buffer_y,
+            train_augmented[: len(current_x)],
+            current_y,
+            task1_classes,
+            per_class=int(config["buffer_per_class"]),
+            seed=seed + 1000,
+            device=device,
+            batch_size=batch_size,
         )
         checkpoint1_path = output_dir / f"checkpoint_001_rho_{rho:.1f}.pt"
-        torch.save({"model_state": model1.state_dict(), "rho": rho}, checkpoint1_path)
-        scorer0 = scorer_for(model0, n_classes, device)
-        scorer1 = scorer_for(model1, n_classes, device)
+        torch.save(
+            {
+                "model_state": model1.state_dict(),
+                "rho": rho,
+                "inference": "nme" if method == "icarl" else "logit",
+                "prototypes": checkpoint1_prototypes,
+            },
+            checkpoint1_path,
+        )
+        scorer0 = scorer_for(
+            model0, n_classes, device, method, checkpoint0_prototypes
+        )
+        scorer1 = scorer_for(model1, n_classes, device, method, checkpoint1_prototypes)
 
         test_marker = correlated_markers(
             data.y_test,
@@ -685,7 +825,13 @@ def run(config: dict, config_path: Path) -> None:
             device=device,
         )
         reparameterized_model = function_preserving_rescaling(model1, scenario_seed + 7).to(device)
-        reparameterized_scorer = scorer_for(reparameterized_model, n_classes, device)
+        reparameterized_scorer = scorer_for(
+            reparameterized_model,
+            n_classes,
+            device,
+            method,
+            checkpoint1_prototypes,
+        )
         max_error = maximum_logit_error(
             scorer1,
             reparameterized_scorer,
@@ -812,7 +958,9 @@ def run(config: dict, config_path: Path) -> None:
         )
     )
     p2_probe = p2_test_augmented[p2_probe_indices]
-    p2_scorer0 = scorer_for(model0, n_classes, device)
+    p2_scorer0 = scorer_for(
+        model0, n_classes, device, method, checkpoint0_prototypes
+    )
     real_feature_count = data.x_train.shape[1]
     p2_top_k = int(config["p2_top_k"])
     if "p2_feature_indices" in config:
@@ -851,7 +999,8 @@ def run(config: dict, config_path: Path) -> None:
     )
     replay_x_base = np.concatenate([current_x, buffer_x], axis=0)
     replay_y_base = np.concatenate([current_y, buffer_y], axis=0)
-    for fraction_index, fraction_value in enumerate(config["p2_mask_fractions"]):
+    p2_fractions = config["p2_mask_fractions"] if p2_enabled else []
+    for fraction_index, fraction_value in enumerate(p2_fractions):
         fraction = float(fraction_value)
         scenario_seed = seed * 1_000_000 + 500_000 + fraction_index * 100_000
         p2_train_x = replay_x_base.copy()
@@ -887,16 +1036,32 @@ def run(config: dict, config_path: Path) -> None:
         p2_train_marker = pure_noise_markers(
             len(p2_train_x), marker_columns, p2_marker_seed
         )
+        p2_train_augmented = append_markers(p2_train_x, p2_train_marker)
         p2_model1 = copy.deepcopy(model0).to(device)
         train_epoch(
             p2_model1,
-            append_markers(p2_train_x, p2_train_marker),
+            p2_train_augmented,
             p2_train_y,
             device=device,
             batch_size=batch_size,
             lr=float(config["learning_rate"]),
             epochs=int(config["epochs_per_task"]),
             seed=p2_train_seed,
+            old_model=frozen_model0 if method == "icarl" else None,
+            old_classes=task0_classes if method == "icarl" else None,
+        )
+        p2_checkpoint1_prototypes = transition_prototypes(
+            method,
+            p2_model1,
+            p2_train_augmented[len(current_x) : len(current_x) + len(buffer_x)],
+            buffer_y,
+            p2_train_augmented[: len(current_x)],
+            current_y,
+            task1_classes,
+            per_class=int(config["buffer_per_class"]),
+            seed=p2_train_seed,
+            device=device,
+            batch_size=batch_size,
         )
         p2_checkpoint_path = output_dir / f"checkpoint_001_p2_mask_{fraction:.2f}.pt"
         torch.save(
@@ -904,10 +1069,18 @@ def run(config: dict, config_path: Path) -> None:
                 "model_state": p2_model1.state_dict(),
                 "mask_fraction": fraction,
                 "feature_indices": p2_top_features.tolist(),
+                "inference": "nme" if method == "icarl" else "logit",
+                "prototypes": p2_checkpoint1_prototypes,
             },
             p2_checkpoint_path,
         )
-        p2_scorer1 = scorer_for(p2_model1, n_classes, device)
+        p2_scorer1 = scorer_for(
+            p2_model1,
+            n_classes,
+            device,
+            method,
+            p2_checkpoint1_prototypes,
+        )
         p2_effect1 = feature_mask_effect(
             p2_scorer1,
             p2_test_augmented[p2_probe_candidates],
@@ -958,7 +1131,11 @@ def run(config: dict, config_path: Path) -> None:
             p2_model1, scenario_seed + 7
         ).to(device)
         p2_reparameterized_scorer = scorer_for(
-            p2_reparameterized_model, n_classes, device
+            p2_reparameterized_model,
+            n_classes,
+            device,
+            method,
+            p2_checkpoint1_prototypes,
         )
         p2_max_error = maximum_logit_error(
             p2_scorer1,
@@ -1166,14 +1343,23 @@ def run(config: dict, config_path: Path) -> None:
     def rate(rows: list[dict], field: str) -> float | None:
         return float(np.mean([row[field] for row in rows])) if rows else None
 
+    evaluated_conditions = "N1/N2/P1/P2" if p2_enabled else "N1/N2/P1"
     result = {
-        "analysis": "Exp 2 intervention-ground-truth slice with P1/P2 and ablations",
+        "analysis": (
+            "Exp 2 intervention-ground-truth slice with P1/P2 and ablations"
+            if p2_enabled
+            else "Exp 2 intervention-ground-truth slice with P1 and ablations; P2 unavailable after frozen screening"
+        ),
         "scope": (
             f"{config['dataset']} {config['method']} seed {config['seed']}; "
             f"P1 target class {config['target_class']}; "
-            f"P2 target class {config['p2_target_class']}; "
-            f"transition {config['transition_before']}->{config['transition_before'] + 1}; "
-            "N1/N2/P1/P2"
+            + (
+                f"P2 target class {config['p2_target_class']}; "
+                if p2_enabled
+                else "P2 unavailable after frozen screen; "
+            )
+            + f"transition {config['transition_before']}->{config['transition_before'] + 1}; "
+            + evaluated_conditions
         ),
         "git_commit": git_commit(),
         "config": str(config_path.relative_to(REPO_ROOT)).replace("\\", "/"),
@@ -1183,6 +1369,12 @@ def run(config: dict, config_path: Path) -> None:
         "scenario_records": scenario_records,
         "consensus": consensus_rows,
         "discrimination": discrimination,
+        "p2_construction": {
+            "enabled": p2_enabled,
+            "status": "evaluated" if p2_enabled else "unavailable_after_frozen_screen",
+            "screen_result": config.get("p2_screen_result"),
+            "reason": config.get("p2_exclusion_reason"),
+        },
         "b3_reference": {
             "name": "CLEX Explanation Drift (Equation 6)",
             "doi": "10.1016/j.neucom.2024.127960",
@@ -1243,7 +1435,14 @@ def run(config: dict, config_path: Path) -> None:
             "Matched-FPR thresholds are calibrated and evaluated on the same small negative-control slice.",
             "Additional targets, datasets, methods, seeds, and an external calibration split remain pending.",
             "No publication-level TPR/FPR claim is made from this pilot alone.",
-        ],
+        ]
+        + (
+            []
+            if p2_enabled
+            else [
+                "P2 was not evaluated because the frozen calibration screen found no construction satisfying both the intervention-positive and silent-recall constraints."
+            ]
+        ),
     }
     result_path = output_dir / "exp2_groundtruth_result.json"
     result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")

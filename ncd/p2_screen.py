@@ -30,13 +30,14 @@ import torch
 from ncd.data import prepare_dataset
 from ncd.groundtruth import (
     append_markers,
+    exemplar_indices,
     feature_mask_effect,
     pure_noise_markers,
-    replay_indices,
     scorer_for,
+    transition_prototypes,
 )
 from ncd.model import MLP
-from ncd.train_cil import Tee, seed_everything, train_epoch
+from ncd.train_cil import Tee, prototypes_from_buffer, seed_everything, train_epoch
 
 
 def git_commit() -> str:
@@ -56,6 +57,14 @@ def write_csv(path: Path, rows: list[dict]) -> None:
 
 def cpu_state_dict(model: MLP) -> dict[str, torch.Tensor]:
     return {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
+
+
+def cpu_prototypes(
+    prototypes: dict[int, torch.Tensor] | None,
+) -> dict[int, torch.Tensor] | None:
+    if prototypes is None:
+        return None
+    return {class_id: value.detach().cpu().clone() for class_id, value in prototypes.items()}
 
 
 def target_split(labels: np.ndarray, target: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
@@ -91,9 +100,13 @@ def effect_on_indices(
 
 
 def run(config: dict, config_path: Path) -> None:
-    if config["dataset"] not in {"NSL-KDD", "UNSW-NB15"} or config["method"] != "replay":
-        raise ValueError("the P2 screen currently supports NSL-KDD/UNSW-NB15 Replay")
+    if config["dataset"] not in {"NSL-KDD", "UNSW-NB15"} or config["method"] not in {
+        "replay",
+        "icarl",
+    }:
+        raise ValueError("the P2 screen supports NSL-KDD/UNSW-NB15 Replay or iCaRL")
     seed = int(config["seed"])
+    method = str(config["method"])
     seed_everything(seed)
     device = torch.device(config["device"])
     if device.type == "cuda" and not torch.cuda.is_available():
@@ -105,12 +118,63 @@ def run(config: dict, config_path: Path) -> None:
     batch_size = int(config["batch_size"])
     n_classes = len(data.class_order)
     real_feature_count = data.x_train.shape[1]
-    checkpoint_path = (REPO_ROOT / config["base_checkpoint"]).resolve()
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    model0 = MLP(real_feature_count + marker_columns, int(config["hidden"]), n_classes)
-    model0.load_state_dict(checkpoint["model_state"])
-    model0 = model0.to(device).eval()
-    scorer0 = scorer_for(model0, n_classes, device)
+    task0_classes = data.tasks[0]
+    task1_classes = data.tasks[1]
+    task0_mask = np.isin(data.y_train, task0_classes)
+    task0_x = data.x_train[task0_mask]
+    task0_y = data.y_train[task0_mask]
+    task0_markers = pure_noise_markers(len(task0_x), marker_columns, seed + 100)
+    task0_augmented = append_markers(task0_x, task0_markers)
+    model0 = MLP(real_feature_count + marker_columns, int(config["hidden"]), n_classes).to(
+        device
+    )
+    if config.get("base_checkpoint"):
+        checkpoint_path = (REPO_ROOT / config["base_checkpoint"]).resolve()
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+        model0.load_state_dict(checkpoint["model_state"])
+        checkpoint_source = str(checkpoint_path)
+    else:
+        train_epoch(
+            model0,
+            task0_augmented,
+            task0_y,
+            device=device,
+            batch_size=batch_size,
+            lr=float(config["learning_rate"]),
+            epochs=int(config["epochs_per_task"]),
+            seed=seed,
+        )
+        checkpoint_source = "trained_in_screen"
+    model0.eval()
+    selected_local = exemplar_indices(
+        method,
+        model0,
+        task0_augmented,
+        task0_y,
+        task0_classes,
+        per_class=int(config["buffer_per_class"]),
+        seed=seed,
+        device=device,
+        batch_size=batch_size,
+    )
+    buffer_x = task0_x[selected_local]
+    buffer_y = task0_y[selected_local]
+    buffer_augmented0 = task0_augmented[selected_local]
+    checkpoint0_prototypes = (
+        prototypes_from_buffer(
+            model0,
+            [buffer_augmented0],
+            [buffer_y],
+            device,
+            batch_size,
+        )
+        if method == "icarl"
+        else None
+    )
+    scorer0 = scorer_for(model0, n_classes, device, method, checkpoint0_prototypes)
+    frozen_model0 = copy.deepcopy(model0).to(device).eval()
+    for parameter in frozen_model0.parameters():
+        parameter.requires_grad_(False)
 
     test_markers = pure_noise_markers(len(data.x_test), marker_columns, seed + 900)
     augmented_test = append_markers(data.x_test, test_markers)
@@ -207,20 +271,6 @@ def run(config: dict, config_path: Path) -> None:
         batch_size,
     )
 
-    task0_classes = data.tasks[0]
-    task1_classes = data.tasks[1]
-    task0_mask = np.isin(data.y_train, task0_classes)
-    task0_x = data.x_train[task0_mask]
-    task0_y = data.y_train[task0_mask]
-    selected_local = replay_indices(
-        task0_x,
-        task0_y,
-        task0_classes,
-        per_class=int(config["buffer_per_class"]),
-        seed=seed,
-    )
-    buffer_x = task0_x[selected_local]
-    buffer_y = task0_y[selected_local]
     task1_mask = np.isin(data.y_train, task1_classes)
     current_x = data.x_train[task1_mask]
     current_y = data.y_train[task1_mask]
@@ -230,7 +280,7 @@ def run(config: dict, config_path: Path) -> None:
     target_buffer_y = buffer_y[buffer_y == target]
 
     candidate_rows: list[dict] = []
-    candidate_states: dict[tuple[float, int], dict[str, torch.Tensor]] = {}
+    candidate_states: dict[tuple[float, int], dict[str, object]] = {}
     candidate_index = 0
     for fraction_index, fraction_value in enumerate(config["mask_fractions"]):
         fraction = float(fraction_value)
@@ -257,18 +307,36 @@ def run(config: dict, config_path: Path) -> None:
             marker_seed = int(config.get("fixed_marker_seed", scenario_seed + 1))
             train_seed = int(config.get("fixed_train_seed", seed + 3000))
             train_markers = pure_noise_markers(len(train_x), marker_columns, marker_seed)
+            train_augmented = append_markers(train_x, train_markers)
             model1 = copy.deepcopy(model0).to(device)
             train_epoch(
                 model1,
-                append_markers(train_x, train_markers),
+                train_augmented,
                 train_y,
                 device=device,
                 batch_size=batch_size,
                 lr=float(config["learning_rate"]),
                 epochs=int(config["epochs_per_task"]),
                 seed=train_seed,
+                old_model=frozen_model0 if method == "icarl" else None,
+                old_classes=task0_classes if method == "icarl" else None,
             )
-            scorer1 = scorer_for(model1, n_classes, device)
+            checkpoint1_prototypes = transition_prototypes(
+                method,
+                model1,
+                train_augmented[len(current_x) : len(current_x) + len(buffer_x)],
+                buffer_y,
+                train_augmented[: len(current_x)],
+                current_y,
+                task1_classes,
+                per_class=int(config["buffer_per_class"]),
+                seed=train_seed,
+                device=device,
+                batch_size=batch_size,
+            )
+            scorer1 = scorer_for(
+                model1, n_classes, device, method, checkpoint1_prototypes
+            )
             calibration = effect_on_indices(
                 scorer1,
                 augmented_test,
@@ -333,7 +401,10 @@ def run(config: dict, config_path: Path) -> None:
             }
             candidate_rows.append(row)
             if calibration_truth and calibration_silent:
-                candidate_states[(fraction, multiplier)] = cpu_state_dict(model1)
+                candidate_states[(fraction, multiplier)] = {
+                    "model_state": cpu_state_dict(model1),
+                    "prototypes": cpu_prototypes(checkpoint1_prototypes),
+                }
             print(json.dumps(row, sort_keys=True), flush=True)
             del model1, scorer1
             torch.cuda.empty_cache()
@@ -389,18 +460,39 @@ def run(config: dict, config_path: Path) -> None:
         selected_checkpoint = output_dir / "selected_p2_checkpoint.pt"
         torch.save(
             {
-                "model_state": candidate_states[key],
+                "model_state": candidate_states[key]["model_state"],
+                "inference": "nme" if method == "icarl" else "logit",
+                "prototypes": candidate_states[key]["prototypes"],
                 "top_feature_indices": top_features.tolist(),
                 "top_feature_names": top_feature_names,
                 "selection": selected_row,
             },
             selected_checkpoint,
         )
+    if selected_row is None:
+        screen_scope_limitation = (
+            "This screen found no eligible P2 construction and does not evaluate "
+            "explanation-drift detectors."
+        )
+        construction_limitation = (
+            "No calibration candidate satisfied both the intervention-positive and "
+            "silent-recall constraints; no P2 construction was selected for a detector run."
+        )
+    else:
+        screen_scope_limitation = (
+            "This screen selects a P2 construction but does not evaluate explanation-drift detectors."
+        )
+        construction_limitation = (
+            "The selected construction still requires a full N1/N2/P2 detector run and "
+            "additional seeds."
+        )
+
     result = {
         "analysis": "P2 calibration screen with held-out evaluation",
         "git_commit": git_commit(),
         "config": str(config_path.relative_to(REPO_ROOT)).replace("\\", "/"),
         "effective_config": config,
+        "checkpoint0_source": checkpoint_source,
         "command": f"python -I -B ncd/p2_screen.py --config {config_path.relative_to(REPO_ROOT).as_posix()}",
         "top_feature_indices": top_features.tolist(),
         "top_feature_names": top_feature_names,
@@ -429,8 +521,8 @@ def run(config: dict, config_path: Path) -> None:
         "elapsed_seconds": time.perf_counter() - started,
         "limitations": [
             "Candidate selection used only the calibration half; the evaluation half was not used for ranking.",
-            "This screen selects a P2 construction but does not evaluate explanation-drift detectors.",
-            "The selected construction still requires a full N1/N2/P2 detector run and additional seeds.",
+            screen_scope_limitation,
+            construction_limitation,
         ],
     }
     result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
