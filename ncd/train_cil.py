@@ -31,6 +31,18 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from ncd.data import PreparedData, prepare_dataset
 from ncd.model import DecisionScore, MLP
+from src.methods.replay_dpmeans import _dpmeans_select
+
+
+SUPPORTED_METHODS = {
+    "naive",
+    "ewc",
+    "lwf",
+    "replay",
+    "replay-herding",
+    "replay-dpmeans",
+    "icarl",
+}
 
 
 class Tee:
@@ -77,6 +89,9 @@ def train_epoch(
     old_model: MLP | None = None,
     old_classes: list[int] | None = None,
     temperature: float = 2.0,
+    distillation_alpha: float = 1.0,
+    ewc_snapshots: list[tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]] | None = None,
+    ewc_lambda: float = 0.0,
 ) -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     old_classes = old_classes or []
@@ -92,9 +107,62 @@ def train_epoch(
                 with torch.no_grad():
                     targets = F.softmax(old_model(batch_x)[:, old_classes] / temperature, dim=1)
                 current = F.log_softmax(logits[:, old_classes] / temperature, dim=1)
-                loss = loss + F.kl_div(current, targets, reduction="batchmean") * temperature**2
+                loss = loss + (
+                    distillation_alpha
+                    * F.kl_div(current, targets, reduction="batchmean")
+                    * temperature**2
+                )
+            if ewc_snapshots:
+                penalty = torch.zeros((), device=device)
+                for previous_parameters, previous_fisher in ewc_snapshots:
+                    for name, parameter in model.named_parameters():
+                        penalty = penalty + (
+                            previous_fisher[name]
+                            * (parameter - previous_parameters[name]).square()
+                        ).sum()
+                loss = loss + ewc_lambda * penalty
             loss.backward()
             optimizer.step()
+
+
+def compute_fisher(
+    model: MLP,
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    device: torch.device,
+    batch_size: int,
+    sample_size: int,
+    seed: int,
+) -> dict[str, torch.Tensor]:
+    """Estimate the Phase I empirical diagonal Fisher on a fixed sample."""
+    rng = np.random.default_rng(seed)
+    chosen = np.arange(len(x))
+    if len(chosen) > sample_size:
+        chosen = np.sort(rng.choice(chosen, sample_size, replace=False))
+    dataset = TensorDataset(torch.from_numpy(x[chosen]), torch.from_numpy(y[chosen]))
+    data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    fisher = {
+        name: torch.zeros_like(parameter)
+        for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    }
+    samples = 0
+    model.eval()
+    for batch_x, batch_y in data_loader:
+        batch_x = batch_x.to(device)
+        batch_y = batch_y.to(device)
+        model.zero_grad(set_to_none=True)
+        loss = F.nll_loss(F.log_softmax(model(batch_x), dim=1), batch_y)
+        loss.backward()
+        for name, parameter in model.named_parameters():
+            if parameter.grad is not None:
+                fisher[name] += parameter.grad.detach().square() * batch_x.shape[0]
+        samples += batch_x.shape[0]
+    for name in fisher:
+        fisher[name] /= max(samples, 1)
+    model.zero_grad(set_to_none=True)
+    return fisher
 
 
 def extract_features(model: MLP, x: np.ndarray, device: torch.device, batch_size: int) -> np.ndarray:
@@ -209,7 +277,10 @@ def run(config: dict, config_path: Path) -> None:
         raise RuntimeError("CUDA requested but unavailable")
     device = torch.device(device_name)
     data_root = (repo_root / config["data_root"]).resolve()
-    print(f"dataset={config['dataset']} method={config['method']} seed={seed} device={device}")
+    method = str(config["method"]).lower().replace("_", "-")
+    if method not in SUPPORTED_METHODS:
+        raise ValueError(f"unsupported method: {method}; expected one of {sorted(SUPPORTED_METHODS)}")
+    print(f"dataset={config['dataset']} method={method} seed={seed} device={device}")
     print(f"data_root={data_root}")
     data = prepare_dataset(str(config["dataset"]), data_root)
     print(f"train={data.x_train.shape} test={data.x_test.shape} tasks={data.tasks}")
@@ -220,11 +291,18 @@ def run(config: dict, config_path: Path) -> None:
     epochs = int(config.get("epochs_per_task", 8))
     lr = float(config.get("learning_rate", 1e-3))
     buffer_per_class = int(config.get("buffer_per_class", 200))
+    ewc_lambda = float(config.get("ewc_lambda", 5000.0))
+    fisher_sample_size = int(config.get("fisher_sample_size", 2000))
+    distillation_temperature = float(config.get("distillation_temperature", 2.0))
+    distillation_alpha = float(config.get("distillation_alpha", 1.0))
     n_classes = len(data.class_order)
     model = MLP(data.x_train.shape[1], hidden, n_classes).to(device)
     buffer_x: list[np.ndarray] = []
     buffer_y: list[np.ndarray] = []
     old_model: MLP | None = None
+    ewc_snapshots: list[
+        tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]
+    ] = []
     seen_classes: list[int] = []
     checkpoint_records: list[dict] = []
     started = time.perf_counter()
@@ -233,7 +311,8 @@ def run(config: dict, config_path: Path) -> None:
         mask = np.isin(data.y_train, task)
         task_x = data.x_train[mask]
         task_y = data.y_train[mask]
-        if buffer_x:
+        replay_method = method in {"replay", "replay-herding", "replay-dpmeans", "icarl"}
+        if buffer_x and replay_method:
             train_x = np.concatenate([task_x, *buffer_x], axis=0)
             train_y = np.concatenate([task_y, *buffer_y], axis=0)
         else:
@@ -248,32 +327,58 @@ def run(config: dict, config_path: Path) -> None:
             lr=lr,
             epochs=epochs,
             seed=seed + checkpoint * 1000,
-            old_model=old_model if config["method"] == "icarl" else None,
+            old_model=old_model if method in {"lwf", "icarl"} else None,
             old_classes=list(seen_classes),
+            temperature=distillation_temperature,
+            distillation_alpha=distillation_alpha,
+            ewc_snapshots=ewc_snapshots if method == "ewc" else None,
+            ewc_lambda=ewc_lambda,
         )
-        if config["method"] == "icarl":
+        if method in {"lwf", "icarl"}:
             old_model = copy.deepcopy(model).eval()
             for parameter in old_model.parameters():
                 parameter.requires_grad_(False)
-        features = extract_features(model, task_x, device, batch_size)
-        for class_id in task:
-            local = np.flatnonzero(task_y == class_id)
-            if config["method"] == "replay":
-                rng = np.random.default_rng(seed * 10000 + checkpoint * 100 + class_id)
-                selected = rng.choice(local, min(buffer_per_class, len(local)), replace=False)
-            elif config["method"] == "icarl":
-                selected = local[herding_select(features[local], buffer_per_class)]
-            else:
-                raise ValueError(f"unsupported method: {config['method']}")
-            buffer_x.append(task_x[selected])
-            buffer_y.append(task_y[selected])
+        if method == "ewc":
+            fisher = compute_fisher(
+                model,
+                task_x,
+                task_y,
+                device=device,
+                batch_size=batch_size,
+                sample_size=fisher_sample_size,
+                seed=seed + checkpoint * 1000 + 701,
+            )
+            parameters = {
+                name: parameter.detach().clone()
+                for name, parameter in model.named_parameters()
+                if parameter.requires_grad
+            }
+            ewc_snapshots.append((parameters, fisher))
+        if replay_method:
+            features = (
+                extract_features(model, task_x, device, batch_size)
+                if method in {"replay-herding", "replay-dpmeans", "icarl"}
+                else None
+            )
+            for class_id in task:
+                local = np.flatnonzero(task_y == class_id)
+                if method == "replay":
+                    rng = np.random.default_rng(seed * 10000 + checkpoint * 100 + class_id)
+                    selected = rng.choice(local, min(buffer_per_class, len(local)), replace=False)
+                elif method in {"replay-herding", "icarl"}:
+                    selected = local[herding_select(features[local], buffer_per_class)]
+                else:
+                    np.random.seed(seed * 10000 + checkpoint * 100 + class_id)
+                    selected = local[_dpmeans_select(features[local], buffer_per_class)]
+                buffer_x.append(task_x[selected])
+                buffer_y.append(task_y[selected])
         seen_classes.extend(task)
         prototypes = (
             prototypes_from_buffer(model, buffer_x, buffer_y, device, batch_size)
-            if config["method"] == "icarl"
+            if method == "icarl"
             else {}
         )
-        inference = "nme" if config["method"] == "icarl" else "logit"
+        inference = "nme" if method == "icarl" else "logit"
         scorer = DecisionScore(model, inference, n_classes, {k: v.to(device) for k, v in prototypes.items()}).to(device)
         recalls = evaluate_recalls(scorer, data, seen_classes, device, batch_size)
         checkpoint_path = output / f"checkpoint_{checkpoint:03d}.pt"
@@ -304,7 +409,7 @@ def run(config: dict, config_path: Path) -> None:
 
     result = {
         "dataset": config["dataset"],
-        "method": config["method"],
+        "method": method,
         "seed": seed,
         "git_commit": git_commit(repo_root),
         "config": str(config_path.relative_to(repo_root)).replace("\\", "/"),
@@ -319,6 +424,17 @@ def run(config: dict, config_path: Path) -> None:
         "feature_count": len(data.feature_names),
         "train_rows": int(len(data.x_train)),
         "test_rows": int(len(data.x_test)),
+        "method_parameters": {
+            "buffer_per_class": buffer_per_class if replay_method else None,
+            "distillation_temperature": (
+                distillation_temperature if method in {"lwf", "icarl"} else None
+            ),
+            "distillation_alpha": (
+                distillation_alpha if method in {"lwf", "icarl"} else None
+            ),
+            "ewc_lambda": ewc_lambda if method == "ewc" else None,
+            "fisher_sample_size": fisher_sample_size if method == "ewc" else None,
+        },
         "probe_background": probe_path.name,
         "checkpoints": checkpoint_records,
         "elapsed_seconds": time.perf_counter() - started,
