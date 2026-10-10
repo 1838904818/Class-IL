@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+
+# SHAP gradient computations can initialize CUDA; configure deterministic
+# CuBLAS before importing PyTorch.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -237,6 +242,8 @@ def run(args: argparse.Namespace) -> None:
         "repeats": args.repeats,
         "probe_bootstraps": args.bootstraps,
         "expected_gradients_nsamples": args.eg_nsamples,
+        "cublas_workspace_config": os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+        "deterministic_algorithms_enabled": torch.are_deterministic_algorithms_enabled(),
         "records": records,
         "elapsed_seconds": time.perf_counter() - started,
     }
