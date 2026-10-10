@@ -136,6 +136,7 @@ def collect_training_runs(
             )
 
     for supplied_path in direct_training_results:
+        supplied_label = supplied_path.as_posix()
         training_path = (
             supplied_path if supplied_path.is_absolute() else Path.cwd() / supplied_path
         ).resolve(strict=True)
@@ -152,10 +153,10 @@ def collect_training_runs(
                 "method": str(training["method"]),
                 "seed": int(training["seed"]),
                 "training_path": training_path,
-                "training_result": str(training_path),
+                "training_result": supplied_label,
             }
         )
-        provenance["direct_training_results"].append(str(training_path))
+        provenance["direct_training_results"].append(supplied_label)
 
     if dataset is None or not run_specs:
         raise ValueError("provide --state-path and/or at least one --training-result")

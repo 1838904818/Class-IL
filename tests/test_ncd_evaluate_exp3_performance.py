@@ -36,6 +36,7 @@ class NcdEvaluateExp3PerformanceTest(unittest.TestCase):
                 [(run["method"], run["seed"]) for run in runs],
                 [("replay", 1), ("icarl", 1)],
             )
+            self.assertEqual(runs[0]["training_result"], first.as_posix())
             self.assertEqual(len(provenance["direct_training_results"]), 2)
             with self.assertRaisesRegex(ValueError, "duplicate method/seed"):
                 collect_training_runs(root, None, [first, first])
