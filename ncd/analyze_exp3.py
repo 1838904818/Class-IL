@@ -11,7 +11,6 @@ import argparse
 import csv
 import json
 import math
-import subprocess
 import sys
 import time
 from collections import defaultdict
@@ -25,6 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from ncd.groundtruth import benjamini_hochberg, jaccard, ncd_permutation_test, normalize
+from ncd.source_commit import source_commit
 from ncd.train_cil import Tee
 
 
@@ -35,9 +35,7 @@ SILENCE_TOLERANCES = (0.0, 0.02, 0.05, 0.10)
 
 
 def git_commit() -> str:
-    return subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True
-    ).strip()
+    return source_commit(REPO_ROOT)
 
 
 def resolve(value: str) -> Path:
@@ -46,7 +44,36 @@ def resolve(value: str) -> Path:
 
 
 def relative(path: Path) -> str:
-    return str(path.resolve().relative_to(REPO_ROOT)).replace("\\", "/")
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(REPO_ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(resolved).replace("\\", "/")
+
+
+def resolve_training_path(value: str, explanation_path: Path) -> Path:
+    raw = Path(value)
+    if raw.is_absolute():
+        return raw.resolve()
+    repository_candidate = (REPO_ROOT / raw).resolve()
+    if repository_candidate.is_file():
+        return repository_candidate
+    relocated_candidate = explanation_path.parent / raw.name
+    if relocated_candidate.is_file():
+        return relocated_candidate.resolve()
+    return repository_candidate
+
+
+def state_inputs(state_path: Path, run_repo: Path) -> list[str]:
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    completed = state.get("completed_runs", [])
+    if not state.get("complete") or len(completed) != state.get("expected_runs"):
+        raise RuntimeError("dataset state is incomplete")
+    inputs = [(run_repo / item["explanation_result"]).resolve() for item in completed]
+    if not all(path.is_file() for path in inputs):
+        missing = [str(path) for path in inputs if not path.is_file()]
+        raise FileNotFoundError(f"missing explanation results: {missing[:3]}")
+    return [str(path) for path in inputs]
 
 
 def cauchy_combination(p_values: list[float]) -> float:
@@ -69,7 +96,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
 def load_run(explanation_path: Path, permutations: int) -> tuple[list[dict], dict]:
     explanation = json.loads(explanation_path.read_text(encoding="utf-8"))
     run_dir = explanation_path.parent
-    training_path = resolve(explanation["training_result"])
+    training_path = resolve_training_path(explanation["training_result"], explanation_path)
     training = json.loads(training_path.read_text(encoding="utf-8"))
     recalls = {
         int(item["checkpoint"]): {
@@ -325,11 +352,21 @@ def run_summaries(consensus: list[dict], run_info: list[dict]) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--explanation-result", action="append", required=True)
+    parser.add_argument("--explanation-result", action="append")
+    parser.add_argument("--state-path", type=Path)
+    parser.add_argument("--run-repo", type=Path)
     parser.add_argument("--output-dir", default="ncd/results/exp3/real_seed1_first_tranche")
     parser.add_argument("--permutations", type=int, default=1000)
     parser.add_argument("--log-path", required=True)
     args = parser.parse_args()
+    input_values = list(args.explanation_result or [])
+    if args.state_path is not None:
+        if args.run_repo is None:
+            parser.error("--run-repo is required with --state-path")
+        state_path = args.state_path if args.state_path.is_absolute() else args.run_repo / args.state_path
+        input_values.extend(state_inputs(state_path.resolve(), args.run_repo.resolve()))
+    if not input_values:
+        parser.error("provide --explanation-result or --state-path with --run-repo")
     log_path = resolve(args.log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8", buffering=1) as log_file:
@@ -341,7 +378,7 @@ def main() -> None:
             output_dir.mkdir(parents=True, exist_ok=True)
             rows: list[dict] = []
             run_info: list[dict] = []
-            for value in args.explanation_result:
+            for value in input_values:
                 run_rows, info = load_run(resolve(value), args.permutations)
                 rows.extend(run_rows)
                 run_info.append(info)
@@ -382,7 +419,7 @@ def main() -> None:
                 "git_commit": git_commit(),
                 "command": " ".join(sys.argv),
                 "log_path": relative(log_path),
-                "inputs": [relative(resolve(value)) for value in args.explanation_result],
+                "inputs": [relative(resolve(value)) for value in input_values],
                 "scope": scope,
                 "permutations": args.permutations,
                 "fdr_q": 0.05,
