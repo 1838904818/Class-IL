@@ -9,13 +9,12 @@
 \usepackage[hidelinks]{hyperref}
 
 \newcommand{\ncd}{\textsc{NCD}}
-\newcommand{\pending}[1]{\textcolor{red!70!black}{[Pending: #1]}}
 \newcommand{\mean}[1]{\overline{#1}}
 
 \title{Measuring Silent Explanation Drift in Task-Free\\
 Class-Incremental Network Intrusion Detection}
 \author{Research draft}
-\date{Evidence freeze: 10 October 2026 (partial Exp.~3)}
+\date{Evidence freeze: 11 October 2026 (complete Phase-I Exp.~3 matrix)}
 
 \begin{document}
 \maketitle
@@ -33,15 +32,15 @@ control and cross-explainer consensus.  An intervention-grounded benchmark on
 NSL-KDD and UNSW-NB15 gives \ncd{} one false positive in 104 known-negative
 cases, while a repeat-mean baseline gives none; both detect all 26 eligible
 strong shortcut cases and all nine eligible feature-masking cases.  Thus the
-current \ncd{} mechanism does not outperform simple repeat averaging.  In an
-interim 20-run real class-incremental slice, \ncd{} labels 96.97--100\% of
-silent units as drift.  A further completed NSL-KDD drift-only slice covering
-five learners and 25 runs labels 154 of 157 silent units (98.09\%) as drift,
-confirming saturation rather than established detector validity.  These
-negative results bound the contribution to an auditable
-measurement study and motivate intervention-based validation before any
-governance or innovation claim.  The full four-dataset, seven-method,
-five-seed measurement remains in progress and is excluded from final claims.
+current \ncd{} mechanism does not outperform simple repeat averaging.  The
+complete four-dataset, seven-learner, five-seed Phase-I matrix contains 1088
+silent class--transition units.  \ncd{} labels 1076 (98.90\%) as drift, versus
+695 (63.88\%) for the single-estimate rule and 692 (63.60\%) for repeat
+averaging.  Its rate remains 97.33--99.54\% over registered FDR thresholds and
+reaches 100\% on both CIC datasets.  High agreement therefore reflects
+saturation rather than established detector validity.  These negative results
+bound the contribution to an auditable measurement study and motivate
+intervention-based validation before any governance or innovation claim.
 \end{abstract}
 
 \section{Introduction}
@@ -210,10 +209,9 @@ UNSW-NB15 & iCaRL & 1/20 & 0/20 & 4/4 & 4/4 & -- & -- \\
 \end{tabular}
 \end{table}
 
-An additional NSL-KDD drift-only HPC slice has completed for Naive, EWC, LwF,
-Replay-Herding, and Replay-DPMeans over the same five seeds.  Its matched
-performance-evaluation job remains queued, so these 25 runs are not merged into
-the predictive columns of Table~\ref{tab:exp3partial}.  Across 157 silent
+The independently executed 25-run NSL-KDD drift tranche covers Naive, EWC,
+LwF, Replay-Herding, and Replay-DPMeans over the same five seeds.  Its matched
+performance evaluation is now included in Table~\ref{tab:exp3full}.  Across 157 silent
 class--transition units, B1 and B2 each flag 52 (33.12\%), whereas \ncd{} flags
 154 (98.09\%).  Method-level \ncd{} rates are 97.14\% for Naive, EWC, and LwF
 and 100\% for both replay variants.  The pooled \ncd{} rate remains 93.63\% at
@@ -233,9 +231,9 @@ agreement through near-universal positive calls is a saturation warning rather
 than evidence of discrimination or validity.
 
 Figure~\ref{fig:nsl25-saturation} exposes the result at method level and over
-the registered $q$ sensitivity range.  It is deliberately a drift-decision
-figure rather than a performance figure: the matched accuracy, balanced
-accuracy, macro-F1, and forgetting results are still pending.
+the registered $q$ sensitivity range.  It preserves the independently executed
+25-run drift tranche; its matched performance results are incorporated into
+the complete method-level Table~\ref{tab:exp3full} below.
 
 \begin{figure*}[t]
   \centering
@@ -274,88 +272,124 @@ the same constructions define and evaluate this contrast, the figure supports
 benchmark operability but not external discrimination, calibration, or NCD
 novelty.
 
-\section{Interim real class-incremental measurement}
+\section{Complete real class-incremental measurement}
 
-Table~\ref{tab:exp3partial} is an interim slice: two datasets, Replay and
-iCaRL, five seeds, or 20 of the active 140-run Phase-I batch
-($4$ datasets $\times 7$ Phase-I learners $\times 5$ seeds).  The conditional
-OFRA arm in the work order is not part of this batch: the current NCD artifact
-loader consumes a single differentiable MLP checkpoint, whereas the maintained
-OFRA implementation combines a frozen encoder, per-class binary heads, and a
-non-differentiable router and does not emit the same checkpoint artifact.  The
-older head-path SHAP pilot excludes the router and only supplies one explainer,
-so it is not a conforming substitute for the registered three-explainer NCD
-measurement.  This is an explicit scope limitation, not evidence that OFRA is
-infeasible or a waiver of the optional follow-up.  Accuracy, balanced accuracy,
-macro F1, and forgetting are seed means.  Drift rates use silent
-class--transition units as the denominator.
-
-Figure~\ref{fig:partial-confusion} reports the corresponding pooled,
-row-normalized final-checkpoint confusion matrices.  Each panel sums raw counts
-over five seeds before normalizing within each true class; it therefore shows
-class-specific error structure without averaging percentages from different
-denominators.  It is descriptive evidence for this 20-run subset only.
+Table~\ref{tab:exp3full} contains the complete registered Phase-I matrix:
+four datasets, seven learners, five seeds, and 140 unique
+dataset--learner--seed runs.  The fail-closed aggregation found no missing or
+duplicate identity and binds each of its 12 drift/performance inputs by SHA-256.
+The conditional OFRA arm in the work order is not part of this matrix: the
+current NCD artifact loader consumes a single differentiable MLP checkpoint,
+whereas the maintained OFRA implementation combines a frozen encoder,
+per-class binary heads, and a non-differentiable router and does not emit the
+same checkpoint artifact.  The older head-path SHAP pilot excludes the router
+and supplies only one explainer, so it is not a conforming substitute.  This is
+an explicit scope limitation, not evidence that OFRA is infeasible.  Accuracy,
+balanced accuracy, macro F1, and forgetting in the table are five-seed means;
+drift rates pool silent class--transition counts rather than averaging seed
+percentages.
 
 \begin{figure*}[t]
   \centering
-  \includegraphics[width=\textwidth]{figures/partial_exp3_confusion_matrices.png}
-  \caption{Interim final-checkpoint confusion matrices for the currently
-  evaluated Replay and iCaRL runs on NSL-KDD and UNSW-NB15.  Cells are pooled
-  row-normalized percentages across seeds 1, 2, 3, 4, and 42.  The figure is
-  not the full four-dataset, seven-method Exp.~3 matrix.}
-  \label{fig:partial-confusion}
+  \includegraphics[width=\textwidth]{figures/full_exp3_confusion_matrices.png}
+  \caption{Complete Phase-I final-checkpoint confusion matrices.  Each panel
+  pools raw counts over all seven learners and five seeds for one dataset and
+  then normalizes within each true class.  Pooling exposes the overall
+  class-specific error structure but does not constitute a learner ranking.}
+  \label{fig:full-confusion}
 \end{figure*}
 
-\begin{table}[ht]
+Figure~\ref{fig:full-confusion} provides the corresponding four-dataset
+per-class view.  Pooling counts before normalization avoids giving small
+true-class denominators the same weight as large ones.  It also reveals why a
+single accuracy number is insufficient: rare classes such as NSL-KDD U2R and
+UNSW-NB15 Worms remain broadly confused even when some replay learners have
+substantially higher aggregate accuracy.
+
+\begin{table}[p]
 \centering
-\caption{Interim Exp.~3 frozen-test and silent-drift measurements.  These
-numbers are not the final four-dataset comparison.}
-\label{tab:exp3partial}
-\small
+\caption{Complete Exp.~3 frozen-test performance and rule-defined silent-drift
+rates (\%).  Performance and signed forgetting are five-seed means.  Drift
+denominators are pooled silent class--transition units at the five-point recall
+tolerance.  These are observational measurements, not detector-validity or
+learner-superiority claims.}
+\label{tab:exp3full}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{llrrrrrrr}
 \toprule
 Dataset & Learner & Acc. & BAcc. & Macro F1 & Forget. & B1 drift & B2 drift & \ncd{} drift \\
 \midrule
-NSL-KDD & Replay & 79.98 & 59.96 & 59.73 & 2.82 & 62.96 & 59.26 & 100.00 \\
-NSL-KDD & iCaRL & 77.54 & 70.90 & 62.68 & 6.57 & 30.30 & 30.30 & 96.97 \\
-UNSW-NB15 & Replay & 63.30 & 42.13 & 34.00 & 33.44 & 31.67 & 30.00 & 98.33 \\
-UNSW-NB15 & iCaRL & 51.22 & 46.06 & 28.15 & 35.45 & 18.87 & 18.87 & 98.11 \\
+NSL-KDD & Naive & 13.32 & 21.54 & 6.61 & 43.11 & 25.71 & 25.71 & 97.14 \\
+ & EWC & 13.87 & 21.87 & 7.01 & 42.69 & 22.86 & 22.86 & 97.14 \\
+ & LwF & 13.98 & 21.90 & 7.23 & 42.65 & 37.14 & 37.14 & 97.14 \\
+ & Replay & 79.98 & 59.96 & 59.73 & 2.82 & 62.96 & 59.26 & 100.00 \\
+ & Replay-H & 76.40 & 58.41 & 56.97 & 11.19 & 43.48 & 43.48 & 100.00 \\
+ & Replay-DP & 79.97 & 57.78 & 58.62 & 3.67 & 41.38 & 41.38 & 100.00 \\
+ & iCaRL & 77.54 & 70.90 & 62.68 & 6.57 & 30.30 & 30.30 & 96.97 \\
+\midrule
+UNSW-NB15 & Naive & 3.11 & 11.67 & 1.92 & 67.20 & 86.36 & 86.36 & 100.00 \\
+ & EWC & 13.79 & 12.03 & 7.14 & 67.06 & 79.37 & 79.37 & 96.83 \\
+ & LwF & 1.18 & 10.79 & 0.71 & 67.67 & 77.27 & 77.27 & 100.00 \\
+ & Replay & 63.30 & 42.13 & 34.00 & 33.44 & 31.67 & 30.00 & 98.33 \\
+ & Replay-H & 62.19 & 43.30 & 33.52 & 34.18 & 50.00 & 51.61 & 96.77 \\
+ & Replay-DP & 60.27 & 40.79 & 30.52 & 32.68 & 38.46 & 36.92 & 96.92 \\
+ & iCaRL & 51.22 & 46.06 & 28.15 & 35.45 & 18.87 & 18.87 & 98.11 \\
+\midrule
+CIC-IDS-2017 & Naive & 26.88 & 29.28 & 12.85 & 60.57 & 77.42 & 77.42 & 100.00 \\
+ & EWC & 28.18 & 21.13 & 14.51 & 71.45 & 88.46 & 88.46 & 100.00 \\
+ & LwF & 23.91 & 27.07 & 10.77 & 63.50 & 96.55 & 96.55 & 100.00 \\
+ & Replay & 91.88 & 76.38 & 61.91 & 6.19 & 96.97 & 96.97 & 100.00 \\
+ & Replay-H & 78.19 & 75.11 & 54.85 & 14.98 & 96.97 & 93.94 & 100.00 \\
+ & Replay-DP & 88.48 & 78.45 & 60.59 & 9.12 & 93.94 & 93.94 & 100.00 \\
+ & iCaRL & 69.83 & 74.36 & 46.94 & 12.38 & 84.21 & 84.21 & 100.00 \\
+\midrule
+CSE-CIC-IDS2018 & Naive & 19.05 & 16.38 & 6.64 & 90.92 & 88.46 & 88.46 & 100.00 \\
+ & EWC & 16.66 & 14.32 & 4.15 & 93.34 & 69.23 & 69.23 & 100.00 \\
+ & LwF & 16.72 & 14.38 & 4.43 & 92.35 & 84.00 & 84.00 & 100.00 \\
+ & Replay & 79.82 & 82.48 & 71.60 & 13.40 & 92.50 & 92.50 & 100.00 \\
+ & Replay-H & 79.84 & 82.49 & 71.46 & 13.15 & 93.33 & 93.33 & 100.00 \\
+ & Replay-DP & 79.99 & 82.13 & 71.31 & 13.17 & 88.57 & 88.57 & 100.00 \\
+ & iCaRL & 65.80 & 64.34 & 56.34 & 26.72 & 41.94 & 41.94 & 100.00 \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
+
+At the primary thresholds, B1 labels 695 of 1088 silent units (63.88\%)
+and B2 labels 692 (63.60\%), whereas \ncd{} labels 1076 (98.90\%).  The
+dataset-level \ncd{} rates are 98.16\% for NSL-KDD, 98.16\% for UNSW-NB15,
+and 100\% for each CIC dataset.  Its pooled all-explainer agreement is 98.07\%,
+compared with 62.96\% for B1 and 63.14\% for B2.  Because nearly every \ncd{}
+decision is positive, the high agreement is a saturation symptom rather than
+evidence of discrimination.
 
 \begin{figure*}[t]
   \centering
-  \includegraphics[width=\textwidth]{figures/partial_exp3_threshold_sensitivity.png}
-  \caption{Interim threshold sensitivity at the five-point silent-recall
-  tolerance.  Rates pool eligible class--transition counts over five seeds.
-  B1 and B2 use cross-explainer consensus at $k=15$.  NCD remains nearly
-  saturated even at $q=0.01$; the visually flat curve therefore does not
-  establish valid discrimination.}
-  \label{fig:partial-sensitivity}
+  \includegraphics[width=\textwidth]{figures/full_exp3_threshold_sensitivity.png}
+  \caption{Complete threshold sensitivity at the five-point silent-recall
+  tolerance.  Rates pool class--transition counts over all seven learners and
+  five seeds within each dataset.  B1 and B2 use cross-explainer consensus at
+  $k=15$.  The near-flat \ncd{} curves remain saturated, so their stability is
+  not evidence of valid calibration.}
+  \label{fig:full-sensitivity}
 \end{figure*}
 
-The calibrated decision is nearly saturated, not selectively conservative.
-Its all-explainer agreement is 93.94--100\% in this slice, but agreement on a
-saturated decision is not validity.  Descriptive future-recall contrasts are
-also uninformative: 79 units with a later checkpoint follow an NCD drift
-decision, versus only two without one.  Consequently, these data cannot
-support a prediction, causal, or governance claim for \ncd.
+Figure~\ref{fig:full-sensitivity} closes the registered threshold audit.  Over
+$q\in\{0.01,0.025,0.05,0.10\}$, the pooled \ncd{} rate changes only from
+97.33\% to 99.54\%.  B1 changes from 9.19\% to 84.93\%, and B2 from 8.92\%
+to 84.56\%, over Jaccard thresholds 0.50--0.80.  Thus \ncd{} is numerically
+less threshold-sensitive only because it calls nearly everything drift.
 
-Figure~\ref{fig:partial-sensitivity} closes the previously missing NCD
-threshold audit for the current subset.  Across $q\in\{0.01,0.025,0.05,0.10\}$,
-pooled NCD rates remain 93.94--100\%, whereas B1 and B2 range from 0 to 81.48\%
-over Jaccard thresholds 0.50--0.80.  The apparent flatness is therefore an
-undesirable saturation result, not evidence that calibration solved threshold
-sensitivity.  NCD permutation time totals 46.99--106.86 seconds per
-dataset--method cell over five seeds, 3.29--3.65\% of explanation-extraction
-time but 3568.60--4057.29 times the negligible fixed-rule decision time.
-
-\pending{Replace Table~\ref{tab:exp3partial} with the complete active 140-run
-Phase-I table, complete four-dataset per-class confusion matrices, and final
-resource-cost accounting after all registered HPC jobs reach terminal success.
-Report the conditional OFRA arm separately if and only if a conforming
-three-explainer checkpoint adapter is completed and run.}
+The future-recall contrast is likewise non-identifying.  Among silent units
+with a later checkpoint, 415 follow an \ncd{} drift decision and only eight do
+not.  Their median future recall changes are respectively $+0.00124$ and
+$+0.02688$, while 96/415 and 1/8 are negative.  This extreme imbalance does
+not support prediction or causality.  Recorded stage wall time totals 5610.37
+seconds for training, 49882.17 seconds for explanation extraction, 0.557
+seconds for the fixed decision, and 2733.26 seconds for NCD permutation.
+Permutation therefore adds 5.48\% of explanation time but is 4907.49 times the
+negligible fixed-rule decision time.  These are summed recorded wall times, not
+hardware-normalized CPU/GPU hours.
 
 \section{Discussion}
 
@@ -363,8 +397,11 @@ The main empirical result is negative but useful.  Noise calibration is
 technically feasible and the intervention benchmark is auditable, yet the
 current combination does not add identifiable decision value over repeat
 averaging.  Exp.~2 ties B2 on every eligible positive endpoint and incurs one
-additional false positive.  Exp.~3's interim saturation further argues against
-promoting \ncd{} as the project's substantive innovation.
+additional false positive.  The complete Exp.~3 matrix then labels 98.90\% of
+silent units as drift, including every eligible unit in both CIC datasets.
+Together these results argue against promoting \ncd{} as the project's
+substantive innovation or using its observed rate as the prevalence of true
+silent dependency change.
 
 This does not erase RQ1.  It narrows the next scientific question from
 ``can estimator noise be calibrated?'' to ``which explanation or aggregation
@@ -384,18 +421,18 @@ detector validity and must prove binary decision invariance.
 
 The intervention benchmark is constructed and uses the same public datasets
 as evaluation; it is not an independent deployment study.  Some P2 cells have
-no eligible construction.  The current matched performance--drift table covers
-only 20 of 140 runs.  A further 25 NSL-KDD runs have completed drift analysis
-but await their matched performance aggregation; the two CIC datasets and the
-UNSW-NB15 extension remain in the HPC queue.  No current slice provides an
-independent calibration split.  The study also excludes the work order's
-conditional
-OFRA arm; no conforming OFRA NCD run is claimed.  Silent drift is
-operationalized through a recall tolerance and is sensitive to probe
-population, explainer, distance, and aggregation choices.  NCD significance is
-not equivalent to causal dependency change.  No current result establishes
-substantive innovation, cross-domain generality, publication acceptance, or a
-validated governance mechanism.
+no eligible construction, and no Exp.~3 run uses an independent calibration
+split.  The complete 140-run Phase-I matrix excludes the work order's
+conditional OFRA arm; no conforming OFRA NCD run is claimed.  The pooled
+confusion matrices intentionally combine heterogeneous learners and therefore
+describe class error structure rather than comparative learner performance.
+Recorded stage times are wall-clock measurements rather than
+utilization-weighted CPU/GPU hours.  Silent drift is operationalized through a
+recall tolerance and remains sensitive to probe population, explainer,
+distance, and aggregation choices.  NCD significance is not equivalent to
+causal dependency change.  No current result establishes substantive
+innovation, cross-domain generality, publication acceptance, or a validated
+governance mechanism.
 
 \section{Conclusion}
 
@@ -403,12 +440,13 @@ An explanation-drift study becomes scientifically interpretable only when it
 separates estimator variability from model change and evaluates the resulting
 decision against known dependency changes.  On the completed intervention
 matrix, repeated explanations work, but the proposed permutation/FDR decision
-does not improve on repeat averaging.  Interim real class-incremental results,
-including a newly completed 25-run NSL-KDD drift slice, show near-total drift
-calls.  The honest conclusion is therefore a bounded
-measurement result and a rejected superiority claim, pending the complete
-registered matrix and a mechanism that demonstrates incremental value on the
-endpoint it claims to affect.
+does not improve on repeat averaging.  On the complete registered Phase-I
+matrix, the same decision labels 1076 of 1088 silent units as drift and offers
+no balanced comparison for subsequent recall.  The honest conclusion is
+therefore a bounded measurement result and a rejected superiority claim.  RQ1
+remains scientifically open until a mechanism demonstrates selective,
+intervention-grounded incremental value; RQ3 remains downstream of that
+validity result.
 
 \begin{thebibliography}{10}
 \bibitem{cossu2024clex}
