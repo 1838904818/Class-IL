@@ -14,7 +14,7 @@
 set -euo pipefail
 umask 077
 
-: "${NCD_DATASET:?NCD_DATASET must be cic17 or cic18}"
+: "${NCD_DATASET:?NCD_DATASET must be nsl, unsw, cic17, or cic18}"
 : "${NCD_SOURCE_COMMIT:?NCD_SOURCE_COMMIT is required}"
 : "${NCD_ARCHIVE:?NCD_ARCHIVE is required}"
 : "${NCD_ARCHIVE_SHA256:?NCD_ARCHIVE_SHA256 is required}"
@@ -22,6 +22,8 @@ umask 077
 : "${NCD_PROTECTED_ROOT:?NCD_PROTECTED_ROOT is required}"
 
 case "$NCD_DATASET" in
+  nsl) dataset_slug=nsl-kdd ;;
+  unsw) dataset_slug=unsw-nb15 ;;
   cic17) dataset_slug=cic-ids-2017 ;;
   cic18) dataset_slug=cic-ids-2018 ;;
   *) exit 64 ;;
