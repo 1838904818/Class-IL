@@ -8,14 +8,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = REPO_ROOT / "ncd" / "configs"
-DATASETS = {"NSL-KDD": "nsl-kdd", "UNSW-NB15": "unsw-nb15"}
-METHODS = ("naive", "ewc", "lwf", "replay-herding", "replay-dpmeans")
+REMAINING_METHODS = ("naive", "ewc", "lwf", "replay-herding", "replay-dpmeans")
+ALL_PHASE_I_METHODS = (
+    "naive", "ewc", "lwf", "replay", "replay-herding", "replay-dpmeans", "icarl",
+)
+DATASETS = {
+    "NSL-KDD": ("nsl-kdd", "nsl", REMAINING_METHODS),
+    "UNSW-NB15": ("unsw-nb15", "unsw", REMAINING_METHODS),
+    "CIC-IDS-2017": ("cic-ids-2017", "cic17", ALL_PHASE_I_METHODS),
+    "CSE-CIC-IDS2018": ("cic-ids-2018", "cic18", ALL_PHASE_I_METHODS),
+}
 SEEDS = (1, 2, 3, 4, 42)
 
 
 def config_for(dataset: str, dataset_slug: str, method: str, seed: int) -> dict:
     method_token = method.replace("-", "_")
-    short_dataset = "nsl" if dataset == "NSL-KDD" else "unsw"
+    short_dataset = next(value[1] for key, value in DATASETS.items() if key == dataset)
     config = {
         "dataset": dataset,
         "method": method,
@@ -33,7 +41,7 @@ def config_for(dataset: str, dataset_slug: str, method: str, seed: int) -> dict:
             f"ncd/logs/exp3_{short_dataset}_{method_token}_seed{seed}_train_deterministic.log"
         ),
     }
-    if method in {"replay-herding", "replay-dpmeans"}:
+    if method in {"replay", "replay-herding", "replay-dpmeans", "icarl"}:
         config["buffer_per_class"] = 200
     if method == "ewc":
         config["ewc_lambda"] = 5000.0
@@ -47,9 +55,8 @@ def config_for(dataset: str, dataset_slug: str, method: str, seed: int) -> dict:
 def main() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     written = []
-    for dataset, dataset_slug in DATASETS.items():
-        short_dataset = "nsl" if dataset == "NSL-KDD" else "unsw"
-        for method in METHODS:
+    for dataset, (dataset_slug, short_dataset, methods) in DATASETS.items():
+        for method in methods:
             method_token = method.replace("-", "_")
             for seed in SEEDS:
                 path = CONFIG_DIR / f"exp3_{short_dataset}_{method_token}_seed{seed}.json"

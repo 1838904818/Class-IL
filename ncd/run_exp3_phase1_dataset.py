@@ -17,11 +17,16 @@ if str(REPO_ROOT) not in sys.path:
 from ncd.source_commit import source_commit
 
 
-METHODS = ("naive", "ewc", "lwf", "replay-herding", "replay-dpmeans")
+REMAINING_METHODS = ("naive", "ewc", "lwf", "replay-herding", "replay-dpmeans")
+ALL_PHASE_I_METHODS = (
+    "naive", "ewc", "lwf", "replay", "replay-herding", "replay-dpmeans", "icarl",
+)
 SEEDS = (1, 2, 3, 4, 42)
 DATASETS = {
-    "nsl": ("NSL-KDD", "nsl-kdd"),
-    "unsw": ("UNSW-NB15", "unsw-nb15"),
+    "nsl": ("NSL-KDD", "nsl-kdd", REMAINING_METHODS),
+    "unsw": ("UNSW-NB15", "unsw-nb15", REMAINING_METHODS),
+    "cic17": ("CIC-IDS-2017", "cic-ids-2017", ALL_PHASE_I_METHODS),
+    "cic18": ("CSE-CIC-IDS2018", "cic-ids-2018", ALL_PHASE_I_METHODS),
 }
 EXPLAINERS = {"expected_gradients", "feature_ablation", "grad_x_input"}
 
@@ -113,12 +118,12 @@ def main() -> None:
     environment_commit = os.environ.get("NCD_SOURCE_COMMIT", "").strip().lower()
     if environment_commit and environment_commit != commit:
         raise RuntimeError("packaged source commit does not match NCD_SOURCE_COMMIT")
-    dataset, dataset_slug = DATASETS[args.dataset]
+    dataset, dataset_slug, methods = DATASETS[args.dataset]
     state_path = (REPO_ROOT / args.state_path).resolve()
     started = time.time()
     completed: list[dict] = []
 
-    for method in METHODS:
+    for method in methods:
         method_token = method.replace("-", "_")
         for seed in SEEDS:
             config_path = Path("ncd/configs") / f"exp3_{args.dataset}_{method_token}_seed{seed}.json"
@@ -207,7 +212,7 @@ def main() -> None:
                     "dataset_slug": dataset_slug,
                     "source_commit": commit,
                     "completed_runs": completed,
-                    "expected_runs": len(METHODS) * len(SEEDS),
+                    "expected_runs": len(methods) * len(SEEDS),
                     "complete": False,
                     "updated_unix": time.time(),
                 },
@@ -221,7 +226,7 @@ def main() -> None:
             "dataset_slug": dataset_slug,
             "source_commit": commit,
             "completed_runs": completed,
-            "expected_runs": len(METHODS) * len(SEEDS),
+            "expected_runs": len(methods) * len(SEEDS),
             "complete": True,
             "started_unix": started,
             "completed_unix": time.time(),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +43,27 @@ NSL_ATTACK_FAMILY = {
     "perl": "U2R", "sqlattack": "U2R", "xterm": "U2R", "ps": "U2R",
 }
 
+CACHE_DATASETS = {
+    "CIC-IDS-2017": {
+        "slug": "cic-ids-2017",
+        "class_order": [
+            "Normal", "DoS", "DDoS", "Bruteforce", "PortScan",
+            "WebAttack", "Botnet", "Infiltration",
+        ],
+        "train_cap": {"Normal": 160_000},
+        "test_cap": {"Normal": 40_000},
+    },
+    "CSE-CIC-IDS2018": {
+        "slug": "cic-ids-2018",
+        "class_order": [
+            "Normal", "DoS", "DDoS", "Bruteforce",
+            "WebAttack", "Infiltration", "Botnet",
+        ],
+        "train_cap": 40_000,
+        "test_cap": 10_000,
+    },
+}
+
 
 @dataclass(frozen=True)
 class PreparedData:
@@ -68,7 +90,93 @@ def make_tasks(n_classes: int, classes_per_task: int) -> list[list[int]]:
     return tasks
 
 
+def _sample_shards(files: list[Path], cap: int | None, seed: int) -> np.ndarray:
+    """Load all rows or an exact deterministic global sample from NPY shards."""
+    if not files:
+        raise FileNotFoundError("no NPY shards supplied")
+    arrays = [np.load(path, mmap_mode="r", allow_pickle=False) for path in files]
+    feature_count = arrays[0].shape[1]
+    if any(array.ndim != 2 or array.shape[1] != feature_count for array in arrays):
+        raise ValueError("inconsistent cache shard shapes")
+    total = sum(len(array) for array in arrays)
+    if total == 0:
+        raise ValueError("empty cache class")
+    if cap is None or total <= cap:
+        pieces = [np.asarray(array, dtype=np.float32) for array in arrays]
+    else:
+        selected = np.sort(np.random.default_rng(seed).choice(total, cap, replace=False))
+        pieces = []
+        offset = 0
+        for array in arrays:
+            stop = offset + len(array)
+            left = np.searchsorted(selected, offset, side="left")
+            right = np.searchsorted(selected, stop, side="left")
+            if right > left:
+                pieces.append(np.asarray(array[selected[left:right] - offset], dtype=np.float32))
+            offset = stop
+    result = np.concatenate(pieces, axis=0)
+    if not np.isfinite(result).all():
+        raise ValueError("cache contains non-finite feature values")
+    return result
+
+
+def _cap_for(configured: int | dict[str, int], class_name: str) -> int | None:
+    if isinstance(configured, int):
+        return configured
+    return configured.get(class_name)
+
+
+def _load_frozen_cache(
+    dataset: str,
+    data_root: Path,
+) -> tuple[pd.DataFrame, np.ndarray, pd.DataFrame, np.ndarray, list[str], list[str], list[str]]:
+    specification = CACHE_DATASETS[dataset]
+    cache_root = data_root / str(specification["slug"])
+    manifest_path = cache_root / "manifest.json"
+    schema_path = cache_root / "feature_schema.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    class_order = list(specification["class_order"])
+    if manifest.get("dataset") != specification["slug"]:
+        raise ValueError(f"cache dataset mismatch: {manifest.get('dataset')}")
+    if schema.get("class_order") != class_order:
+        raise ValueError("cache class order does not match the frozen NCD order")
+    feature_names = list(schema.get("feature_columns", []))
+    if len(feature_names) != int(schema.get("feature_count", -1)):
+        raise ValueError("invalid cache feature schema")
+
+    split_arrays: dict[str, list[np.ndarray]] = {"train": [], "test": []}
+    split_labels: dict[str, list[np.ndarray]] = {"train": [], "test": []}
+    for split_index, split in enumerate(("train", "test")):
+        configured_cap = specification[f"{split}_cap"]
+        for class_id, class_name in enumerate(class_order):
+            files = sorted((cache_root / split / class_name).glob("part-*.npy"))
+            values = _sample_shards(
+                files,
+                _cap_for(configured_cap, class_name),
+                seed=42_000 + split_index * 1_000 + class_id,
+            )
+            if values.shape[1] != len(feature_names):
+                raise ValueError(f"feature count mismatch for {split}/{class_name}")
+            split_arrays[split].append(values)
+            split_labels[split].append(np.full(len(values), class_id, dtype=np.int64))
+
+    train_array = np.concatenate(split_arrays["train"], axis=0)
+    test_array = np.concatenate(split_arrays["test"], axis=0)
+    return (
+        pd.DataFrame(train_array, columns=feature_names),
+        np.concatenate(split_labels["train"]),
+        pd.DataFrame(test_array, columns=feature_names),
+        np.concatenate(split_labels["test"]),
+        class_order,
+        [],
+        [str(manifest_path), str(schema_path)],
+    )
+
+
 def _load_raw(dataset: str, data_root: Path) -> tuple[pd.DataFrame, np.ndarray, pd.DataFrame, np.ndarray, list[str], list[str], list[str]]:
+    if dataset in CACHE_DATASETS:
+        return _load_frozen_cache(dataset, data_root)
     if dataset == "NSL-KDD":
         train_path = data_root / "nsl-kdd" / "KDDTrain+.txt"
         test_path = data_root / "nsl-kdd" / "KDDTest+.txt"
@@ -154,3 +262,4 @@ def prepare_dataset(dataset: str, data_root: Path) -> PreparedData:
         feature_names=feature_names,
         source_files=source_files,
     )
+
