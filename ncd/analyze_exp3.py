@@ -356,12 +356,34 @@ def main() -> None:
             write_csv(consensus_path, consensus)
             write_csv(sensitivity_path, sensitivity)
             write_csv(summary_path, summaries)
+            scope_rows = [
+                {
+                    "dataset": dataset,
+                    "method": method,
+                    "seeds": sorted(
+                        int(info["seed"])
+                        for info in run_info
+                        if info["dataset"] == dataset and info["method"] == method
+                    ),
+                }
+                for dataset, method in sorted(
+                    {(info["dataset"], info["method"]) for info in run_info}
+                )
+            ]
+            scope = {
+                "run_count": len(run_info),
+                "datasets": sorted({info["dataset"] for info in run_info}),
+                "methods": sorted({info["method"] for info in run_info}),
+                "seeds": sorted({int(info["seed"]) for info in run_info}),
+                "run_matrix": scope_rows,
+            }
             result = {
-                "analysis": "Exp 3 real adjacent-checkpoint first tranche",
+                "analysis": "Exp 3 real adjacent-checkpoint analysis",
                 "git_commit": git_commit(),
                 "command": " ".join(sys.argv),
                 "log_path": relative(log_path),
                 "inputs": [relative(resolve(value)) for value in args.explanation_result],
+                "scope": scope,
                 "permutations": args.permutations,
                 "fdr_q": 0.05,
                 "fixed_rule": "Jaccard@15 < 0.70",
@@ -376,7 +398,11 @@ def main() -> None:
                     "run_summary": relative(summary_path),
                 },
                 "limitations": [
-                    "This first tranche contains two datasets, two methods, and seed 1 only.",
+                    (
+                        f"This result contains {scope['run_count']} runs across "
+                        f"{len(scope['datasets'])} dataset(s), {len(scope['methods'])} method(s), "
+                        f"and seeds {scope['seeds']}; it does not cover unlisted datasets or methods."
+                    ),
                     "NCD thresholds are estimated within each run; no external calibration split is used.",
                     "Drift-to-future-recall comparisons are descriptive and do not establish prediction or causality.",
                     "Exp 2 showed no NCD superiority over B2, so NCD is not treated as an established innovation.",
