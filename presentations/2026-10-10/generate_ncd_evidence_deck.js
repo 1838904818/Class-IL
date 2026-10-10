@@ -304,11 +304,12 @@ function buildDeck(notes = []) {
     addCard(s, 9.48, 1.42, 3.04, 4.64, { fill: C.pale, line: C.grid });
     addText(s, '154 / 157', 9.78, 1.82, 2.44, 0.62, { fontFace: 'Cambria', fontSize: 33, bold: true, color: C.red, align: 'center' });
     addText(s, 'silent units marked by NCD', 9.82, 2.47, 2.36, 0.36, { fontSize: 12.5, color: C.ink, align: 'center' });
-    addText(s, '147 / 157', 9.82, 3.18, 2.36, 0.44, { fontFace: 'Cambria', fontSize: 26, bold: true, color: C.berry, align: 'center' });
-    addText(s, 'still marked at q = 0.01', 9.82, 3.66, 2.36, 0.34, { fontSize: 12.5, color: C.ink, align: 'center' });
-    addText(s, '68 / 68', 9.82, 4.32, 2.36, 0.44, { fontFace: 'Cambria', fontSize: 26, bold: true, color: C.gold, align: 'center' });
-    addText(s, 'future-observed units are positive; no comparison group', 9.82, 4.82, 2.36, 0.62, { fontSize: 12.5, color: C.ink, align: 'center', valign: 'top' });
-    addPill(s, 'NOT DETECTOR VALIDITY', 9.74, 5.58, 2.52, C.berry);
+    addText(s, '91.72%', 9.82, 3.10, 2.36, 0.44, { fontFace: 'Cambria', fontSize: 26, bold: true, color: C.teal, align: 'center' });
+    addText(s, 'all-explainer agreement', 9.82, 3.56, 2.36, 0.28, { fontSize: 12, color: C.ink, align: 'center' });
+    addText(s, 'B1 70.70% · B2 69.43%', 9.82, 3.88, 2.36, 0.28, { fontSize: 11.5, bold: true, color: C.slate, align: 'center' });
+    addText(s, '68 / 68', 9.82, 4.42, 2.36, 0.44, { fontFace: 'Cambria', fontSize: 26, bold: true, color: C.gold, align: 'center' });
+    addText(s, 'future-observed units are positive; no comparison group', 9.82, 4.90, 2.36, 0.56, { fontSize: 12, color: C.ink, align: 'center', valign: 'top' });
+    addPill(s, 'AGREEMENT VIA SATURATION', 9.68, 5.60, 2.64, C.berry);
     addCard(s, 1.50, 6.40, 10.36, 0.52, { fill: C.navy, line: C.navy, shadow: false });
     addText(s, 'Finding: a completed larger slice confirms saturation; it does not establish prediction, causality, governance, or innovation.', 1.75, 6.48, 9.86, 0.30, { fontSize: 14.5, bold: true, color: C.white, align: 'center' });
     addFooter(s, 'Source: DICC jobs 483664 and 483686; protected 25-run NSL-KDD drift evidence', 9);
