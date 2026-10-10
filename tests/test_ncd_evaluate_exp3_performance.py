@@ -1,13 +1,45 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
-from ncd.evaluate_exp3_performance import metrics_from_predictions, summarize_forgetting
+from ncd.evaluate_exp3_performance import (
+    collect_training_runs,
+    metrics_from_predictions,
+    summarize_forgetting,
+)
 
 
 class NcdEvaluateExp3PerformanceTest(unittest.TestCase):
+    def test_collects_direct_training_results_and_rejects_duplicates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            first = root / "replay.json"
+            second = root / "icarl.json"
+            first.write_text(
+                json.dumps({"dataset": "NSL-KDD", "method": "replay", "seed": 1}),
+                encoding="utf-8",
+            )
+            second.write_text(
+                json.dumps({"dataset": "NSL-KDD", "method": "icarl", "seed": 1}),
+                encoding="utf-8",
+            )
+            dataset, runs, provenance = collect_training_runs(
+                root, None, [first, second]
+            )
+            self.assertEqual(dataset, "NSL-KDD")
+            self.assertEqual(
+                [(run["method"], run["seed"]) for run in runs],
+                [("replay", 1), ("icarl", 1)],
+            )
+            self.assertEqual(len(provenance["direct_training_results"]), 2)
+            with self.assertRaisesRegex(ValueError, "duplicate method/seed"):
+                collect_training_runs(root, None, [first, first])
+
     def test_metrics_and_forgetting(self) -> None:
         metrics = metrics_from_predictions(
             np.array([0, 0, 1, 1, 2], dtype=np.int64),

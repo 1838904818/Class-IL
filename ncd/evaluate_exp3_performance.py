@@ -94,10 +94,82 @@ def summarize_forgetting(checkpoints: list[dict[str, object]]) -> dict[str, obje
     }
 
 
+def collect_training_runs(
+    run_repo: Path,
+    state_path: Path | None,
+    direct_training_results: list[Path],
+) -> tuple[str, list[dict[str, object]], dict[str, object]]:
+    """Resolve one dataset's completed training results without retraining.
+
+    Dataset-runner state remains the normal HPC input.  Direct training results
+    support the already-completed Replay/iCaRL runs whose original runner did
+    not emit a dataset state file.
+    """
+    run_specs: list[dict[str, object]] = []
+    provenance: dict[str, object] = {
+        "upstream_state_path": None,
+        "upstream_source_commit": None,
+        "direct_training_results": [],
+    }
+    dataset: str | None = None
+
+    if state_path is not None:
+        resolved_state = state_path if state_path.is_absolute() else run_repo / state_path
+        resolved_state = resolved_state.resolve(strict=True)
+        state = json.loads(resolved_state.read_text(encoding="utf-8"))
+        if not state.get("complete") or len(state.get("completed_runs", [])) != state.get(
+            "expected_runs"
+        ):
+            raise RuntimeError("upstream dataset run is incomplete")
+        dataset = str(state["dataset"])
+        provenance["upstream_state_path"] = str(resolved_state)
+        provenance["upstream_source_commit"] = state.get("source_commit")
+        for run in state["completed_runs"]:
+            training_path = (run_repo / run["training_result"]).resolve(strict=True)
+            run_specs.append(
+                {
+                    "method": str(run["method"]),
+                    "seed": int(run["seed"]),
+                    "training_path": training_path,
+                    "training_result": str(run["training_result"]),
+                }
+            )
+
+    for supplied_path in direct_training_results:
+        training_path = (
+            supplied_path if supplied_path.is_absolute() else Path.cwd() / supplied_path
+        ).resolve(strict=True)
+        training = json.loads(training_path.read_text(encoding="utf-8"))
+        training_dataset = str(training["dataset"])
+        if dataset is None:
+            dataset = training_dataset
+        elif training_dataset != dataset:
+            raise ValueError(
+                f"mixed datasets are not allowed: expected {dataset}, got {training_dataset}"
+            )
+        run_specs.append(
+            {
+                "method": str(training["method"]),
+                "seed": int(training["seed"]),
+                "training_path": training_path,
+                "training_result": str(training_path),
+            }
+        )
+        provenance["direct_training_results"].append(str(training_path))
+
+    if dataset is None or not run_specs:
+        raise ValueError("provide --state-path and/or at least one --training-result")
+    identities = [(str(run["method"]), int(run["seed"])) for run in run_specs]
+    if len(identities) != len(set(identities)):
+        raise ValueError("duplicate method/seed training result")
+    return dataset, run_specs, provenance
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate Exp 3 checkpoints on the frozen test split")
-    parser.add_argument("--run-repo", type=Path, required=True)
-    parser.add_argument("--state-path", type=Path, required=True)
+    parser.add_argument("--run-repo", type=Path, default=Path("."))
+    parser.add_argument("--state-path", type=Path)
+    parser.add_argument("--training-result", type=Path, action="append", default=[])
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--batch-size", type=int, default=4096)
@@ -106,18 +178,17 @@ def main() -> None:
 
     started = time.perf_counter()
     run_repo = args.run_repo.resolve(strict=True)
-    state_path = args.state_path if args.state_path.is_absolute() else run_repo / args.state_path
-    state = json.loads(state_path.read_text(encoding="utf-8"))
-    if not state.get("complete") or len(state.get("completed_runs", [])) != state.get("expected_runs"):
-        raise RuntimeError("upstream dataset run is incomplete")
+    dataset, run_specs, provenance = collect_training_runs(
+        run_repo, args.state_path, args.training_result
+    )
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
-    data = prepare_dataset(str(state["dataset"]), args.data_root)
+    data = prepare_dataset(dataset, args.data_root)
 
     runs: list[dict[str, object]] = []
-    for run in state["completed_runs"]:
-        training_path = run_repo / run["training_result"]
+    for run in run_specs:
+        training_path = Path(run["training_path"])
         training = json.loads(training_path.read_text(encoding="utf-8"))
         checkpoint_metrics: list[dict[str, object]] = []
         for checkpoint in training["checkpoints"]:
@@ -158,7 +229,7 @@ def main() -> None:
         )
         print(
             "PERFORMANCE_RUN_OK "
-            f"dataset={state['dataset']} method={run['method']} seed={run['seed']} "
+            f"dataset={dataset} method={run['method']} seed={run['seed']} "
             f"balanced_accuracy={summary['final_balanced_accuracy_seen']:.6f} "
             f"forgetting={summary['average_forgetting_prior_classes']:.6f}",
             flush=True,
@@ -167,10 +238,9 @@ def main() -> None:
     payload = {
         "analysis": "Exp 3 frozen-test performance and forgetting",
         "analysis_source_commit": source_commit(REPO_ROOT),
-        "upstream_source_commit": state["source_commit"],
-        "upstream_state_path": str(state_path),
+        **provenance,
         "job_id": os.environ.get("SLURM_JOB_ID"),
-        "dataset": state["dataset"],
+        "dataset": dataset,
         "class_order": data.class_order,
         "test_rows": int(len(data.y_test)),
         "evaluated_utc": datetime.now(timezone.utc).isoformat(),
