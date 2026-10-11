@@ -43,6 +43,7 @@ from ncd.explain import (
     grad_x_input,
 )
 from ncd.model import DecisionScore, MLP
+from ncd.source_commit import source_commit
 from ncd.train_cil import (
     Tee,
     extract_features,
@@ -54,9 +55,7 @@ from ncd.train_cil import (
 
 
 def git_commit() -> str:
-    return subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True
-    ).strip()
+    return source_commit(REPO_ROOT)
 
 
 def normalize(vector: np.ndarray) -> np.ndarray:
