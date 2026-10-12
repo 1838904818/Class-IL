@@ -7,7 +7,10 @@ import torch
 
 from ncd.crr_benchmarks import (
     METHODS,
+    _distribution_change,
+    _log_probability_effect,
     _pair_effects,
+    _rcl_profile_loss,
     boundary_for,
     build_hijack,
     build_necessity,
@@ -91,6 +94,11 @@ class CRRBenchmarkTest(unittest.TestCase):
             batch_size=16,
         )
         self.assertEqual(benchmark.metadata["f1_max_abs_change_train"], 0.0)
+        self.assertEqual(benchmark.metadata["f1_name"], f"f{benchmark.metadata['f1']}")
+        self.assertEqual(benchmark.metadata["f2_name"], f"f{benchmark.metadata['f2']}")
+        self.assertAlmostEqual(benchmark.metadata["f1_histogram_overlap"], 1.0)
+        self.assertGreaterEqual(benchmark.metadata["f2_histogram_overlap"], 0.0)
+        self.assertLessEqual(benchmark.metadata["f2_histogram_overlap"], 1.0)
         self.assertIn(boundary.synthetic_class, set(benchmark.train_y.tolist()))
         self.assertEqual(benchmark.eval_x.shape[1], 5 + marker_columns)
 
@@ -101,6 +109,50 @@ class CRRBenchmarkTest(unittest.TestCase):
         effects, owners = _pair_effects(clean, changed, labels, (0, 1))
         self.assertEqual(effects.shape, (1, 1))
         self.assertEqual(owners.tolist(), [0])
+
+    def test_global_ir_student_effect_uses_new_class_normalizer(self) -> None:
+        clean = torch.tensor([[3.0, 1.0, 2.0]])
+        changed = torch.tensor([[2.0, 1.0, 4.0]])
+        labels = torch.tensor([0])
+        mask = torch.tensor([True])
+        full_effect = _log_probability_effect(
+            clean, changed, labels, (0, 1, 2), mask
+        )
+        old_only_effect = _log_probability_effect(
+            clean, changed, labels, (0, 1), mask
+        )
+        self.assertFalse(torch.allclose(full_effect, old_only_effect))
+
+    def test_rcl_profile_runs_over_feature_axis(self) -> None:
+        clean = torch.tensor([[3.0, 1.0, 0.0], [1.0, 3.0, 0.0]])
+        changed = torch.tensor([[2.0, 1.0, 1.0], [1.0, 2.0, 1.0]])
+        labels = torch.tensor([0, 1])
+        mask = torch.tensor([True, True])
+        delta = _distribution_change(clean, changed, labels, (0, 1), mask, 1.0)
+        teacher_delta = torch.stack([delta, delta * 2.0, delta * 0.5], dim=1)
+        student_delta = torch.stack([delta * 0.8, delta * 1.5, delta], dim=1)
+        gated = _rcl_profile_loss(
+            student_delta,
+            teacher_delta,
+            clean,
+            (0, 1),
+            mask,
+            reliance_temperature=0.5,
+            gated=True,
+        )
+        ungated = _rcl_profile_loss(
+            student_delta,
+            teacher_delta,
+            clean,
+            (0, 1),
+            mask,
+            reliance_temperature=0.5,
+            gated=False,
+        )
+        self.assertTrue(torch.isfinite(gated))
+        self.assertTrue(torch.isfinite(ungated))
+        self.assertGreaterEqual(float(gated), 0.0)
+        self.assertGreaterEqual(float(ungated), 0.0)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
 import torch
 
 from ncd.crr_benchmarks import (
+    AUXILIARY_METHODS,
     METHODS,
     boundary_for,
     build_hijack,
@@ -84,8 +85,14 @@ def run(config: dict) -> dict:
     if config.get("registered_matrix", True):
         if set(methods) != set(METHODS) or len(methods) != len(METHODS):
             raise ValueError(f"the registered comparison requires exactly {METHODS}")
-    elif not methods or not set(methods).issubset(METHODS):
-        raise ValueError(f"calibration methods must be a nonempty subset of {METHODS}")
+    elif not methods or not set(methods).issubset(METHODS + AUXILIARY_METHODS):
+        raise ValueError(
+            "calibration methods must be a nonempty subset of "
+            f"{METHODS + AUXILIARY_METHODS}"
+        )
+    benchmarks = tuple(str(value) for value in config.get("benchmarks", ("hijack", "necessity")))
+    if not benchmarks or not set(benchmarks).issubset({"hijack", "necessity"}):
+        raise ValueError("benchmarks must be a nonempty subset of hijack,necessity")
 
     rows: list[dict] = []
     benchmark_metadata: list[dict] = []
@@ -127,36 +134,38 @@ def run(config: dict) -> dict:
             hijack_cache: dict[tuple[str, int], object] = {}
             necessity_cache: dict[tuple[str, int], object] = {}
             for selection, (buffer_x, buffer_y) in buffers.items():
-                for rho_index, rho in enumerate(config["rho_values"]):
-                    hijack_cache[(selection, rho_index)] = build_hijack(
-                        data,
-                        boundary,
-                        buffer_x,
-                        buffer_y,
-                        rho=float(rho),
-                        marker_columns=marker_columns,
-                        seed=seed * 100000 + rho_index * 1000 + dataset_index * 100,
-                        rows_per_class=config.get("rows_per_class"),
-                    )
-                for k_index, k in enumerate(config["k_values"]):
-                    necessity_cache[(selection, k_index)] = build_necessity(
-                        data,
-                        boundary,
-                        buffer_x,
-                        buffer_y,
-                        base_model,
-                        k=float(k),
-                        marker_columns=marker_columns,
-                        seed=seed * 100000 + k_index * 1000 + dataset_index * 100 + 50,
-                        device=device,
-                        batch_size=batch_size,
-                        rows_per_class=config.get("rows_per_class"),
-                        noise_scale=float(config.get("necessity_noise_scale", 0.02)),
-                    )
+                if "hijack" in benchmarks:
+                    for rho_index, rho in enumerate(config["rho_values"]):
+                        hijack_cache[(selection, rho_index)] = build_hijack(
+                            data,
+                            boundary,
+                            buffer_x,
+                            buffer_y,
+                            rho=float(rho),
+                            marker_columns=marker_columns,
+                            seed=seed * 100000 + rho_index * 1000 + dataset_index * 100,
+                            rows_per_class=config.get("rows_per_class"),
+                        )
+                if "necessity" in benchmarks:
+                    for k_index, k in enumerate(config["k_values"]):
+                        necessity_cache[(selection, k_index)] = build_necessity(
+                            data,
+                            boundary,
+                            buffer_x,
+                            buffer_y,
+                            base_model,
+                            k=float(k),
+                            marker_columns=marker_columns,
+                            seed=seed * 100000 + k_index * 1000 + dataset_index * 100 + 50,
+                            device=device,
+                            batch_size=batch_size,
+                            rows_per_class=config.get("rows_per_class"),
+                            noise_scale=float(config.get("necessity_noise_scale", 0.02)),
+                        )
 
             for method_index, method in enumerate(methods):
                 selection = "icarl" if method == "icarl" else "random"
-                for rho_index, rho in enumerate(config["rho_values"]):
+                for rho_index, rho in enumerate(config["rho_values"] if "hijack" in benchmarks else []):
                     benchmark = hijack_cache[(selection, rho_index)]
                     _, metrics = run_method(
                         base_model,
@@ -170,6 +179,10 @@ def run(config: dict) -> dict:
                         temperature=float(config.get("temperature", 2.0)),
                         seed=seed * 1000000 + method_index * 10000 + rho_index,
                         device=device,
+                        rcl_features=int(config.get("rcl_features", 8)),
+                        rcl_temperature=float(config.get("rcl_temperature", 0.5)),
+                        rcl_beta=float(config.get("rcl_beta", 1.0)),
+                        rcl_prediction_weight=float(config.get("rcl_prediction_weight", 0.5)),
                     )
                     row = {
                         "dataset": dataset_name,
@@ -182,7 +195,7 @@ def run(config: dict) -> dict:
                     rows.append(row)
                     print(json.dumps(row, sort_keys=True), flush=True)
 
-                for k_index, k in enumerate(config["k_values"]):
+                for k_index, k in enumerate(config["k_values"] if "necessity" in benchmarks else []):
                     benchmark = necessity_cache[(selection, k_index)]
                     if method in {"replay", "icarl"}:
                         benchmark_metadata.append(
@@ -211,6 +224,10 @@ def run(config: dict) -> dict:
                         temperature=float(config.get("temperature", 2.0)),
                         seed=seed * 1000000 + method_index * 10000 + 500 + k_index,
                         device=device,
+                        rcl_features=int(config.get("rcl_features", 8)),
+                        rcl_temperature=float(config.get("rcl_temperature", 0.5)),
+                        rcl_beta=float(config.get("rcl_beta", 1.0)),
+                        rcl_prediction_weight=float(config.get("rcl_prediction_weight", 0.5)),
                     )
                     row = {
                         "dataset": dataset_name,
@@ -235,16 +252,21 @@ def run(config: dict) -> dict:
     }
     for row in rows:
         key = (row["dataset"], row["seed"], row["benchmark"], row.get("rho"), row.get("k"))
-        row["cost_vs_replay"] = row["training_seconds"] / max(replay_cost[key], 1e-9)
+        baseline_cost = replay_cost.get(key)
+        row["cost_vs_replay"] = (
+            row["training_seconds"] / max(baseline_cost, 1e-9)
+            if baseline_cost is not None
+            else None
+        )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "git_commit": source_commit(REPO_ROOT),
         "effective_config": config,
         "methods": list(methods),
         "rows": rows,
         "benchmark_metadata": benchmark_metadata,
         "elapsed_seconds": time.perf_counter() - started,
-        "scope": "Section 12 ground-truth smoke/full matrix; not a novelty or publication verdict",
+        "scope": "Section 12/13 ground-truth rows; not a novelty or publication verdict",
     }
 
 
@@ -258,6 +280,7 @@ def main() -> None:
     parser.add_argument("--log-path")
     parser.add_argument("--seeds", help="comma-separated override; calibration only")
     parser.add_argument("--methods", help="comma-separated override; calibration only")
+    parser.add_argument("--benchmarks", help="comma-separated override: hijack,necessity")
     parser.add_argument("--regularization", type=float)
     args = parser.parse_args()
     config_path = Path(args.config).resolve()
@@ -275,6 +298,11 @@ def main() -> None:
         config["registered_matrix"] = False
     if args.methods:
         config["methods"] = [value.strip() for value in args.methods.split(",") if value.strip()]
+        config["registered_matrix"] = False
+    if args.benchmarks:
+        config["benchmarks"] = [
+            value.strip() for value in args.benchmarks.split(",") if value.strip()
+        ]
         config["registered_matrix"] = False
     if args.regularization is not None:
         config["regularization"] = args.regularization

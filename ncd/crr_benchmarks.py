@@ -7,9 +7,9 @@ and differs on its second-ranked permutation-importance feature.  The latter
 forces a legitimate change in the old-vs-new decision evidence.
 
 All methods start from the same pre-boundary checkpoint and receive the same
-number of replay examples.  Reliance losses use a stochastic, one-feature-per-
-minibatch marginal-resampling estimator, matching Section 12.3's random j and
-keeping training cost bounded.
+number of replay examples.  Section 13 corrects Global-IR to preserve the old
+class' own log-probability effect and corrects RCL-tab to form its reliance
+profile over eight shared feature interventions per minibatch.
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ METHODS = (
     "oldpair_kd",
     "crr",
 )
+
+AUXILIARY_METHODS = ("rcl_tab_nogate",)
 
 
 @dataclass(frozen=True)
@@ -357,7 +359,21 @@ def build_necessity(
         metadata={
             "f1": f1,
             "f2": f2,
+            "f1_name": data.feature_names[f1],
+            "f2_name": data.feature_names[f2],
             "f2_train_std": scale,
+            "synthetic_train_rows": int(len(synthetic_train)),
+            "target_replay_rows": int(np.sum(buffer_y == boundary.target_class)),
+            "source_f1_distribution": _distribution_summary(train_source[:, f1]),
+            "source_f2_distribution": _distribution_summary(train_source[:, f2]),
+            "shifted_f1_distribution": _distribution_summary(synthetic_train[:, f1]),
+            "shifted_f2_distribution": _distribution_summary(synthetic_train[:, f2]),
+            "f1_histogram_overlap": _histogram_overlap(
+                train_source[:, f1], synthetic_train[:, f1]
+            ),
+            "f2_histogram_overlap": _histogram_overlap(
+                train_source[:, f2], synthetic_train[:, f2]
+            ),
             "permutation_importance_drops": drops.tolist(),
             "noise_scale": noise_scale,
             "f1_max_abs_change_train": float(
@@ -365,6 +381,40 @@ def build_necessity(
             ),
         },
     )
+
+
+def _distribution_summary(values: np.ndarray) -> dict[str, float]:
+    values = np.asarray(values, dtype=np.float64)
+    quantiles = np.quantile(values, [0.05, 0.25, 0.5, 0.75, 0.95])
+    return {
+        "min": float(np.min(values)),
+        "p05": float(quantiles[0]),
+        "p25": float(quantiles[1]),
+        "median": float(quantiles[2]),
+        "p75": float(quantiles[3]),
+        "p95": float(quantiles[4]),
+        "max": float(np.max(values)),
+        "mean": float(np.mean(values)),
+        "std": float(np.std(values)),
+    }
+
+
+def _histogram_overlap(left: np.ndarray, right: np.ndarray, bins: int = 64) -> float:
+    """Return the histogram overlap coefficient on shared data-derived bins."""
+    left = np.asarray(left, dtype=np.float64)
+    right = np.asarray(right, dtype=np.float64)
+    lower = float(min(np.min(left), np.min(right)))
+    upper = float(max(np.max(left), np.max(right)))
+    if not np.isfinite(lower) or not np.isfinite(upper):
+        raise ValueError("distribution overlap requires finite values")
+    if upper <= lower:
+        return 1.0
+    edges = np.linspace(lower, upper, bins + 1)
+    left_hist, _ = np.histogram(left, bins=edges, density=False)
+    right_hist, _ = np.histogram(right, bins=edges, density=False)
+    left_mass = left_hist / max(int(left_hist.sum()), 1)
+    right_mass = right_hist / max(int(right_hist.sum()), 1)
+    return float(np.minimum(left_mass, right_mass).sum())
 
 
 def _pair_effects(
@@ -391,14 +441,113 @@ def _pair_effects(
     return torch.cat(rows), torch.cat(owner)
 
 
-def _js_from_effects(student: torch.Tensor, teacher: torch.Tensor) -> torch.Tensor:
-    p = F.softmax(torch.abs(teacher), dim=1)
-    q = F.softmax(torch.abs(student), dim=1)
-    m = 0.5 * (p + q)
-    return 0.5 * (
-        F.kl_div(torch.log(m + 1e-8), p, reduction="batchmean")
-        + F.kl_div(torch.log(m + 1e-8), q, reduction="batchmean")
+def _old_mask(labels: torch.Tensor, old_classes: tuple[int, ...]) -> torch.Tensor:
+    mask = torch.zeros_like(labels, dtype=torch.bool)
+    for class_id in old_classes:
+        mask |= labels == class_id
+    return mask
+
+
+def _local_targets(labels: torch.Tensor, classes: tuple[int, ...]) -> torch.Tensor:
+    targets = torch.full_like(labels, -1)
+    for local, class_id in enumerate(classes):
+        targets[labels == class_id] = local
+    if torch.any(targets < 0):
+        raise ValueError("labels include a class outside the requested class space")
+    return targets
+
+
+def _log_probability_effect(
+    clean: torch.Tensor,
+    changed: torch.Tensor,
+    labels: torch.Tensor,
+    classes: tuple[int, ...],
+    row_mask: torch.Tensor,
+) -> torch.Tensor:
+    selected_labels = labels[row_mask]
+    targets = _local_targets(selected_labels, classes)
+    clean_log = F.log_softmax(clean[row_mask][:, list(classes)], dim=1)
+    changed_log = F.log_softmax(changed[row_mask][:, list(classes)], dim=1)
+    rows = torch.arange(len(targets), device=labels.device)
+    return clean_log[rows, targets] - changed_log[rows, targets]
+
+
+def _distribution_change(
+    clean: torch.Tensor,
+    changed: torch.Tensor,
+    labels: torch.Tensor,
+    classes: tuple[int, ...],
+    row_mask: torch.Tensor,
+    beta: float,
+) -> torch.Tensor:
+    """RCL Eq. 3 translated from channels to tabular feature interventions."""
+    selected_labels = labels[row_mask]
+    targets = _local_targets(selected_labels, classes)
+    clean_log = F.log_softmax(clean[row_mask][:, list(classes)], dim=1)
+    changed_log = F.log_softmax(changed[row_mask][:, list(classes)], dim=1)
+    clean_probability = clean_log.exp()
+    kl = (clean_probability * (clean_log - changed_log)).sum(dim=1)
+    rows = torch.arange(len(targets), device=labels.device)
+    answer_loss_increase = (
+        clean_log[rows, targets] - changed_log[rows, targets]
+    ).clamp_min(0.0)
+    return kl + float(beta) * answer_loss_increase
+
+
+def _rcl_profile_loss(
+    student_delta: torch.Tensor,
+    teacher_delta: torch.Tensor,
+    teacher_clean: torch.Tensor,
+    old_classes: tuple[int, ...],
+    row_mask: torch.Tensor,
+    *,
+    reliance_temperature: float,
+    gated: bool,
+) -> torch.Tensor:
+    teacher_profile = F.softmax(
+        teacher_delta.detach() / reliance_temperature, dim=1
     )
+    student_profile = F.softmax(student_delta / reliance_temperature, dim=1)
+    midpoint = 0.5 * (teacher_profile + student_profile)
+    js = 0.5 * (
+        (
+            teacher_profile
+            * (torch.log(teacher_profile + 1e-8) - torch.log(midpoint + 1e-8))
+        ).sum(dim=1)
+        + (
+            student_profile
+            * (torch.log(student_profile + 1e-8) - torch.log(midpoint + 1e-8))
+        ).sum(dim=1)
+    )
+    if not gated:
+        return js.mean()
+
+    teacher_probability = F.softmax(
+        teacher_clean[row_mask][:, list(old_classes)], dim=1
+    )
+    entropy = -(teacher_probability * torch.log(teacher_probability + 1e-8)).sum(dim=1)
+    entropy = entropy / max(math.log(len(old_classes)), 1e-8)
+    sensitivity = teacher_delta.detach().sum(dim=1)
+    sensitivity_threshold = sensitivity.median()
+    sensitivity_mad = (
+        sensitivity - sensitivity_threshold
+    ).abs().median().clamp_min(1e-6)
+    entropy_gate = torch.sigmoid((0.5 - entropy) / 0.1)
+    sensitivity_gate = torch.sigmoid(
+        (sensitivity - sensitivity_threshold) / sensitivity_mad
+    )
+    return (entropy_gate * sensitivity_gate * js).mean()
+
+
+def _clean_prediction_kd(
+    student: torch.Tensor,
+    teacher: torch.Tensor,
+    old_classes: tuple[int, ...],
+    temperature: float,
+) -> torch.Tensor:
+    target = F.softmax(teacher[:, list(old_classes)] / temperature, dim=1)
+    current = F.log_softmax(student[:, list(old_classes)] / temperature, dim=1)
+    return F.kl_div(current, target, reduction="batchmean") * temperature**2
 
 
 def _pair_margin_mse(
@@ -434,6 +583,10 @@ def _train(
     seed: int,
     regularization: float,
     temperature: float,
+    rcl_features: int = 8,
+    rcl_temperature: float = 0.5,
+    rcl_beta: float = 1.0,
+    rcl_prediction_weight: float = 0.5,
 ) -> float:
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     device = next(model.parameters()).device
@@ -451,12 +604,72 @@ def _train(
             logits = model(bx)
             loss = F.cross_entropy(logits, by)
             if old_model is not None and method != "replay":
+                with torch.no_grad():
+                    teacher = old_model(bx)
+
+                if method in {"rcl_tab", "rcl_tab_nogate"}:
+                    old_rows = _old_mask(by, old_classes)
+                    if torch.any(old_rows):
+                        feature_count = min(int(rcl_features), bx.shape[1])
+                        features = rng.choice(
+                            bx.shape[1], feature_count, replace=False
+                        )
+                        student_deltas: list[torch.Tensor] = []
+                        teacher_deltas: list[torch.Tensor] = []
+                        for feature_value in features:
+                            feature = int(feature_value)
+                            changed = bx.clone()
+                            order = torch.randperm(len(bx), device=device)
+                            changed[:, feature] = changed[order, feature]
+                            student_changed = model(changed)
+                            with torch.no_grad():
+                                teacher_changed = old_model(changed)
+                            student_deltas.append(
+                                _distribution_change(
+                                    logits,
+                                    student_changed,
+                                    by,
+                                    seen_classes,
+                                    old_rows,
+                                    rcl_beta,
+                                )
+                            )
+                            teacher_deltas.append(
+                                _distribution_change(
+                                    teacher,
+                                    teacher_changed,
+                                    by,
+                                    old_classes,
+                                    old_rows,
+                                    rcl_beta,
+                                )
+                            )
+                        reliance_loss = _rcl_profile_loss(
+                            torch.stack(student_deltas, dim=1),
+                            torch.stack(teacher_deltas, dim=1),
+                            teacher,
+                            old_classes,
+                            old_rows,
+                            reliance_temperature=rcl_temperature,
+                            gated=method == "rcl_tab",
+                        )
+                        prediction_loss = _clean_prediction_kd(
+                            logits, teacher, old_classes, temperature
+                        )
+                        loss = (
+                            loss
+                            + float(rcl_prediction_weight) * prediction_loss
+                            + regularization * reliance_loss
+                        )
+                    loss.backward()
+                    optimizer.step()
+                    continue
+
                 feature = int(rng.integers(0, bx.shape[1]))
                 changed = bx.clone()
                 order = torch.randperm(len(bx), device=device)
                 changed[:, feature] = changed[order, feature]
                 with torch.no_grad():
-                    teacher = old_model(bx)
                     teacher_changed = old_model(changed)
 
                 if method in {"icarl", "replay_lwf"}:
@@ -478,22 +691,43 @@ def _train(
                     extra = F.kl_div(current, target, reduction="batchmean") * temperature**2
                 elif method == "oldpair_kd":
                     extra = _pair_margin_mse(logits, teacher, by, old_classes)
-                else:
+                elif method == "crr":
                     student_changed = model(changed)
-                    pair_classes = old_classes if method == "crr" else seen_classes
                     student_effect, _ = _pair_effects(
-                        logits, student_changed, by, pair_classes
+                        logits, student_changed, by, old_classes
                     )
                     teacher_effect, _ = _pair_effects(
-                        teacher, teacher_changed, by, pair_classes
+                        teacher, teacher_changed, by, old_classes
                     )
                     if student_effect.numel() == 0:
                         extra = logits.new_zeros(())
-                    elif method == "rcl_tab":
-                        extra = _js_from_effects(student_effect, teacher_effect)
                     else:
                         scale = teacher_effect.detach().abs().mean().clamp_min(1e-3)
                         extra = ((student_effect - teacher_effect) / scale).square().mean()
+                elif method == "global_ir":
+                    student_changed = model(changed)
+                    old_rows = _old_mask(by, old_classes)
+                    if not torch.any(old_rows):
+                        extra = logits.new_zeros(())
+                    else:
+                        student_effect = _log_probability_effect(
+                            logits,
+                            student_changed,
+                            by,
+                            seen_classes,
+                            old_rows,
+                        )
+                        teacher_effect = _log_probability_effect(
+                            teacher,
+                            teacher_changed,
+                            by,
+                            old_classes,
+                            old_rows,
+                        )
+                        scale = teacher_effect.detach().abs().mean().clamp_min(1e-3)
+                        extra = ((student_effect - teacher_effect) / scale).square().mean()
+                else:
+                    raise ValueError(f"unsupported training method: {method}")
                 loss = loss + regularization * extra
             loss.backward()
             optimizer.step()
@@ -576,8 +810,12 @@ def run_method(
     temperature: float,
     seed: int,
     device: torch.device,
+    rcl_features: int = 8,
+    rcl_temperature: float = 0.5,
+    rcl_beta: float = 1.0,
+    rcl_prediction_weight: float = 0.5,
 ) -> tuple[MLP, dict]:
-    if method not in METHODS:
+    if method not in METHODS + AUXILIARY_METHODS:
         raise ValueError(f"unknown CRR method: {method}")
     model = copy.deepcopy(base_model).to(device)
     teacher = copy.deepcopy(base_model).to(device).eval()
@@ -596,6 +834,10 @@ def run_method(
         seed=seed,
         regularization=regularization,
         temperature=temperature,
+        rcl_features=rcl_features,
+        rcl_temperature=rcl_temperature,
+        rcl_beta=rcl_beta,
+        rcl_prediction_weight=rcl_prediction_weight,
     )
     if method == "icarl":
         pred = _nme_predictions(
@@ -622,6 +864,23 @@ def run_method(
             )
         ),
         "recalls": {str(c): _recall(pred, benchmark.eval_y, c) for c in metric_labels},
+        "regularization": float(regularization),
+        "implementation_revision": "section13",
+        "rcl_features": int(rcl_features) if method.startswith("rcl_tab") else None,
+        "rcl_temperature": (
+            float(rcl_temperature) if method.startswith("rcl_tab") else None
+        ),
+        "rcl_beta": float(rcl_beta) if method.startswith("rcl_tab") else None,
+        "rcl_prediction_weight": (
+            float(rcl_prediction_weight) if method.startswith("rcl_tab") else None
+        ),
+        "rcl_gate": (
+            "entropy_x_sensitivity"
+            if method == "rcl_tab"
+            else "none"
+            if method == "rcl_tab_nogate"
+            else None
+        ),
     }
     if benchmark.name == "hijack":
         marker_columns = int(benchmark.metadata["marker_columns"])
