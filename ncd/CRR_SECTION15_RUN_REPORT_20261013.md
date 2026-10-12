@@ -33,3 +33,30 @@ is supported by this run.
 
 Next step: repair the collector import invocation and resume the registered
 matrix with complete logs and source/config/seed provenance.
+
+## Recovery submitted
+
+The collector now inserts the repository root before importing `ncd`, including
+under Python isolated mode. Its isolated command passed locally. The batch
+script passed local and live account/association preflight and remote Bash
+syntax checks. The cluster client has no `sbatch --test-only` support.
+
+Recovery source: `bfde946a44ea7838f07399cf14c7570a40df7dca`.
+The benchmark, runners, configuration and lambda-selection code are unchanged
+from the original source. Saved calibration JSON and logs retain that original
+provenance; the recovery validates their source, dataset and row count before
+recollecting lambda choices. Completed matrix shards can be resumed with
+`NCD_RESUME_ROOT`; incomplete cells rerun. Each job requests one A100, two CPUs,
+16 GB RAM and a three-day maximum walltime, based on prior measured memory.
+
+| Job | Matrix | Immediate verified state | Dependency |
+|---|---|---|---|
+| 485405 | NSL-KDD necessity | PENDING (Resources) | none |
+| 485406 | UNSW-NB15 necessity | PENDING (Resources) | none |
+| 485407 | NSL-KDD real sequence | PENDING (Dependency) | afterok:485405 |
+| 485408 | UNSW-NB15 real sequence | PENDING (Dependency) | afterok:485406 |
+
+Old jobs 485229 and 485230 were cancelled after confirming their failed
+dependencies. New jobs have ten-minute monitors and a completion aggregation
+automation. Scoped logs and protected outputs use run directory
+`20261013-crr-section15-v2`. No new scientific results are available yet.
