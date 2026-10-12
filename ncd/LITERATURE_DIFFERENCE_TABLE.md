@@ -1,6 +1,6 @@
 # NCD closest-work difference table
 
-Last primary-source check: 2026-10-10. Scope: explanation change, attribution
+Last primary-source check: 2026-10-12. Scope: explanation change, attribution
 uncertainty, statistical inference, continual learning, and drift response. This
 is a targeted 10-source comparison, not an exhaustive novelty opinion.
 
@@ -33,3 +33,60 @@ simple repeated averaging (B2), followed by Exp 3 measurement; the current Exp
 No source in this targeted set was found to perform the exact
 **cross-checkpoint attribution permutation/bootstrap drift test** above. This
 is a bounded search result, not proof that no such paper exists.
+
+## IRD novelty veto check (Work Order Section 11.3, 2026-10-12)
+
+Section 11.3 asks a narrower, mechanism-level question than the NCD review
+above: has prior continual-learning work already trained a new checkpoint to
+preserve an old checkpoint's response to feature/evidence interventions?  The
+answer is **yes**.  The primary-source search therefore returns **STOP** for IRD
+as currently formulated; implementation and HPC experiments were not started.
+
+| Primary source | Distillation / intervention target | Continual learning? | Relation to the proposed IRD |
+|---|---|---|---|
+| Li and Hoiem, **Learning without Forgetting**, ECCV 2016, [paper](https://arxiv.org/abs/1606.09282) | Old-model output distribution on observed inputs | Yes | Establishes output-level checkpoint distillation, but does not preserve responses to intervened inputs. |
+| Dhar et al., **Learning without Memorizing (LwM)**, CVPR 2019, [CVF](https://openaccess.thecvf.com/content_CVPR_2019/html/Dhar_Learning_Without_Memorizing_CVPR_2019_paper.html) | Output distillation plus attention-map distillation | Yes | Preserves an explanation/attention representation, not a clean-versus-intervened response contrast. |
+| Ebrahimi et al., **Remembering for the Right Reasons**, 2021, [DOI](https://doi.org/10.1002/ail2.44), [OpenReview](https://openreview.net/forum?id=tHgJoMfy6nI) | Gradient/saliency explanations from an earlier model | Yes | Closest explanation-matching baseline, but the target is explainer output rather than a model-behaviour contrast under intervention. |
+| Hu et al., **Distilling Causal Effect of Data in Class-Incremental Learning**, CVPR 2021, [CVF paper](https://openaccess.thecvf.com/content/CVPR2021/html/Hu_Distilling_Causal_Effect_of_Data_in_Class-Incremental_Learning_CVPR_2021_paper.html), [arXiv](https://arxiv.org/abs/2103.01737) | Causal/colliding effect of old and new data, designed to emulate replay without storing old data | Yes | A material naming and positioning risk, but its estimand is a data-stream colliding effect rather than the per-feature clean/intervened score difference proposed for IRD. |
+| Bender et al., **Towards Fixing Clever-Hans Predictors with Counterfactual Knowledge Distillation**, ICCV Workshops 2023, [CVF](https://openaccess.thecvf.com/content/ICCV2023W/CVAMD/html/Bender_Towards_Fixing_Clever-Hans_Predictors_with_Counterfactual_Knowledge_Distillation_ICCVW_2023_paper.html) | Teacher feedback on counterfactual examples to remove confounder reliance | No | Shows that counterfactual KD can change shortcut reliance, but it is not a sequential checkpoint-retention objective. |
+| Beyer et al., **Knowledge Distillation: A Good Teacher Is Patient and Consistent**, CVPR 2022, [CVF](https://openaccess.thecvf.com/content/CVPR2022/html/Beyer_Knowledge_Distillation_A_Good_Teacher_Is_Patient_and_Consistent_CVPR_2022_paper.html) | Teacher/student logits on identical augmented or mixup inputs | No | Directly motivates the required KD-perturbed ablation: it matches absolute outputs on perturbed inputs, not the perturbation-induced response difference. |
+| Janetzky et al., **Continual Learning of Domain-Invariant Representations**, ICML 2026, [PMLR](https://proceedings.mlr.press/v306/janetzky26a.html) | Sequential invariance alignment combined with replay | Yes | Directly addresses shortcut-prone continual learning through invariant representations, but does not distil a per-sample intervention-response profile. |
+| Bae, **Cross-corruption distillation for robust instruction following under text corruptions**, 2026, [DOI](https://doi.org/10.4218/etrij.2026-0159) | Teacher/student logit differences induced by identical input corruptions | No | Mechanistically close to IRD's difference-of-differences target, but outside continual learning. It narrows any defensible claim to the continual-retention setting rather than response-difference distillation itself. |
+| Chen, Xiao, and Tang, **Hidden Forgetting in Continual Multimodal Learning: When Accuracy Survives but Grounding Fails**, arXiv:2607.02020, [abstract](https://arxiv.org/abs/2607.02020), [full text](https://arxiv.org/html/2607.02020) | The frozen previous checkpoint and current model are probed with counterfactual evidence-channel interventions. Clean/intervened output and answer-loss differences form reliance profiles; a Jensen--Shannon loss preserves the old profile during continual adaptation (their Eqs. 3--7). | **Yes** | **Novelty veto.** This already operationalizes the same core idea as IRD: preserve the previous model's dependency structure by distilling teacher/student behavioural changes under matched interventions. |
+
+### Exact overlap and residual differences
+
+The proposed IRD target is
+
+\[
+e^f_c(x,j)=s^f_c(x)-s^f_c(x^{(j)}),\qquad
+\mathcal{L}_{\mathrm{IRD}}=\mathbb{E}(e^{\mathrm{new}}-e^{\mathrm{old}})^2.
+\]
+
+RCL defines counterfactual channel sensitivity from the difference between a
+model's behaviour on the original input and on a matched channel-suppressed
+input, normalizes those sensitivities into a reliance profile, and minimizes
+the divergence between the previous and current checkpoints' profiles during
+continual learning.  Thus both mechanisms:
+
+1. freeze the previous checkpoint as teacher;
+2. apply matched interventions to teacher and student inputs;
+3. derive a dependency/reliance target from clean-versus-intervened behaviour;
+4. regularize the continual update to preserve that target while learning new
+   data.
+
+IRD still differs in domain and implementation: tabular feature-wise marginal
+replacement rather than multimodal channel suppression, class margin or
+log-probability rather than token-distribution/answer-loss sensitivity,
+replay-old-class samples rather than a replay-free current-stage objective,
+and normalized squared effects rather than Jensen--Shannon divergence between
+reliance profiles.  Those are potentially useful adaptations and may justify a
+domain-specific study, but they do not support the current claim that
+interventional reliance preservation itself is a new continual-learning
+mechanism.  Under the explicit veto rule in Work Order Section 11.3, the
+decision is therefore **STOP**.  No IRD implementation, hyperparameter search,
+or 6-method HPC submission should proceed unless the project lead replaces or
+materially narrows the proposed mechanism and its novelty claim.
+
+This is a bounded primary-source search, not a legal or exhaustive novelty
+opinion.  The stop decision follows the project's stricter preregistered rule.
