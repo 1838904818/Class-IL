@@ -6,10 +6,10 @@ association listed `long`, remote archive hashes passed, and the packaged
 `ncd` and `src` imports passed. The pre-existing jobs 485030, 485032, and
 485033 were left unchanged.
 
-Source commit: `679fecc3aded1ec4bd2827b3601ada4169e5a0c3`  
-Archive: `crr-section13-679fecc.tar`  
-Archive SHA-256: `4ee4f344a66252b9c35b2ff56a8e0264a49df1c067fe3931f2c9841d17fd3ad4`  
-SBATCH SHA-256: `1fdd67fc63668e1cab7920ef129669f9fbb02c8316e3213af0782cc5e58dde83`
+- Source commit: `679fecc3aded1ec4bd2827b3601ada4169e5a0c3`
+- Archive: `crr-section13-679fecc.tar`
+- Archive SHA-256: `4ee4f344a66252b9c35b2ff56a8e0264a49df1c067fe3931f2c9841d17fd3ad4`
+- SBATCH SHA-256: `1fdd67fc63668e1cab7920ef129669f9fbb02c8316e3213af0782cc5e58dde83`
 
 | Job | Scope | Dependency | Initial state | Resources |
 |---:|---|---|---|---|
