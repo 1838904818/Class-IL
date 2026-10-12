@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=12G
+#SBATCH --mem=16G
 #SBATCH --gres=gpu:a100:1
 #SBATCH --time=3-00:00:00
 
@@ -88,10 +88,23 @@ cd "$repo_root"
   "$repo_root"
 
 mkdir -p ncd/results/crr/section15 ncd/logs/section15
+# Resume completed shards only from the same source commit; interrupted cells rerun.
+if [ -n "${NCD_RESUME_ROOT:-}" ]; then
+  test -f "$NCD_RESUME_ROOT/JOB_EXIT.json"
+  "$python_bin" -I -c 'import json,sys; assert json.load(open(sys.argv[1]))["source_commit"]==sys.argv[2]' "$NCD_RESUME_ROOT/JOB_EXIT.json" "$NCD_SOURCE_COMMIT"
+  cp -a "$NCD_RESUME_ROOT/results/." ncd/results/crr/section15/
+  cp -a "$NCD_RESUME_ROOT/logs/." ncd/logs/section15/
+fi
 methods=(replay icarl replay_lwf kd_perturbed rcl_tab global_ir oldpair_kd crr)
 seeds=(1 2 3 4 42)
 
 if [ "$NCD_MODE" = necessity ]; then
+  if [ -n "${NCD_CALIBRATION_ROOT:-}" ]; then
+    test -d "$NCD_CALIBRATION_ROOT/results/$NCD_DATASET/calibration"
+    cp -a "$NCD_CALIBRATION_ROOT/results/$NCD_DATASET" "ncd/results/crr/section15/"
+    cp -a "$NCD_CALIBRATION_ROOT/logs/." ncd/logs/section15/
+    cp "$NCD_CALIBRATION_ROOT/JOB_EXIT.json" "ncd/results/crr/section15/$NCD_DATASET/calibration_source_job.json"
+  fi
   regularized=(icarl replay_lwf kd_perturbed rcl_tab global_ir oldpair_kd crr)
   selections=()
   for method in "${regularized[@]}"; do
@@ -100,11 +113,15 @@ if [ "$NCD_MODE" = necessity ]; then
       safe_lambda=${lambda/./p}
       output="ncd/results/crr/section15/$NCD_DATASET/calibration/$method/lambda_$safe_lambda"
       log="ncd/logs/section15/${NCD_DATASET}_${method}_lambda_${safe_lambda}.log"
+      if [ -f "$output/crr_result.json" ]; then
+        "$python_bin" -I -c 'import json,sys; x=json.load(open(sys.argv[1])); assert x["git_commit"]==sys.argv[2]; assert len(x["rows"])==8; assert {r["dataset"] for r in x["rows"]}=={sys.argv[3]}' "$output/crr_result.json" "${NCD_CALIBRATION_SOURCE_COMMIT:?}" "$dataset_name"
+      else
       srun --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" \
         "$python_bin" -I ncd/run_crr_experiment.py \
         --config ncd/configs/crr_section15.json --device cuda --dataset "$dataset_name" \
         --seeds 5,6 --methods "replay,$method" --benchmarks necessity \
         --regularization "$lambda" --output-dir "$output" --log-path "$log"
+      fi
       candidates+=("$output/crr_result.json")
     done
     selection="ncd/results/crr/section15/$NCD_DATASET/calibration/$method/lambda_selection.json"
@@ -125,11 +142,15 @@ if [ "$NCD_MODE" = necessity ]; then
     )
     output="ncd/results/crr/section15/$NCD_DATASET/necessity/shards/$method"
     log="ncd/logs/section15/${NCD_DATASET}_necessity_${method}.log"
+    if [ -f "$output/COMPLETED.json" ]; then
+      "$python_bin" -I -c 'import json,sys; x=json.load(open(sys.argv[1])); assert x["git_commit"]==sys.argv[2]; assert len(x["rows"])==10' "$output/crr_result.json" "$NCD_SOURCE_COMMIT"
+    else
     srun --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" \
       "$python_bin" -I ncd/run_crr_experiment.py \
       --config ncd/configs/crr_section15.json --device cuda --dataset "$dataset_name" \
       --seeds 1,2,3,4,42 --methods "$method" --benchmarks necessity \
       --regularization "$lambda" --output-dir "$output" --log-path "$log"
+    fi
     "$python_bin" -I -c \
       'import json,sys; x=json.load(open(sys.argv[1],encoding="utf-8")); assert x["git_commit"]==sys.argv[2]; assert len(x["rows"])==10' \
       "$output/crr_result.json" "$NCD_SOURCE_COMMIT"
@@ -156,11 +177,15 @@ else
     for seed in "${seeds[@]}"; do
       output="ncd/results/crr/section15/$NCD_DATASET/real/shards/${method}_seed${seed}"
       log="ncd/logs/section15/${NCD_DATASET}_real_${method}_seed${seed}.log"
+      if [ -f "$output/COMPLETED.json" ]; then
+        "$python_bin" -I -c 'import json,sys; x=json.load(open(sys.argv[1])); assert x["git_commit"]==sys.argv[2]; assert len(x["rows"])==1' "$output/real_result.json" "$NCD_SOURCE_COMMIT"
+      else
       srun --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" \
         "$python_bin" -I ncd/run_crr_real_sequence.py \
         --config ncd/configs/crr_section15.json --device cuda --dataset "$dataset_name" \
         --method "$method" --seed "$seed" --regularization "$lambda" \
         --output-dir "$output" --log-path "$log"
+      fi
       shards+=("$output/real_result.json")
     done
   done
@@ -179,4 +204,3 @@ printf '{"job_id":"%s","mode":"%s","dataset":"%s","source_commit":"%s","complete
   "$SLURM_JOB_ID" "$NCD_MODE" "$NCD_DATASET" "$NCD_SOURCE_COMMIT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$protected/COMPLETED.json"
 printf 'CRR_S15_COMPLETE id=%s mode=%s dataset=%s protected=%s\n' \
   "$SLURM_JOB_ID" "$NCD_MODE" "$NCD_DATASET" "$protected"
-trap - EXIT
