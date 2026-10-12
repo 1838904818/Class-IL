@@ -90,3 +90,39 @@ materially narrows the proposed mechanism and its novelty claim.
 
 This is a bounded primary-source search, not a legal or exhaustive novelty
 opinion.  The stop decision follows the project's stricter preregistered rule.
+
+## CRR novelty veto check (Work Order Section 12.4, 2026-10-12)
+
+**Decision: CONTINUE to the registered ground-truth experiments.**  In the
+bounded primary-source search below, no method was found that jointly (i) runs
+in class-incremental learning, (ii) preserves a teacher checkpoint's
+feature-intervention or counterfactual effect specifically on **old-class vs
+old-class margins**, and (iii) deliberately leaves every old-vs-new margin
+unconstrained.  This is the exact Section 12.4 veto condition; it is not a
+claim that CRR is already innovative or effective.  The latter still requires
+all four Section 12.7 gates.
+
+| Primary source | What is preserved / changed | Why it does not trigger the Section 12.4 veto |
+|---|---|---|
+| Chen, Xiao, and Tang, **Hidden Forgetting in Continual Multimodal Learning** (RCL), 2026, [full text](https://arxiv.org/html/2607.02020) | A frozen teacher and current model are compared under counterfactual evidence-channel suppression; the Jensen--Shannon loss preserves the resulting sample-level reliance profile (Eqs. 3--7). | RCL is a global sample/channel reliance constraint for multimodal task streams. The paper does not define old-class pairs, old-vs-new margins, or a class-pair-restricted variant that frees new-class contrasts. It is the required closest baseline, not a veto match. |
+| Lesort, **Spurious Features in Continual Learning**, CoLLAs 2023, [PMLR](https://proceedings.mlr.press/v208/lesort23a.html) | Diagnoses local spurious features: features can look predictive in the partial data available at one stage but cease to be valid as the stream expands. | It motivates why old dependencies may need revision, but proposes neither a reliance-distillation loss nor an old-pair restriction. |
+| Zhang, Chu, and Li, **Causally Sufficient and Necessary Feature Expansion for Class-Incremental Learning**, 2026, [full text](https://arxiv.org/html/2603.09145) | Uses intra-task and inter-task counterfactual features to regularize causal completeness and separability in an expansion model. | Counterfactuals train current-task representations against feature collision; the objective does not distil teacher/student feature-intervention effects on old-old class margins while exempting old-new margins. |
+| Ashok, Joseph, and Balasubramanian, **Class-Incremental Learning with Cross-Space Clustering and Controlled Transfer**, ECCV 2022, [paper](https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136870104.pdf) | CSC preserves old feature-space class structure; CT estimates similarities between an incoming class and prior classes to promote positive forward transfer and reduce negative backward transfer. | It explicitly models class relationships and stability/plasticity, but transfers feature-space similarity rather than teacher/student intervention effects. CT primarily conditions old-new placement rather than preserving only old-old causal contrasts. |
+| Kang, Park, and Han, **Class-Incremental Learning by Knowledge Distillation with Adaptive Feature Consolidation**, CVPR 2022, [CVF](https://openaccess.thecvf.com/content/CVPR2022/html/Kang_Class-Incremental_Learning_by_Knowledge_Distillation_With_Adaptive_Feature_Consolidation_CVPR_2022_paper.html) | Restricts changes to important representation maps while allowing less important maps to adapt. | Its unit of protection is a feature-map representation weighted by loss sensitivity, not a class-pair-specific interventional margin. |
+| Douillard et al., **PODNet**, ECCV 2020, [paper](https://arxiv.org/abs/2004.13513) | Distils pooled intermediate outputs and uses a local-similarity classifier. | Representation distillation is not intervention-response distillation and is not restricted to old-old margin pairs. |
+| Dong et al., **Few-Shot Class-Incremental Learning via Relation Knowledge Distillation**, AAAI 2021, [AAAI](https://ojs.aaai.org/index.php/AAAI/article/view/16213) | Maintains an exemplar relation graph and distils structural relations among exemplars/classes. | It is the closest pair/relationship-KD family, but its relation target is observational feature geometry, not the change in a class margin under a matched feature intervention. It therefore motivates OldPair-KD, the registered non-interventional ablation. |
+
+### Residual novelty claim and fail-closed boundary
+
+CRR's remaining technical distinction is narrow: for an old replay example of
+class c, it preserves the teacher's intervention effect on margins m(c,k) only
+for previously learned k, while applying no corresponding reliance constraint
+to any margin involving a newly arriving class.  Ordinary output KD,
+OldPair-KD, global intervention preservation, and RCL-style reliance profiles
+each remove one of those elements and are therefore registered controls.
+
+The search outcome authorizes implementation and testing only.  If the
+two-benchmark experiment does not show both shortcut resistance and necessary
+old-vs-new plasticity under Section 12.7, CRR must be rejected even though the
+literature veto was not triggered.  This is a bounded search, not an exhaustive
+or legal novelty opinion.
