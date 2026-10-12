@@ -7,6 +7,7 @@ import torch
 
 from ncd.crr_benchmarks import (
     METHODS,
+    _class_balanced_cross_entropy,
     _distribution_change,
     _log_probability_effect,
     _pair_effects,
@@ -66,8 +67,24 @@ class CRRBenchmarkTest(unittest.TestCase):
             seed=11,
         )
         replay = benchmark.train_x[-len(buffer_y) :]
-        self.assertTrue(np.all(replay[buffer_y == boundary.target_class, -2:] == 1.0))
-        self.assertTrue(np.all(replay[buffer_y != boundary.target_class, -2:] == 0.0))
+        self.assertTrue(np.all(replay[:, -2:] == 0.0))
+        fresh_rows = int(benchmark.metadata["fresh_target_rows"])
+        fresh_target = benchmark.train_x[-len(buffer_y) - fresh_rows : -len(buffer_y)]
+        self.assertTrue(np.all(fresh_target[:, -2:] > 0.0))
+        self.assertTrue(benchmark.metadata["marker_only_on_fresh_target"])
+
+    def test_balanced_cross_entropy_equalises_class_mass(self) -> None:
+        logits = torch.tensor(
+            [[3.0, 0.0], [2.0, 0.0], [1.0, 0.0], [0.0, 2.0]],
+            requires_grad=True,
+        )
+        labels = torch.tensor([0, 0, 0, 1])
+        loss = _class_balanced_cross_entropy(logits, labels)
+        expected = 0.5 * (
+            torch.nn.functional.cross_entropy(logits[:3], labels[:3])
+            + torch.nn.functional.cross_entropy(logits[3:], labels[3:])
+        )
+        self.assertTrue(torch.allclose(loss, expected))
 
     def test_necessity_preserves_f1_and_shifts_f2(self) -> None:
         data = synthetic_data()

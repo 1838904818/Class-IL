@@ -186,22 +186,57 @@ def build_hijack(
     marker_columns: int,
     seed: int,
     rows_per_class: int | None = None,
+    construction_step: int = 3,
 ) -> Benchmark:
+    if construction_step not in {1, 2, 3}:
+        raise ValueError("hijack construction_step must be 1, 2, or 3")
     current_x, current_y = _cap_per_class(
         data.x_train, data.y_train, boundary.new_classes, rows_per_class, seed + 5
     )
     current_x = add_noise_markers(current_x, marker_columns, seed + 201)
-    clean_replay = buffer_x.copy()
-    replay_marker = correlated_markers(
-        buffer_y,
+
+    # Section 14 moves the shortcut out of replay.  The marker is observed only
+    # on fresh target-class examples in the current task; old replay examples
+    # remain marker-free.  Step 3 raises the fresh-target share only after the
+    # first two constructions have been measured.
+    target_source = data.x_train[data.y_train == boundary.target_class]
+    replay_target_rows = int(np.sum(buffer_y == boundary.target_class))
+    target_rows = max(replay_target_rows, 1)
+    if construction_step >= 3:
+        new_rows_per_class = max(
+            1, int(math.ceil(len(current_x) / max(len(boundary.new_classes), 1)))
+        )
+        target_rows = max(target_rows, new_rows_per_class)
+    target_rows = min(target_rows, len(target_source))
+    target_rng = np.random.default_rng(seed + 204)
+    target_indices = np.sort(
+        target_rng.choice(len(target_source), target_rows, replace=False)
+    )
+    current_target = target_source[target_indices]
+    real_scale = 1.0
+    if construction_step >= 2:
+        feature_scales = np.std(data.x_train, axis=0)
+        feature_scales = feature_scales[
+            np.isfinite(feature_scales) & (feature_scales > 1e-6)
+        ]
+        if len(feature_scales):
+            # The upper decile represents standardized continuous features
+            # without letting sparse one-hot columns shrink the marker.
+            real_scale = float(max(1.0, np.quantile(feature_scales, 0.9)))
+    current_target_marker = correlated_markers(
+        np.full(target_rows, boundary.target_class, dtype=np.int64),
         target_class=boundary.target_class,
         rho=rho,
         columns=marker_columns,
-        seed=seed + 202,
-    )
-    clean_replay[:, -marker_columns:] = replay_marker
-    train_x = np.concatenate([current_x, clean_replay])
-    train_y = np.concatenate([current_y, buffer_y])
+        seed=seed + 205,
+    ) * real_scale
+    current_target = append_markers(current_target, current_target_marker)
+    current_target_y = np.full(target_rows, boundary.target_class, dtype=np.int64)
+
+    clean_replay = buffer_x.copy()
+    clean_replay[:, -marker_columns:] = 0.0
+    train_x = np.concatenate([current_x, current_target, clean_replay])
+    train_y = np.concatenate([current_y, current_target_y, buffer_y])
 
     seen = boundary.old_classes + boundary.new_classes
     eval_x, eval_y = _cap_per_class(
@@ -213,7 +248,7 @@ def build_hijack(
         rho=rho,
         columns=marker_columns,
         seed=seed + 203,
-    )
+    ) * real_scale
     eval_x = append_markers(eval_x, test_marker)
     return Benchmark(
         name="hijack",
@@ -223,7 +258,14 @@ def build_hijack(
         train_y=train_y,
         eval_x=eval_x,
         eval_y=eval_y,
-        metadata={"marker_columns": marker_columns},
+        metadata={
+            "marker_columns": marker_columns,
+            "construction_step": construction_step,
+            "marker_scale": real_scale,
+            "fresh_target_rows": int(target_rows),
+            "replay_target_rows": replay_target_rows,
+            "marker_only_on_fresh_target": True,
+        },
     )
 
 
@@ -291,6 +333,7 @@ def build_necessity(
     batch_size: int,
     rows_per_class: int | None = None,
     noise_scale: float = 0.02,
+    full_joint: bool = False,
 ) -> Benchmark:
     old_eval_x, old_eval_y = _cap_per_class(
         data.x_test, data.y_test, boundary.old_classes, rows_per_class, seed + 11
@@ -348,12 +391,26 @@ def build_necessity(
     target_y = np.full(len(target_test), boundary.target_class, dtype=np.int64)
     eval_x = np.concatenate([target_test, synthetic_test])
     eval_y = np.concatenate([target_y, synthetic_test_y])
+    if full_joint:
+        joint_old_x, joint_old_y = _cap_per_class(
+            data.x_train,
+            data.y_train,
+            boundary.old_classes,
+            rows_per_class,
+            seed + 218,
+        )
+        joint_old_x = add_noise_markers(joint_old_x, marker_columns, seed + 219)
+        train_x = np.concatenate([joint_old_x, synthetic_train])
+        train_y = np.concatenate([joint_old_y, synthetic_train_y])
+    else:
+        train_x = np.concatenate([synthetic_train, buffer_x])
+        train_y = np.concatenate([synthetic_train_y, buffer_y])
     return Benchmark(
         name="necessity",
         strength_name="k",
         strength=float(k),
-        train_x=np.concatenate([synthetic_train, buffer_x]),
-        train_y=np.concatenate([synthetic_train_y, buffer_y]),
+        train_x=train_x,
+        train_y=train_y,
         eval_x=eval_x,
         eval_y=eval_y,
         metadata={
@@ -364,6 +421,8 @@ def build_necessity(
             "f2_train_std": scale,
             "synthetic_train_rows": int(len(synthetic_train)),
             "target_replay_rows": int(np.sum(buffer_y == boundary.target_class)),
+            "full_joint": bool(full_joint),
+            "joint_target_rows": int(np.sum(train_y == boundary.target_class)),
             "source_f1_distribution": _distribution_summary(train_source[:, f1]),
             "source_f2_distribution": _distribution_summary(train_source[:, f2]),
             "shifted_f1_distribution": _distribution_summary(synthetic_train[:, f1]),
@@ -602,7 +661,7 @@ def _train(
             bx, by = bx.to(device), by.to(device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(bx)
-            loss = F.cross_entropy(logits, by)
+            loss = _class_balanced_cross_entropy(logits, by)
             if old_model is not None and method != "replay":
                 with torch.no_grad():
                     teacher = old_model(bx)
@@ -732,6 +791,21 @@ def _train(
             loss.backward()
             optimizer.step()
     return time.perf_counter() - started
+
+
+def _class_balanced_cross_entropy(
+    logits: torch.Tensor, labels: torch.Tensor
+) -> torch.Tensor:
+    """Cross entropy with inverse current-minibatch class frequencies.
+
+    Every class present in the minibatch contributes the same total weight.
+    This is the single CE entry point for the base checkpoint, Replay, all
+    distillation baselines, CRR, and the Section 14 Oracle.
+    """
+    classes, counts = torch.unique(labels, return_counts=True)
+    weights = logits.new_zeros(logits.shape[1])
+    weights[classes] = labels.numel() / (len(classes) * counts.to(logits.dtype))
+    return F.cross_entropy(logits, labels, weight=weights)
 
 
 def _nme_predictions(
@@ -865,7 +939,8 @@ def run_method(
         ),
         "recalls": {str(c): _recall(pred, benchmark.eval_y, c) for c in metric_labels},
         "regularization": float(regularization),
-        "implementation_revision": "section13",
+        "implementation_revision": "section14",
+        "class_balanced_ce": True,
         "rcl_features": int(rcl_features) if method.startswith("rcl_tab") else None,
         "rcl_temperature": (
             float(rcl_temperature) if method.startswith("rcl_tab") else None
@@ -892,7 +967,7 @@ def run_method(
         decorrelated = benchmark.eval_x.copy()
         decorrelated[:, -marker_columns:] = pure_noise_markers(
             len(decorrelated), marker_columns, seed + 718
-        )
+        ) * float(benchmark.metadata.get("marker_scale", 1.0))
         predict = _nme_predictions if method == "icarl" else None
         if predict is not None:
             changed_pred = predict(model, benchmark.train_x, benchmark.train_y, changed, seen, device, batch_size)
@@ -908,6 +983,14 @@ def run_method(
                 "marker_recall_drop": _recall(pred, benchmark.eval_y, target)
                 - _recall(changed_pred, benchmark.eval_y, target),
                 "target_recall_decorrelated": _recall(decorrelated_pred, benchmark.eval_y, target),
+                "marker_decorrelation_recall_drop": _recall(
+                    pred, benchmark.eval_y, target
+                )
+                - _recall(decorrelated_pred, benchmark.eval_y, target),
+                "hijack_construction_step": int(
+                    benchmark.metadata.get("construction_step", 0)
+                ),
+                "marker_scale": float(benchmark.metadata.get("marker_scale", 1.0)),
             }
         )
     else:
@@ -938,6 +1021,11 @@ def run_method(
             {
                 "c_recall": _recall(pred, benchmark.eval_y, c),
                 "d_recall": _recall(pred, benchmark.eval_y, d),
+                "cd_balanced_accuracy": 0.5
+                * (
+                    _recall(pred, benchmark.eval_y, c)
+                    + _recall(pred, benchmark.eval_y, d)
+                ),
                 "c_to_d": float(np.mean(pred[c_mask] == d)),
                 "d_to_c": float(np.mean(pred[d_mask] == c)),
                 "pair_confusion_rate": float(

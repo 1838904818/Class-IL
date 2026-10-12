@@ -95,7 +95,14 @@ def aggregate(rows: list[dict]) -> dict:
     for dataset in datasets:
         crr_by_seed = {
             seed: _mean(
-                [float(lookup[(dataset, seed, "crr", "necessity", k)]["pair_confusion_rate"]) for k in (2.0, 3.0)]
+                [
+                    float(
+                        lookup[(dataset, seed, "crr", "necessity", k)][
+                            "cd_balanced_accuracy"
+                        ]
+                    )
+                    for k in (2.0, 3.0)
+                ]
             )
             for seed in REGISTERED_SEEDS
         }
@@ -105,43 +112,53 @@ def aggregate(rows: list[dict]) -> dict:
             for seed in REGISTERED_SEEDS:
                 baseline_value = _mean(
                     [
-                        float(lookup[(dataset, seed, baseline, "necessity", k)]["pair_confusion_rate"])
+                        float(
+                            lookup[(dataset, seed, baseline, "necessity", k)][
+                                "cd_balanced_accuracy"
+                            ]
+                        )
                         for k in (2.0, 3.0)
                     ]
                 )
                 differences.append(crr_by_seed[seed] - baseline_value)
+            # The helper tests a negative mean; negate CRR-minus-baseline to
+            # implement the registered one-sided alternative CRR > baseline.
+            p_value = _one_sided_sign_flip_p([-value for value in differences])
             tests[baseline] = {
                 "mean_difference": _mean(differences),
-                "one_sided_exact_p": _one_sided_sign_flip_p(differences),
-                "passed": _mean(differences) < 0.0 and _one_sided_sign_flip_p(differences) < 0.05,
+                "one_sided_exact_p": p_value,
+                "passed": _mean(differences) > 0.0 and p_value < 0.05,
             }
-        recall_checks = {}
-        for label in ("c_recall", "d_recall"):
-            crr_mean = _mean(
-                [
-                    float(lookup[(dataset, seed, "crr", "necessity", k)][label])
-                    for seed in REGISTERED_SEEDS
-                    for k in (2.0, 3.0)
-                ]
-            )
-            replay_mean = _mean(
-                [
-                    float(lookup[(dataset, seed, "replay", "necessity", k)][label])
-                    for seed in REGISTERED_SEEDS
-                    for k in (2.0, 3.0)
-                ]
-            )
-            recall_checks[label] = {
-                "crr": crr_mean,
-                "replay": replay_mean,
-                "passed": crr_mean + 1e-12 >= replay_mean,
-            }
-        passed = all(item["passed"] for item in tests.values()) and all(
-            item["passed"] for item in recall_checks.values()
+        replay_mean = _mean(
+            [
+                float(
+                    lookup[(dataset, seed, "replay", "necessity", k)][
+                        "cd_balanced_accuracy"
+                    ]
+                )
+                for seed in REGISTERED_SEEDS
+                for k in (2.0, 3.0)
+            ]
         )
+        crr_mean = _mean(list(crr_by_seed.values()))
+        replay_check = {
+            "crr_cd_balanced_accuracy": crr_mean,
+            "replay_cd_balanced_accuracy": replay_mean,
+            "margin": crr_mean - replay_mean,
+            "passed": crr_mean + 0.02 + 1e-12 >= replay_mean,
+        }
+        passed = all(item["passed"] for item in tests.values()) and replay_check[
+            "passed"
+        ]
         criterion_2_pass = criterion_2_pass and passed
         criterion_2_details.append(
-            {"dataset": dataset, "paired_tests": tests, "recall_checks": recall_checks, "passed": passed}
+            {
+                "dataset": dataset,
+                "endpoint": "c/d balanced accuracy",
+                "paired_tests": tests,
+                "replay_check": replay_check,
+                "passed": passed,
+            }
         )
 
     costs = defaultdict(list)

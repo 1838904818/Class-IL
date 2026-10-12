@@ -145,6 +145,9 @@ def run(config: dict) -> dict:
                             marker_columns=marker_columns,
                             seed=seed * 100000 + rho_index * 1000 + dataset_index * 100,
                             rows_per_class=config.get("rows_per_class"),
+                            construction_step=int(
+                                config.get("hijack_construction_step", 3)
+                            ),
                         )
                 if "necessity" in benchmarks:
                     for k_index, k in enumerate(config["k_values"]):
@@ -259,14 +262,14 @@ def run(config: dict) -> dict:
             else None
         )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "git_commit": source_commit(REPO_ROOT),
         "effective_config": config,
         "methods": list(methods),
         "rows": rows,
         "benchmark_metadata": benchmark_metadata,
         "elapsed_seconds": time.perf_counter() - started,
-        "scope": "Section 12/13 ground-truth rows; not a novelty or publication verdict",
+        "scope": "Section 12-14 ground-truth rows; not a novelty or publication verdict",
     }
 
 
