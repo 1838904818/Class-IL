@@ -38,7 +38,7 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
         writer.writerows(scalar)
 
 
-def merge(paths: list[Path], mode: str, dataset: str, source_commit: str) -> dict:
+def merge(paths: list[Path], mode: str, dataset: str, source_commit: str, seeds: tuple = SEEDS) -> dict:
     rows: list[dict] = []
     pi_rows: list[dict] = []
     inputs: list[dict] = []
@@ -53,7 +53,7 @@ def merge(paths: list[Path], mode: str, dataset: str, source_commit: str) -> dic
     if mode == "necessity":
         expected = {
             (dataset, seed, method, k)
-            for seed in SEEDS
+            for seed in seeds
             for method in METHODS
             for k in (2.0, 3.0)
         }
@@ -63,7 +63,7 @@ def merge(paths: list[Path], mode: str, dataset: str, source_commit: str) -> dic
         }
     else:
         expected = {
-            (dataset, seed, method) for seed in SEEDS for method in METHODS
+            (dataset, seed, method) for seed in seeds for method in METHODS
         }
         observed = {
             (str(row["dataset"]), int(row["seed"]), str(row["method"]))
@@ -99,7 +99,7 @@ def merge(paths: list[Path], mode: str, dataset: str, source_commit: str) -> dic
         "dataset": dataset,
         "git_commit": source_commit,
         "methods": list(METHODS),
-        "seeds": list(SEEDS),
+        "seeds": list(seeds),
         "rows": sorted(
             rows,
             key=lambda row: (

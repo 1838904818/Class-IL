@@ -14,6 +14,11 @@
 set -euo pipefail
 umask 077
 
+# The same batch entry runs an end-to-end local GPU smoke before submission.
+if [ "${NCD_LOCAL_SMOKE:-0}" = 1 ]; then
+  exec "$NCD_PYTHON" -I ncd/run_crr_real_matrix.py --dataset "$NCD_DATASET_NAME" --lambda-file "$NCD_LAMBDA_FILE" --output-dir "$NCD_LOCAL_OUTPUT" --smoke
+fi
+
 : "${NCD_MODE:?NCD_MODE must be necessity or real}"
 : "${NCD_DATASET:?NCD_DATASET must be nsl or unsw}"
 : "${NCD_SOURCE_COMMIT:?NCD_SOURCE_COMMIT is required}"
@@ -164,34 +169,12 @@ else
   test -f "$lambda_file" && test ! -L "$lambda_file"
   "$python_bin" -I -c \
     'import json,sys; x=json.load(open(sys.argv[1],encoding="utf-8")); assert x["git_commit"]==sys.argv[2]; assert x["dataset"]==sys.argv[3]' \
-    "$lambda_file" "$NCD_SOURCE_COMMIT" "$dataset_name"
+    "$lambda_file" "${NCD_LAMBDA_SOURCE_COMMIT:-$NCD_SOURCE_COMMIT}" "$dataset_name"
   mkdir -p "ncd/results/crr/section15/$NCD_DATASET/real"
   cp "$lambda_file" "ncd/results/crr/section15/$NCD_DATASET/real/lambda_selections.json"
-  shards=()
-  for method in "${methods[@]}"; do
-    lambda=$(
-      "$python_bin" -I -c \
-        'import json,sys; print(json.load(open(sys.argv[1],encoding="utf-8"))["lambdas"][sys.argv[2]])' \
-        "$lambda_file" "$method"
-    )
-    for seed in "${seeds[@]}"; do
-      output="ncd/results/crr/section15/$NCD_DATASET/real/shards/${method}_seed${seed}"
-      log="ncd/logs/section15/${NCD_DATASET}_real_${method}_seed${seed}.log"
-      if [ -f "$output/COMPLETED.json" ]; then
-        "$python_bin" -I -c 'import json,sys; x=json.load(open(sys.argv[1])); assert x["git_commit"]==sys.argv[2]; assert len(x["rows"])==1' "$output/real_result.json" "$NCD_SOURCE_COMMIT"
-      else
-      srun --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" \
-        "$python_bin" -I ncd/run_crr_real_sequence.py \
-        --config ncd/configs/crr_section15.json --device cuda --dataset "$dataset_name" \
-        --method "$method" --seed "$seed" --regularization "$lambda" \
-        --output-dir "$output" --log-path "$log"
-      fi
-      shards+=("$output/real_result.json")
-    done
-  done
-  merged="ncd/results/crr/section15/$NCD_DATASET/real/real_result.json"
-  "$python_bin" -I ncd/merge_crr_section15.py "${shards[@]}" \
-    --mode real --dataset "$dataset_name" --source-commit "$NCD_SOURCE_COMMIT" --output "$merged"
+  srun --ntasks=1 --cpus-per-task="$SLURM_CPUS_PER_TASK" "$python_bin" -I ncd/run_crr_real_matrix.py \
+    --dataset "$dataset_name" --lambda-file "$lambda_file" \
+    --output-dir "ncd/results/crr/section15/$NCD_DATASET/real"
 fi
 
 mkdir -p "$protected/results" "$protected/logs" "$protected/configs"

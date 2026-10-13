@@ -16,6 +16,7 @@ import os
 import sys
 import time
 import traceback
+from dataclasses import replace
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -202,6 +203,12 @@ def run_cell(config: dict, dataset_name: str, method: str, seed: int, regulariza
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but unavailable")
     data = prepare_dataset(dataset_name, (REPO_ROOT / config["data_root"]).resolve())
+    if config.get("smoke_rows_per_class"):
+        limit = int(config["smoke_rows_per_class"])
+        for split in ("train", "test"):
+            labels = getattr(data, f"y_{split}")
+            indices = np.concatenate([np.flatnonzero(labels == c)[:limit] for c in np.unique(labels)])
+            data = replace(data, **{f"x_{split}": getattr(data, f"x_{split}")[indices], f"y_{split}": labels[indices]})
     seed_everything(seed)
     model = MLP(data.x_train.shape[1], int(config.get("hidden", 128)), len(data.class_order)).to(device)
     buffer_x: list[np.ndarray] = []
