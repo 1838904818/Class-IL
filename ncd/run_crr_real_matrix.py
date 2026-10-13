@@ -27,6 +27,7 @@ def main():
     assert selection['dataset'] == a.dataset
     assert set(selection['lambdas']) == set(METHODS)
     commit = source_commit(ROOT)
+    os.environ['NCD_SOURCE_COMMIT'] = commit
     seeds = (1,) if a.smoke else SEEDS
     if a.smoke:
         config.update(epochs_per_task=1, smoke_rows_per_class=64, buffer_per_class=16)

@@ -60,3 +60,27 @@ Old jobs 485229 and 485230 were cancelled after confirming their failed
 dependencies. New jobs have ten-minute monitors and a completion aggregation
 automation. Scoped logs and protected outputs use run directory
 `20261013-crr-section15-v2`. No new scientific results are available yet.
+
+## Section 16 execution correction
+
+The updated work order was pulled from `abe845d`. Jobs 485407/485408 were
+cancelled and replaced by independent real-sequence jobs 485498 (NSL-KDD) and
+485499 (UNSW-NB15), with no Slurm dependency. Both were immediately verified
+pending. HPC source is `5ddc84ba840b8f3004447652eb6a89850f4369f6`;
+lambda receipts retain source `bfde946a44ea7838f07399cf14c7570a40df7dca`.
+
+Before each submission the same batch entry was executed locally in
+`NCD_LOCAL_SMOKE=1` mode using the RTX 4060 Ti CUDA environment. Both datasets
+completed all eight methods, seed 1, one epoch, at most 64 training/test rows
+per class, and produced final `real_result.json`, CSV, PI-drift CSV and
+`COMPLETED.json`. These smoke outputs are integrity checks, not scientific
+comparison evidence. Smoke sampling exposed and fixed an immutable-data
+assignment error before submission.
+
+The shared matrix entry is `ncd/run_crr_real_matrix.py`. Formal local execution
+uses the full registered configuration, NSL-KDD first then UNSW-NB15, with
+source fixed at startup. The active local results are under
+`ncd/results/crr/section16/local_v2`. Earlier partial cells are preserved under
+`section16/local`. The first complete local or HPC dataset result will be used;
+the other execution is a replication record. Ten-minute recovery monitors
+now authorize prompt implementation repair with end-to-end smoke before retry.
