@@ -1,6 +1,6 @@
 # Exp H confirmation extension — Work Order 19
 
-Status on 2026-10-13: **S1 robustness complete; S4/S5 preparation in progress, confirmation pending.** This is the single combined Section 19 report and will be updated with the two new settings. Delivery targets are 2026-10-14 for S1 and 2026-10-16 for S4/S5 (Asia/Kuala_Lumpur). No S4/S5 model, including smoke training, was run before the design below was written.
+Status at 19:06 on 2026-10-13 (Asia/Kuala_Lumpur): **S1 robustness complete; global cleanup and end-to-end smoke complete; formal S4 running on local RTX 4060 Ti, followed by S5; confirmation pending.** This is the single combined Section 19 report and will be updated with the two new settings. Delivery targets are 2026-10-14 for S1 and 2026-10-16 for S4/S5. No S4/S5 model, including smoke training, was run before the design below was written.
 
 ## 1. Scope and chronology
 
@@ -81,13 +81,40 @@ Learners, frozen NSL-calibrated regularization, MLP training hyperparameters, PI
 
 ## 4. Confirmation rule — no current verdict
 
+### Completed preparation and execution check
+
+The two sources contain 35,834,204 raw rows (ToN 16,940,496; CSE 18,893,708). Preparation completed on 2026-10-13 in 361.52 seconds. It excluded 384 nonfinite/unrepresentable model-feature rows: ToN Benign 90 and MITM 41; CSE Benign 201 and DDoS-LOIC-UDP 52. No missing value was imputed from target data. The following accounting is over the remaining 35,833,820 rows:
+
+| Cleanup quantity | Groups | Member rows |
+|---|---:|---:|
+| Conflicting mapped labels | 2,906 | 3,114,315 |
+| Exact feature groups present in both sources | 3,655 | 5,953,429 |
+| Union removed (the above categories overlap) | 5,595 | **6,399,536** |
+| Additional within-source duplicate copies removed | — | **17,984,858** |
+| Unique vectors retained before excluding non-common families | 11,449,426 | 11,449,426 |
+| Non-common family vectors excluded after cleanup | 111,825 | 111,825 |
+| Shared-family unique vectors available for splitting | **11,337,601** | **11,337,601** |
+
+The union, duplicate copies and retained unique vectors sum exactly to the valid input count. Conflict and cross-source member rows must not be added separately. All eight saved arrays passed size/SHA-256 validation; raw input totals match both complete releases. Independent full-byte equality checks across the 2,600,150 saved rows found **zero within-view duplicate copies and zero overlap for all six pairs** of ToN/CSE train/holdout views. This is exact equality of the 39 canonical raw float32 features, not a claim about later standardization rounding. The full per-label and per-domain accounting is in `ncd/results/exp_h/section19/data_preparation.json` (SHA-256 `9157c7cb2cc4db2203245e8d7d3455f25d91964da332695c1d39e3cda1aa686e`), with the successful preparation log beside it.
+
+| Domain | Training after the prespecified cap | Natural holdout (uncapped) | WebAttack train / holdout |
+|---|---:|---:|---:|
+| ToN | 200,000 | 488,083 | 40,000 / 222,879 |
+| CSE | 132,021 | 1,780,046 | **217 / 49** |
+
+CSE has only 266 distinct retained WebAttack vectors. This severe rarity and source/target composition difference are limitations, not reasons to oversample, change mapping or replace the holdout. The source cap removes training observations only; it never duplicates rare examples. WebAttack is the final task and is not a primary old-class transition endpoint, although its addition can affect earlier classes and it remains in prediction/retention summaries.
+
+An initial preparation attempt stopped at a 256 MiB partition safety guard before model execution. Lossless per-chunk exact-key multiplicity compression fixed the high-frequency duplicate concentration without changing any cleanup rule; the original failure logs and source remain local. An independent expanded-versus-weighted check matched all removal counts and retained vectors in 205 cases. All 31 implementation tests passed. The same `run_exp_h_confirmation_local.ps1 -Smoke` entry then completed on the real prepared data: 16 cells, 96 transition rows, 80 retention rows and 48 checkpoints; exit 0 and empty stderr. Smoke uses at most 64 rows per class (only 49 CSE WebAttack holdout rows exist), one seed and one epoch; its analysis correctly remains **pending**, not scientific confirmation. Execution source: `562e65d0bb868e321bd2f97f571dfbe0e14e2b48`.
+
+### Registered rule
+
 **Harm confirmed** only if at least one of S4/S5 has primary partial Spearman ≥0.2 with its 95% CI excluding zero **and** S1 adjusted for method and class meets the same condition. Secondary PI and descriptive method correlations cannot replace a failed primary condition. If both S4 and S5 miss their condition, report **harm not confirmed**. A missing or unidentified required result remains pending, not a negative finding. If a new setting passes but S1 fails, the conjunction is not met and the discordance is reported explicitly; no threshold is changed. Causal harm or method effectiveness is not established by this rule.
 
 | Component | Status | Current result |
 |---|---|---|
 | S1 method/class adjustment | Complete | Pass; 0.285364 [0.241491, 0.349309] |
-| S4 ToN → CSE | Pending | No formal results |
-| S5 CSE → ToN | Pending | No formal results |
+| S4 ToN → CSE | Running | Formal execution started; no completed-setting estimate |
+| S5 CSE → ToN | Next in the same local process | No formal results |
 | Joint Section 19.3 decision | **Pending** | Cannot decide before new settings |
 
 ## 5. Reproducibility and limits
@@ -96,4 +123,6 @@ S1 input: `ncd/results/exp_h/section17/registered/exp_h_result.json`, SHA-256 `4
 
 Reproduce S1: `python ncd/analyze_exp_h_robustness.py --input-dir ncd/results/exp_h/section17/registered --output-dir <new-output-directory> --bootstrap 2000 --bootstrap-seed 1705`. Seven numerical/contract unit tests passed. The original Z-only result and CI reproduce the frozen Section 17 values. An independent full-dummy/pseudoinverse implementation also recomputed both point estimates, all 2,000 bootstrap draws and all descriptive subsets; maximum absolute discrepancy was 6.66×10⁻¹⁶.
 
-The downloaded official CSE archive has SHA-256 `ad6307995d08ff8825d0193d5a1cfa61cf3dc4c6f223962ba3762a7775b5dc24` (612,059,380 bytes). Detailed cleanup statistics and completed S4/S5 source/config/data hashes will replace pending entries here after preparation/execution, without changing the frozen design. S1 still inherits Section 18 limitations; this new cleanup does not retroactively clean historical results or discharge the separate UNSW/Malaya obligations.
+Formal S4/S5 started locally at 19:06 on 2026-10-13 using source `562e65d0bb868e321bd2f97f571dfbe0e14e2b48`: `python -I ncd/run_exp_h_confirmation.py --config ncd/configs/exp_h_section19.json --cleaned-data-root <prepared-cache-directory> --output-dir ncd/results/exp_h/section19/local_v1`. Log: `ncd/results/exp_h/section19/local_v1/run.log`; checkpoint/resume is enabled. The first S4 Replay seed-1 checkpoint was observed, with active GPU work and empty stderr. Partial checkpoints are not confirmation evidence. Source identity remains this execution commit despite later report-only commits. Ten-minute monitoring checks CPU/GPU activity and output/error state; PI has no per-feature log and log silence alone is not a failure. Failed implementation attempts retain their logs, and valid checkpoints are resumed rather than restarted.
+
+The downloaded official CSE archive has SHA-256 `ad6307995d08ff8825d0193d5a1cfa61cf3dc4c6f223962ba3762a7775b5dc24` (612,059,380 bytes). The pre-training report version is preserved in commit `562e65d0bb868e321bd2f97f571dfbe0e14e2b48` (report SHA-256 `8b057f79d141b25752129d654e45e9e8a29c7edb60e05f189e27f2a8327ce5a4`); preparation records that version, not later status edits. Preparation source SHA-256 is `7c4a9fd22d433aaa65e0209083ca589648a442d0bd51b3d399b3a6ae69ea4af2`. Completed S4/S5 estimates will replace pending entries without changing the frozen design. S1 still inherits Section 18 limitations; this new cleanup does not retroactively clean historical results or discharge the separate UNSW/Malaya obligations.
