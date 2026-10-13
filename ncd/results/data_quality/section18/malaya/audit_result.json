@@ -1,0 +1,1820 @@
+{
+  "dataset": "MalayaNetwork_GT",
+  "work_order": "Section 18",
+  "created_utc": "2026-10-13T07:49:28.565649+00:00",
+  "git_commit": "ce48bfc647503d62027755c24a3f22247af35641",
+  "audit_seconds": 1.5713385999988532,
+  "config": {
+    "data_root": "../kaggle_leon_release/datasets",
+    "cic_cache_root": "../ofra_formal_v3_cache_20260716",
+    "malaya_cache_root": "../ofra_formal_v3_cache_20260716/malaya-network-gt",
+    "lambda_file": "ncd/results/crr/section15/registered/nsl-real/lambda_selections.json",
+    "registered_nsl_dir": "ncd/results/crr/section15/registered/nsl-real",
+    "settings": [
+      "S3",
+      "S2",
+      "S1"
+    ],
+    "device": "cuda",
+    "hidden": 128,
+    "batch_size": 256,
+    "epochs_per_task": 8,
+    "learning_rate": 0.001,
+    "buffer_per_class": 200,
+    "temperature": 2.0,
+    "rcl_features": 8,
+    "rcl_temperature": 0.5,
+    "rcl_beta": 1.0,
+    "rcl_prediction_weight": 0.5,
+    "bootstrap_replicates": 2000,
+    "bootstrap_seed": 1705,
+    "floor_recall": 0.2,
+    "regularization_policy": "Frozen Section15 NSL calibration coefficients reused across all settings; no retuning CRR or other methods"
+  },
+  "audit_execution": {
+    "device": "cpu",
+    "numeric_thread_limit": 1,
+    "training_performed": false,
+    "note": "The saved Exp H config may name CUDA; this audit uses only CPU data preparation and exact array comparisons."
+  },
+  "command": "python -I ncd/audit_quality_malaya.py --config ncd/configs/exp_h_section17.json --output-dir ncd/results/data_quality/section18/malaya",
+  "log_path": "ncd/results/data_quality/section18/malaya/run.log",
+  "equality_definition": "Exact equality on all 77 little-endian float32 feature values, excluding labels and identifiers. Signed zero is canonicalized; NaN payloads are canonicalized, although all actual audited matrices are finite. No probabilistic row hashes determine equality.",
+  "duplicate_definition": "Per-class train excess is class N minus unique all-feature rows within that class, divided by class N. Overall train excess uses all classes together, so per-class excesses need not sum to the overall total. Affected rows separately count every member of repeated feature groups, regardless of label.",
+  "overlap_definition": "Numerator: every test row matching any training row on all 77 features regardless of label. Denominator: all rows of the named test view/class. Repeated matching test rows each count.",
+  "conflict_definition": "Feature groups containing >=2 distinct labels; affected rows include every member of those groups. Union conflict counts include train and the named test together; training-only conflict counts are also given.",
+  "decision_rule": "Test overlap >= 5% overall OR >= 20% in any class means 去重重跑; otherwise 保持. Applied separately to original and actual Exp H views; train duplication alone is not this rule's trigger.",
+  "decisions": {
+    "original_cache_train_test": "去重重跑",
+    "current_exp_h_fit_id_shift": "保持",
+    "scope": "Original-cache leakage does not imply leakage in Exp H's grouped ID and overlap-filtered shifted tests. No data or experiment was changed by this audit."
+  },
+  "views": {
+    "original_cache_raw_train_vs_test": {
+      "view": "original_cache_raw_train_vs_test",
+      "rows": [
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 0,
+          "class_name": "BitTorrent",
+          "train_rows": 21719,
+          "test_rows": 5537,
+          "train_duplicate_excess_rows": 9141,
+          "train_duplicate_excess_rate": 0.4208757309268383,
+          "train_duplicate_affected_rows_any_label": 9230,
+          "test_rows_matching_any_train": 2712,
+          "test_overlap_rate": 0.4897959183673469,
+          "train_label_conflict_affected_rows": 3891,
+          "train_label_conflict_groups": 36,
+          "union_label_conflict_train_rows": 3900,
+          "union_label_conflict_test_rows": 608,
+          "union_label_conflict_groups": 38
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 1,
+          "class_name": "ChromeRDP",
+          "train_rows": 900,
+          "test_rows": 381,
+          "train_duplicate_excess_rows": 143,
+          "train_duplicate_excess_rate": 0.15888888888888889,
+          "train_duplicate_affected_rows_any_label": 174,
+          "test_rows_matching_any_train": 108,
+          "test_overlap_rate": 0.28346456692913385,
+          "train_label_conflict_affected_rows": 150,
+          "train_label_conflict_groups": 29,
+          "union_label_conflict_train_rows": 151,
+          "union_label_conflict_test_rows": 108,
+          "union_label_conflict_groups": 31
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 2,
+          "class_name": "Discord",
+          "train_rows": 605,
+          "test_rows": 227,
+          "train_duplicate_excess_rows": 102,
+          "train_duplicate_excess_rate": 0.16859504132231404,
+          "train_duplicate_affected_rows_any_label": 122,
+          "test_rows_matching_any_train": 40,
+          "test_overlap_rate": 0.1762114537444934,
+          "train_label_conflict_affected_rows": 122,
+          "train_label_conflict_groups": 20,
+          "union_label_conflict_train_rows": 123,
+          "union_label_conflict_test_rows": 38,
+          "union_label_conflict_groups": 23
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 3,
+          "class_name": "EA Origin",
+          "train_rows": 3360,
+          "test_rows": 1200,
+          "train_duplicate_excess_rows": 192,
+          "train_duplicate_excess_rate": 0.05714285714285714,
+          "train_duplicate_affected_rows_any_label": 222,
+          "test_rows_matching_any_train": 193,
+          "test_overlap_rate": 0.16083333333333333,
+          "train_label_conflict_affected_rows": 216,
+          "train_label_conflict_groups": 27,
+          "union_label_conflict_train_rows": 219,
+          "union_label_conflict_test_rows": 193,
+          "union_label_conflict_groups": 32
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 4,
+          "class_name": "Microsoft Teams",
+          "train_rows": 531,
+          "test_rows": 445,
+          "train_duplicate_excess_rows": 60,
+          "train_duplicate_excess_rate": 0.11299435028248588,
+          "train_duplicate_affected_rows_any_label": 75,
+          "test_rows_matching_any_train": 123,
+          "test_overlap_rate": 0.27640449438202247,
+          "train_label_conflict_affected_rows": 75,
+          "train_label_conflict_groups": 15,
+          "union_label_conflict_train_rows": 75,
+          "union_label_conflict_test_rows": 123,
+          "union_label_conflict_groups": 25
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 5,
+          "class_name": "Slack",
+          "train_rows": 919,
+          "test_rows": 782,
+          "train_duplicate_excess_rows": 151,
+          "train_duplicate_excess_rate": 0.16430903155603918,
+          "train_duplicate_affected_rows_any_label": 183,
+          "test_rows_matching_any_train": 369,
+          "test_overlap_rate": 0.4718670076726343,
+          "train_label_conflict_affected_rows": 180,
+          "train_label_conflict_groups": 31,
+          "union_label_conflict_train_rows": 181,
+          "union_label_conflict_test_rows": 367,
+          "union_label_conflict_groups": 36
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 6,
+          "class_name": "Steam",
+          "train_rows": 4781,
+          "test_rows": 887,
+          "train_duplicate_excess_rows": 321,
+          "train_duplicate_excess_rate": 0.0671407655302238,
+          "train_duplicate_affected_rows_any_label": 356,
+          "test_rows_matching_any_train": 67,
+          "test_overlap_rate": 0.07553551296505073,
+          "train_label_conflict_affected_rows": 354,
+          "train_label_conflict_groups": 34,
+          "union_label_conflict_train_rows": 354,
+          "union_label_conflict_test_rows": 67,
+          "union_label_conflict_groups": 40
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 7,
+          "class_name": "TeamViewer",
+          "train_rows": 760,
+          "test_rows": 54,
+          "train_duplicate_excess_rows": 149,
+          "train_duplicate_excess_rate": 0.19605263157894737,
+          "train_duplicate_affected_rows_any_label": 179,
+          "test_rows_matching_any_train": 17,
+          "test_overlap_rate": 0.3148148148148148,
+          "train_label_conflict_affected_rows": 177,
+          "train_label_conflict_groups": 29,
+          "union_label_conflict_train_rows": 177,
+          "union_label_conflict_test_rows": 17,
+          "union_label_conflict_groups": 30
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 8,
+          "class_name": "Webex",
+          "train_rows": 1760,
+          "test_rows": 567,
+          "train_duplicate_excess_rows": 346,
+          "train_duplicate_excess_rate": 0.1965909090909091,
+          "train_duplicate_affected_rows_any_label": 394,
+          "test_rows_matching_any_train": 109,
+          "test_overlap_rate": 0.19223985890652556,
+          "train_label_conflict_affected_rows": 318,
+          "train_label_conflict_groups": 32,
+          "union_label_conflict_train_rows": 318,
+          "union_label_conflict_test_rows": 93,
+          "union_label_conflict_groups": 35
+        },
+        {
+          "view": "original_cache_raw_train_vs_test",
+          "class_id": 9,
+          "class_name": "Zoom",
+          "train_rows": 1037,
+          "test_rows": 290,
+          "train_duplicate_excess_rows": 163,
+          "train_duplicate_excess_rate": 0.15718418514946964,
+          "train_duplicate_affected_rows_any_label": 188,
+          "test_rows_matching_any_train": 42,
+          "test_overlap_rate": 0.14482758620689656,
+          "train_label_conflict_affected_rows": 177,
+          "train_label_conflict_groups": 21,
+          "union_label_conflict_train_rows": 177,
+          "union_label_conflict_test_rows": 42,
+          "union_label_conflict_groups": 24
+        }
+      ],
+      "total": {
+        "train_rows": 36372,
+        "test_rows": 10370,
+        "train_unique_feature_rows": 25377,
+        "train_duplicate_excess_rows": 10995,
+        "train_duplicate_excess_rate": 0.3022929726162983,
+        "train_duplicate_affected_rows_any_label": 11123,
+        "test_rows_matching_any_train": 3780,
+        "test_overlap_rate": 0.36451301832208294,
+        "train_label_conflict_groups": 47,
+        "train_label_conflict_affected_rows": 5660,
+        "union_label_conflict_groups": 55,
+        "union_label_conflict_affected_rows": 7331,
+        "union_label_conflict_train_rows": 5675,
+        "union_label_conflict_test_rows": 1656
+      },
+      "decision_18_2": "去重重跑",
+      "triggering_classes_ge_20_percent": [
+        "BitTorrent",
+        "ChromeRDP",
+        "Microsoft Teams",
+        "Slack",
+        "TeamViewer"
+      ],
+      "finite_train": true,
+      "finite_test": true,
+      "feature_count": 77
+    },
+    "exp_h_raw_fit_vs_id": {
+      "view": "exp_h_raw_fit_vs_id",
+      "rows": [
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 0,
+          "class_name": "BitTorrent",
+          "train_rows": 17375,
+          "test_rows": 4344,
+          "train_duplicate_excess_rows": 8857,
+          "train_duplicate_excess_rate": 0.5097553956834532,
+          "train_duplicate_affected_rows_any_label": 8926,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 3847,
+          "train_label_conflict_groups": 30,
+          "union_label_conflict_train_rows": 3847,
+          "union_label_conflict_test_rows": 44,
+          "union_label_conflict_groups": 36
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 1,
+          "class_name": "ChromeRDP",
+          "train_rows": 720,
+          "test_rows": 180,
+          "train_duplicate_excess_rows": 125,
+          "train_duplicate_excess_rate": 0.1736111111111111,
+          "train_duplicate_affected_rows_any_label": 151,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 131,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 131,
+          "union_label_conflict_test_rows": 19,
+          "union_label_conflict_groups": 29
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 2,
+          "class_name": "Discord",
+          "train_rows": 484,
+          "test_rows": 121,
+          "train_duplicate_excess_rows": 83,
+          "train_duplicate_excess_rate": 0.17148760330578514,
+          "train_duplicate_affected_rows_any_label": 100,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 100,
+          "train_label_conflict_groups": 17,
+          "union_label_conflict_train_rows": 100,
+          "union_label_conflict_test_rows": 22,
+          "union_label_conflict_groups": 20
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 3,
+          "class_name": "EA Origin",
+          "train_rows": 2688,
+          "test_rows": 672,
+          "train_duplicate_excess_rows": 168,
+          "train_duplicate_excess_rate": 0.0625,
+          "train_duplicate_affected_rows_any_label": 195,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 189,
+          "train_label_conflict_groups": 24,
+          "union_label_conflict_train_rows": 189,
+          "union_label_conflict_test_rows": 27,
+          "union_label_conflict_groups": 27
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 4,
+          "class_name": "Microsoft Teams",
+          "train_rows": 425,
+          "test_rows": 106,
+          "train_duplicate_excess_rows": 46,
+          "train_duplicate_excess_rate": 0.10823529411764705,
+          "train_duplicate_affected_rows_any_label": 59,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 59,
+          "train_label_conflict_groups": 13,
+          "union_label_conflict_train_rows": 59,
+          "union_label_conflict_test_rows": 16,
+          "union_label_conflict_groups": 15
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 5,
+          "class_name": "Slack",
+          "train_rows": 735,
+          "test_rows": 184,
+          "train_duplicate_excess_rows": 127,
+          "train_duplicate_excess_rate": 0.1727891156462585,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 152,
+          "train_label_conflict_groups": 27,
+          "union_label_conflict_train_rows": 152,
+          "union_label_conflict_test_rows": 28,
+          "union_label_conflict_groups": 31
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 6,
+          "class_name": "Steam",
+          "train_rows": 3825,
+          "test_rows": 956,
+          "train_duplicate_excess_rows": 300,
+          "train_duplicate_excess_rate": 0.0784313725490196,
+          "train_duplicate_affected_rows_any_label": 330,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 328,
+          "train_label_conflict_groups": 29,
+          "union_label_conflict_train_rows": 328,
+          "union_label_conflict_test_rows": 26,
+          "union_label_conflict_groups": 34
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 7,
+          "class_name": "TeamViewer",
+          "train_rows": 608,
+          "test_rows": 152,
+          "train_duplicate_excess_rows": 129,
+          "train_duplicate_excess_rate": 0.21217105263157895,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 153,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 153,
+          "union_label_conflict_test_rows": 24,
+          "union_label_conflict_groups": 29
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 8,
+          "class_name": "Webex",
+          "train_rows": 1408,
+          "test_rows": 352,
+          "train_duplicate_excess_rows": 304,
+          "train_duplicate_excess_rate": 0.2159090909090909,
+          "train_duplicate_affected_rows_any_label": 346,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 270,
+          "train_label_conflict_groups": 26,
+          "union_label_conflict_train_rows": 270,
+          "union_label_conflict_test_rows": 48,
+          "union_label_conflict_groups": 32
+        },
+        {
+          "view": "exp_h_raw_fit_vs_id",
+          "class_id": 9,
+          "class_name": "Zoom",
+          "train_rows": 830,
+          "test_rows": 207,
+          "train_duplicate_excess_rows": 123,
+          "train_duplicate_excess_rate": 0.14819277108433734,
+          "train_duplicate_affected_rows_any_label": 143,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 137,
+          "train_label_conflict_groups": 18,
+          "union_label_conflict_train_rows": 137,
+          "union_label_conflict_test_rows": 40,
+          "union_label_conflict_groups": 21
+        }
+      ],
+      "total": {
+        "train_rows": 29098,
+        "test_rows": 7274,
+        "train_unique_feature_rows": 18642,
+        "train_duplicate_excess_rows": 10456,
+        "train_duplicate_excess_rate": 0.35933741150594545,
+        "train_duplicate_affected_rows_any_label": 10560,
+        "test_rows_matching_any_train": 0,
+        "test_overlap_rate": 0.0,
+        "train_label_conflict_groups": 40,
+        "train_label_conflict_affected_rows": 5366,
+        "union_label_conflict_groups": 47,
+        "union_label_conflict_affected_rows": 5660,
+        "union_label_conflict_train_rows": 5366,
+        "union_label_conflict_test_rows": 294
+      },
+      "decision_18_2": "保持",
+      "triggering_classes_ge_20_percent": [],
+      "finite_train": true,
+      "finite_test": true,
+      "feature_count": 77
+    },
+    "exp_h_raw_fit_vs_shift": {
+      "view": "exp_h_raw_fit_vs_shift",
+      "rows": [
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 0,
+          "class_name": "BitTorrent",
+          "train_rows": 17375,
+          "test_rows": 2825,
+          "train_duplicate_excess_rows": 8857,
+          "train_duplicate_excess_rate": 0.5097553956834532,
+          "train_duplicate_affected_rows_any_label": 8926,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 3847,
+          "train_label_conflict_groups": 30,
+          "union_label_conflict_train_rows": 3847,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 30
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 1,
+          "class_name": "ChromeRDP",
+          "train_rows": 720,
+          "test_rows": 273,
+          "train_duplicate_excess_rows": 125,
+          "train_duplicate_excess_rate": 0.1736111111111111,
+          "train_duplicate_affected_rows_any_label": 151,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 131,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 131,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 25
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 2,
+          "class_name": "Discord",
+          "train_rows": 484,
+          "test_rows": 187,
+          "train_duplicate_excess_rows": 83,
+          "train_duplicate_excess_rate": 0.17148760330578514,
+          "train_duplicate_affected_rows_any_label": 100,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 100,
+          "train_label_conflict_groups": 17,
+          "union_label_conflict_train_rows": 100,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 17
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 3,
+          "class_name": "EA Origin",
+          "train_rows": 2688,
+          "test_rows": 1007,
+          "train_duplicate_excess_rows": 168,
+          "train_duplicate_excess_rate": 0.0625,
+          "train_duplicate_affected_rows_any_label": 195,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 189,
+          "train_label_conflict_groups": 24,
+          "union_label_conflict_train_rows": 189,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 24
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 4,
+          "class_name": "Microsoft Teams",
+          "train_rows": 425,
+          "test_rows": 322,
+          "train_duplicate_excess_rows": 46,
+          "train_duplicate_excess_rate": 0.10823529411764705,
+          "train_duplicate_affected_rows_any_label": 59,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 59,
+          "train_label_conflict_groups": 13,
+          "union_label_conflict_train_rows": 59,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 13
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 5,
+          "class_name": "Slack",
+          "train_rows": 735,
+          "test_rows": 413,
+          "train_duplicate_excess_rows": 127,
+          "train_duplicate_excess_rate": 0.1727891156462585,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 152,
+          "train_label_conflict_groups": 27,
+          "union_label_conflict_train_rows": 152,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 27
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 6,
+          "class_name": "Steam",
+          "train_rows": 3825,
+          "test_rows": 820,
+          "train_duplicate_excess_rows": 300,
+          "train_duplicate_excess_rate": 0.0784313725490196,
+          "train_duplicate_affected_rows_any_label": 330,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 328,
+          "train_label_conflict_groups": 29,
+          "union_label_conflict_train_rows": 328,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 29
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 7,
+          "class_name": "TeamViewer",
+          "train_rows": 608,
+          "test_rows": 37,
+          "train_duplicate_excess_rows": 129,
+          "train_duplicate_excess_rate": 0.21217105263157895,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 153,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 153,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 25
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 8,
+          "class_name": "Webex",
+          "train_rows": 1408,
+          "test_rows": 458,
+          "train_duplicate_excess_rows": 304,
+          "train_duplicate_excess_rate": 0.2159090909090909,
+          "train_duplicate_affected_rows_any_label": 346,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 270,
+          "train_label_conflict_groups": 26,
+          "union_label_conflict_train_rows": 270,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 26
+        },
+        {
+          "view": "exp_h_raw_fit_vs_shift",
+          "class_id": 9,
+          "class_name": "Zoom",
+          "train_rows": 830,
+          "test_rows": 248,
+          "train_duplicate_excess_rows": 123,
+          "train_duplicate_excess_rate": 0.14819277108433734,
+          "train_duplicate_affected_rows_any_label": 143,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 137,
+          "train_label_conflict_groups": 18,
+          "union_label_conflict_train_rows": 137,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 18
+        }
+      ],
+      "total": {
+        "train_rows": 29098,
+        "test_rows": 6590,
+        "train_unique_feature_rows": 18642,
+        "train_duplicate_excess_rows": 10456,
+        "train_duplicate_excess_rate": 0.35933741150594545,
+        "train_duplicate_affected_rows_any_label": 10560,
+        "test_rows_matching_any_train": 0,
+        "test_overlap_rate": 0.0,
+        "train_label_conflict_groups": 40,
+        "train_label_conflict_affected_rows": 5366,
+        "union_label_conflict_groups": 40,
+        "union_label_conflict_affected_rows": 5366,
+        "union_label_conflict_train_rows": 5366,
+        "union_label_conflict_test_rows": 0
+      },
+      "decision_18_2": "保持",
+      "triggering_classes_ge_20_percent": [],
+      "finite_train": true,
+      "finite_test": true,
+      "feature_count": 77
+    },
+    "exp_h_transformed_fit_vs_id": {
+      "view": "exp_h_transformed_fit_vs_id",
+      "rows": [
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 0,
+          "class_name": "BitTorrent",
+          "train_rows": 17375,
+          "test_rows": 4344,
+          "train_duplicate_excess_rows": 8857,
+          "train_duplicate_excess_rate": 0.5097553956834532,
+          "train_duplicate_affected_rows_any_label": 8926,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 3847,
+          "train_label_conflict_groups": 30,
+          "union_label_conflict_train_rows": 3847,
+          "union_label_conflict_test_rows": 44,
+          "union_label_conflict_groups": 36
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 1,
+          "class_name": "ChromeRDP",
+          "train_rows": 720,
+          "test_rows": 180,
+          "train_duplicate_excess_rows": 125,
+          "train_duplicate_excess_rate": 0.1736111111111111,
+          "train_duplicate_affected_rows_any_label": 151,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 131,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 131,
+          "union_label_conflict_test_rows": 19,
+          "union_label_conflict_groups": 29
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 2,
+          "class_name": "Discord",
+          "train_rows": 484,
+          "test_rows": 121,
+          "train_duplicate_excess_rows": 83,
+          "train_duplicate_excess_rate": 0.17148760330578514,
+          "train_duplicate_affected_rows_any_label": 100,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 100,
+          "train_label_conflict_groups": 17,
+          "union_label_conflict_train_rows": 100,
+          "union_label_conflict_test_rows": 22,
+          "union_label_conflict_groups": 20
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 3,
+          "class_name": "EA Origin",
+          "train_rows": 2688,
+          "test_rows": 672,
+          "train_duplicate_excess_rows": 168,
+          "train_duplicate_excess_rate": 0.0625,
+          "train_duplicate_affected_rows_any_label": 195,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 189,
+          "train_label_conflict_groups": 24,
+          "union_label_conflict_train_rows": 189,
+          "union_label_conflict_test_rows": 27,
+          "union_label_conflict_groups": 27
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 4,
+          "class_name": "Microsoft Teams",
+          "train_rows": 425,
+          "test_rows": 106,
+          "train_duplicate_excess_rows": 46,
+          "train_duplicate_excess_rate": 0.10823529411764705,
+          "train_duplicate_affected_rows_any_label": 59,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 59,
+          "train_label_conflict_groups": 13,
+          "union_label_conflict_train_rows": 59,
+          "union_label_conflict_test_rows": 16,
+          "union_label_conflict_groups": 15
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 5,
+          "class_name": "Slack",
+          "train_rows": 735,
+          "test_rows": 184,
+          "train_duplicate_excess_rows": 127,
+          "train_duplicate_excess_rate": 0.1727891156462585,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 152,
+          "train_label_conflict_groups": 27,
+          "union_label_conflict_train_rows": 152,
+          "union_label_conflict_test_rows": 28,
+          "union_label_conflict_groups": 31
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 6,
+          "class_name": "Steam",
+          "train_rows": 3825,
+          "test_rows": 956,
+          "train_duplicate_excess_rows": 300,
+          "train_duplicate_excess_rate": 0.0784313725490196,
+          "train_duplicate_affected_rows_any_label": 330,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 328,
+          "train_label_conflict_groups": 29,
+          "union_label_conflict_train_rows": 328,
+          "union_label_conflict_test_rows": 26,
+          "union_label_conflict_groups": 34
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 7,
+          "class_name": "TeamViewer",
+          "train_rows": 608,
+          "test_rows": 152,
+          "train_duplicate_excess_rows": 129,
+          "train_duplicate_excess_rate": 0.21217105263157895,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 153,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 153,
+          "union_label_conflict_test_rows": 24,
+          "union_label_conflict_groups": 29
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 8,
+          "class_name": "Webex",
+          "train_rows": 1408,
+          "test_rows": 352,
+          "train_duplicate_excess_rows": 304,
+          "train_duplicate_excess_rate": 0.2159090909090909,
+          "train_duplicate_affected_rows_any_label": 346,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 270,
+          "train_label_conflict_groups": 26,
+          "union_label_conflict_train_rows": 270,
+          "union_label_conflict_test_rows": 48,
+          "union_label_conflict_groups": 32
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_id",
+          "class_id": 9,
+          "class_name": "Zoom",
+          "train_rows": 830,
+          "test_rows": 207,
+          "train_duplicate_excess_rows": 123,
+          "train_duplicate_excess_rate": 0.14819277108433734,
+          "train_duplicate_affected_rows_any_label": 143,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 137,
+          "train_label_conflict_groups": 18,
+          "union_label_conflict_train_rows": 137,
+          "union_label_conflict_test_rows": 40,
+          "union_label_conflict_groups": 21
+        }
+      ],
+      "total": {
+        "train_rows": 29098,
+        "test_rows": 7274,
+        "train_unique_feature_rows": 18642,
+        "train_duplicate_excess_rows": 10456,
+        "train_duplicate_excess_rate": 0.35933741150594545,
+        "train_duplicate_affected_rows_any_label": 10560,
+        "test_rows_matching_any_train": 0,
+        "test_overlap_rate": 0.0,
+        "train_label_conflict_groups": 40,
+        "train_label_conflict_affected_rows": 5366,
+        "union_label_conflict_groups": 47,
+        "union_label_conflict_affected_rows": 5660,
+        "union_label_conflict_train_rows": 5366,
+        "union_label_conflict_test_rows": 294
+      },
+      "decision_18_2": "保持",
+      "triggering_classes_ge_20_percent": [],
+      "finite_train": true,
+      "finite_test": true,
+      "feature_count": 77
+    },
+    "exp_h_transformed_fit_vs_shift": {
+      "view": "exp_h_transformed_fit_vs_shift",
+      "rows": [
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 0,
+          "class_name": "BitTorrent",
+          "train_rows": 17375,
+          "test_rows": 2825,
+          "train_duplicate_excess_rows": 8857,
+          "train_duplicate_excess_rate": 0.5097553956834532,
+          "train_duplicate_affected_rows_any_label": 8926,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 3847,
+          "train_label_conflict_groups": 30,
+          "union_label_conflict_train_rows": 3847,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 30
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 1,
+          "class_name": "ChromeRDP",
+          "train_rows": 720,
+          "test_rows": 273,
+          "train_duplicate_excess_rows": 125,
+          "train_duplicate_excess_rate": 0.1736111111111111,
+          "train_duplicate_affected_rows_any_label": 151,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 131,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 131,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 25
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 2,
+          "class_name": "Discord",
+          "train_rows": 484,
+          "test_rows": 187,
+          "train_duplicate_excess_rows": 83,
+          "train_duplicate_excess_rate": 0.17148760330578514,
+          "train_duplicate_affected_rows_any_label": 100,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 100,
+          "train_label_conflict_groups": 17,
+          "union_label_conflict_train_rows": 100,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 17
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 3,
+          "class_name": "EA Origin",
+          "train_rows": 2688,
+          "test_rows": 1007,
+          "train_duplicate_excess_rows": 168,
+          "train_duplicate_excess_rate": 0.0625,
+          "train_duplicate_affected_rows_any_label": 195,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 189,
+          "train_label_conflict_groups": 24,
+          "union_label_conflict_train_rows": 189,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 24
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 4,
+          "class_name": "Microsoft Teams",
+          "train_rows": 425,
+          "test_rows": 322,
+          "train_duplicate_excess_rows": 46,
+          "train_duplicate_excess_rate": 0.10823529411764705,
+          "train_duplicate_affected_rows_any_label": 59,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 59,
+          "train_label_conflict_groups": 13,
+          "union_label_conflict_train_rows": 59,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 13
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 5,
+          "class_name": "Slack",
+          "train_rows": 735,
+          "test_rows": 413,
+          "train_duplicate_excess_rows": 127,
+          "train_duplicate_excess_rate": 0.1727891156462585,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 152,
+          "train_label_conflict_groups": 27,
+          "union_label_conflict_train_rows": 152,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 27
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 6,
+          "class_name": "Steam",
+          "train_rows": 3825,
+          "test_rows": 820,
+          "train_duplicate_excess_rows": 300,
+          "train_duplicate_excess_rate": 0.0784313725490196,
+          "train_duplicate_affected_rows_any_label": 330,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 328,
+          "train_label_conflict_groups": 29,
+          "union_label_conflict_train_rows": 328,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 29
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 7,
+          "class_name": "TeamViewer",
+          "train_rows": 608,
+          "test_rows": 37,
+          "train_duplicate_excess_rows": 129,
+          "train_duplicate_excess_rate": 0.21217105263157895,
+          "train_duplicate_affected_rows_any_label": 155,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 153,
+          "train_label_conflict_groups": 25,
+          "union_label_conflict_train_rows": 153,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 25
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 8,
+          "class_name": "Webex",
+          "train_rows": 1408,
+          "test_rows": 458,
+          "train_duplicate_excess_rows": 304,
+          "train_duplicate_excess_rate": 0.2159090909090909,
+          "train_duplicate_affected_rows_any_label": 346,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 270,
+          "train_label_conflict_groups": 26,
+          "union_label_conflict_train_rows": 270,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 26
+        },
+        {
+          "view": "exp_h_transformed_fit_vs_shift",
+          "class_id": 9,
+          "class_name": "Zoom",
+          "train_rows": 830,
+          "test_rows": 248,
+          "train_duplicate_excess_rows": 123,
+          "train_duplicate_excess_rate": 0.14819277108433734,
+          "train_duplicate_affected_rows_any_label": 143,
+          "test_rows_matching_any_train": 0,
+          "test_overlap_rate": 0.0,
+          "train_label_conflict_affected_rows": 137,
+          "train_label_conflict_groups": 18,
+          "union_label_conflict_train_rows": 137,
+          "union_label_conflict_test_rows": 0,
+          "union_label_conflict_groups": 18
+        }
+      ],
+      "total": {
+        "train_rows": 29098,
+        "test_rows": 6590,
+        "train_unique_feature_rows": 18642,
+        "train_duplicate_excess_rows": 10456,
+        "train_duplicate_excess_rate": 0.35933741150594545,
+        "train_duplicate_affected_rows_any_label": 10560,
+        "test_rows_matching_any_train": 0,
+        "test_overlap_rate": 0.0,
+        "train_label_conflict_groups": 40,
+        "train_label_conflict_affected_rows": 5366,
+        "union_label_conflict_groups": 40,
+        "union_label_conflict_affected_rows": 5366,
+        "union_label_conflict_train_rows": 5366,
+        "union_label_conflict_test_rows": 0
+      },
+      "decision_18_2": "保持",
+      "triggering_classes_ge_20_percent": [],
+      "finite_train": true,
+      "finite_test": true,
+      "feature_count": 77
+    }
+  },
+  "class_counts_and_handling": [
+    {
+      "class_id": 0,
+      "class_name": "BitTorrent",
+      "task_index": 0,
+      "raw_original_total_rows": 27256,
+      "raw_original_train_rows": 21719,
+      "raw_original_test_rows": 5537,
+      "valid_cache_train_rows": 21719,
+      "valid_cache_test_rows": 5537,
+      "train_before_cap": 17375,
+      "train_after_cap": 17375,
+      "id_before_cap": 4344,
+      "id_after_cap": 4344,
+      "shift_before_overlap_exclusion": 5537,
+      "shift_overlap_excluded_rows": 2712,
+      "shift_after_overlap_exclusion": 2825,
+      "shift_before_cap": 2825,
+      "shift_after_cap": 2825,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Bittorent/Bittorent_4G_Nightime1.csv",
+        "Bittorent/Bittorent_5G_Daytime1.csv",
+        "Bittorent/Bittorent_5G_Nightime1.csv",
+        "Bittorent/Bittorent_HomeBroadband_Nightime1.csv"
+      ],
+      "shift_captures": [
+        "Bittorent/Bittorent_PublicWifi_Nightime1.csv"
+      ]
+    },
+    {
+      "class_id": 1,
+      "class_name": "ChromeRDP",
+      "task_index": 0,
+      "raw_original_total_rows": 1281,
+      "raw_original_train_rows": 900,
+      "raw_original_test_rows": 381,
+      "valid_cache_train_rows": 900,
+      "valid_cache_test_rows": 381,
+      "train_before_cap": 720,
+      "train_after_cap": 720,
+      "id_before_cap": 180,
+      "id_after_cap": 180,
+      "shift_before_overlap_exclusion": 381,
+      "shift_overlap_excluded_rows": 108,
+      "shift_after_overlap_exclusion": 273,
+      "shift_before_cap": 273,
+      "shift_after_cap": 273,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "ChromeRDP/ChromeRDP_5G_Daytime1.csv",
+        "ChromeRDP/ChromeRDP_PublicWifi_Nightime1.csv"
+      ],
+      "shift_captures": [
+        "ChromeRDP/ChromeRDP_Campus_Daytime1.csv"
+      ]
+    },
+    {
+      "class_id": 2,
+      "class_name": "Discord",
+      "task_index": 1,
+      "raw_original_total_rows": 832,
+      "raw_original_train_rows": 605,
+      "raw_original_test_rows": 227,
+      "valid_cache_train_rows": 605,
+      "valid_cache_test_rows": 227,
+      "train_before_cap": 484,
+      "train_after_cap": 484,
+      "id_before_cap": 121,
+      "id_after_cap": 121,
+      "shift_before_overlap_exclusion": 227,
+      "shift_overlap_excluded_rows": 40,
+      "shift_after_overlap_exclusion": 187,
+      "shift_before_cap": 187,
+      "shift_after_cap": 187,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Discord/Discord_5G_Daytime1.csv",
+        "Discord/Discord_Campus_Daytime1.csv"
+      ],
+      "shift_captures": [
+        "Discord/Discord_PublicWifi_Nightime1.csv"
+      ]
+    },
+    {
+      "class_id": 3,
+      "class_name": "EA Origin",
+      "task_index": 1,
+      "raw_original_total_rows": 4560,
+      "raw_original_train_rows": 3360,
+      "raw_original_test_rows": 1200,
+      "valid_cache_train_rows": 3360,
+      "valid_cache_test_rows": 1200,
+      "train_before_cap": 2688,
+      "train_after_cap": 2688,
+      "id_before_cap": 672,
+      "id_after_cap": 672,
+      "shift_before_overlap_exclusion": 1200,
+      "shift_overlap_excluded_rows": 193,
+      "shift_after_overlap_exclusion": 1007,
+      "shift_before_cap": 1007,
+      "shift_after_cap": 1007,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "EA Origin/EAOrigin_5G_Daytime1.csv",
+        "EA Origin/EAOrigin_5G_Daytime2.csv",
+        "EA Origin/EAOrigin_HomeBroadband_Nighttime1.csv"
+      ],
+      "shift_captures": [
+        "EA Origin/EAOrigin_Campus_Daytime1.csv"
+      ]
+    },
+    {
+      "class_id": 4,
+      "class_name": "Microsoft Teams",
+      "task_index": 2,
+      "raw_original_total_rows": 976,
+      "raw_original_train_rows": 531,
+      "raw_original_test_rows": 445,
+      "valid_cache_train_rows": 531,
+      "valid_cache_test_rows": 445,
+      "train_before_cap": 425,
+      "train_after_cap": 425,
+      "id_before_cap": 106,
+      "id_after_cap": 106,
+      "shift_before_overlap_exclusion": 445,
+      "shift_overlap_excluded_rows": 123,
+      "shift_after_overlap_exclusion": 322,
+      "shift_before_cap": 322,
+      "shift_after_cap": 322,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Microsoft Teams/MicrosoftTeams_Campus_Daytime1.csv"
+      ],
+      "shift_captures": [
+        "Microsoft Teams/MicrosoftTeams_5G_Daytime1.csv"
+      ]
+    },
+    {
+      "class_id": 5,
+      "class_name": "Slack",
+      "task_index": 2,
+      "raw_original_total_rows": 1701,
+      "raw_original_train_rows": 919,
+      "raw_original_test_rows": 782,
+      "valid_cache_train_rows": 919,
+      "valid_cache_test_rows": 782,
+      "train_before_cap": 735,
+      "train_after_cap": 735,
+      "id_before_cap": 184,
+      "id_after_cap": 184,
+      "shift_before_overlap_exclusion": 782,
+      "shift_overlap_excluded_rows": 369,
+      "shift_after_overlap_exclusion": 413,
+      "shift_before_cap": 413,
+      "shift_after_cap": 413,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Slack/Slack_5G_Daytime1.csv"
+      ],
+      "shift_captures": [
+        "Slack/Slack_Campus_Daytime1.csv"
+      ]
+    },
+    {
+      "class_id": 6,
+      "class_name": "Steam",
+      "task_index": 3,
+      "raw_original_total_rows": 5668,
+      "raw_original_train_rows": 4781,
+      "raw_original_test_rows": 887,
+      "valid_cache_train_rows": 4781,
+      "valid_cache_test_rows": 887,
+      "train_before_cap": 3825,
+      "train_after_cap": 3825,
+      "id_before_cap": 956,
+      "id_after_cap": 956,
+      "shift_before_overlap_exclusion": 887,
+      "shift_overlap_excluded_rows": 67,
+      "shift_after_overlap_exclusion": 820,
+      "shift_before_cap": 820,
+      "shift_after_cap": 820,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Steam/Steam_Campus_Daytime1.csv",
+        "Steam/Steam_HomeBroadband_Nightime1.csv",
+        "Steam/Steam_PublicWiFi_Nightime1.csv"
+      ],
+      "shift_captures": [
+        "Steam/Steam_5G_Daytime1.csv"
+      ]
+    },
+    {
+      "class_id": 7,
+      "class_name": "TeamViewer",
+      "task_index": 3,
+      "raw_original_total_rows": 814,
+      "raw_original_train_rows": 760,
+      "raw_original_test_rows": 54,
+      "valid_cache_train_rows": 760,
+      "valid_cache_test_rows": 54,
+      "train_before_cap": 608,
+      "train_after_cap": 608,
+      "id_before_cap": 152,
+      "id_after_cap": 152,
+      "shift_before_overlap_exclusion": 54,
+      "shift_overlap_excluded_rows": 17,
+      "shift_after_overlap_exclusion": 37,
+      "shift_before_cap": 37,
+      "shift_after_cap": 37,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [
+        "original_test",
+        "exp_h_shift"
+      ],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Teamviewer/Teamviewer_5G_Daytime1.csv"
+      ],
+      "shift_captures": [
+        "Teamviewer/Teamviewer_HomeBroadband_Daytime1.csv"
+      ]
+    },
+    {
+      "class_id": 8,
+      "class_name": "Webex",
+      "task_index": 4,
+      "raw_original_total_rows": 2327,
+      "raw_original_train_rows": 1760,
+      "raw_original_test_rows": 567,
+      "valid_cache_train_rows": 1760,
+      "valid_cache_test_rows": 567,
+      "train_before_cap": 1408,
+      "train_after_cap": 1408,
+      "id_before_cap": 352,
+      "id_after_cap": 352,
+      "shift_before_overlap_exclusion": 567,
+      "shift_overlap_excluded_rows": 109,
+      "shift_after_overlap_exclusion": 458,
+      "shift_before_cap": 458,
+      "shift_after_cap": 458,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Webex/Webex_5G_Daytime1.csv",
+        "Webex/Webex_Campus_Daytime1.csv"
+      ],
+      "shift_captures": [
+        "Webex/Webex_HomeBroadband_Daytime1.csv"
+      ]
+    },
+    {
+      "class_id": 9,
+      "class_name": "Zoom",
+      "task_index": 4,
+      "raw_original_total_rows": 1327,
+      "raw_original_train_rows": 1037,
+      "raw_original_test_rows": 290,
+      "valid_cache_train_rows": 1037,
+      "valid_cache_test_rows": 290,
+      "train_before_cap": 830,
+      "train_after_cap": 830,
+      "id_before_cap": 207,
+      "id_after_cap": 207,
+      "shift_before_overlap_exclusion": 290,
+      "shift_overlap_excluded_rows": 42,
+      "shift_after_overlap_exclusion": 248,
+      "shift_before_cap": 248,
+      "shift_after_cap": 248,
+      "class_total_lt_100": false,
+      "small_partitions_lt_100": [],
+      "handling": "Retained under its original application label; no merge, class deletion, oversampling or synthetic samples. All caps are absent for Malaya.",
+      "train_captures": [
+        "Zoom/Zoom_5G_Daytime1.csv",
+        "Zoom/Zoom_HomeBroadband_Nightime1.csv"
+      ],
+      "shift_captures": [
+        "Zoom/Zoom_Campus_Daytime1.csv"
+      ]
+    }
+  ],
+  "tasks": [
+    [
+      "BitTorrent",
+      "ChromeRDP"
+    ],
+    [
+      "Discord",
+      "EA Origin"
+    ],
+    [
+      "Microsoft Teams",
+      "Slack"
+    ],
+    [
+      "Steam",
+      "TeamViewer"
+    ],
+    [
+      "Webex",
+      "Zoom"
+    ]
+  ],
+  "caps": {
+    "applied": false,
+    "reason": "Malaya cache uncapped; prepare_malaya has no train, ID or shift row cap. The NCD Normal 160k/40k and other 40k/10k settings are not applied to this loader."
+  },
+  "original_capture_split": {
+    "capture_disjoint": true,
+    "guarantee": "Every valid row from one capture stays in exactly one frozen partition; no capture crosses train and test.",
+    "resplit": false,
+    "row_level_resplit": false,
+    "source_contract_relative": "source_capture_split.json",
+    "source_contract_sha256": "a3b626ea5dfdd08ea33016a742d2dab19d354ef649773674855fb40fbaa3dee8",
+    "source_revision": "384a59278f98490ee6e93aae017e748078d29b6a",
+    "strategy": "frozen_capture_manifest",
+    "test_capture_count": 10,
+    "test_captures": [
+      "Bittorent/Bittorent_PublicWifi_Nightime1.csv",
+      "ChromeRDP/ChromeRDP_Campus_Daytime1.csv",
+      "Discord/Discord_PublicWifi_Nightime1.csv",
+      "EA Origin/EAOrigin_Campus_Daytime1.csv",
+      "Microsoft Teams/MicrosoftTeams_5G_Daytime1.csv",
+      "Slack/Slack_Campus_Daytime1.csv",
+      "Steam/Steam_5G_Daytime1.csv",
+      "Teamviewer/Teamviewer_HomeBroadband_Daytime1.csv",
+      "Webex/Webex_HomeBroadband_Daytime1.csv",
+      "Zoom/Zoom_Campus_Daytime1.csv"
+    ],
+    "train_capture_count": 21
+  },
+  "exp_h_grouped_id_split": {
+    "algorithm": "seeded whole-feature-group greedy fill toward per-class row targets, no target overshoot",
+    "seed": 42,
+    "target_id_fraction": 0.2,
+    "actual_id_fraction": 0.19998900252941823,
+    "groups": 25377,
+    "per_class_target_id_rows": [
+      4344,
+      180,
+      121,
+      672,
+      106,
+      184,
+      956,
+      152,
+      352,
+      207
+    ],
+    "per_class_actual_id_rows": [
+      4344,
+      180,
+      121,
+      672,
+      106,
+      184,
+      956,
+      152,
+      352,
+      207
+    ],
+    "group_key": "all 77 raw little-endian float32 feature bytes, signed zeros canonicalized",
+    "fit_id_exact_feature_overlap": 0
+  },
+  "exp_h_shift_exclusion": {
+    "against": "All original training captures (fit plus grouped ID)",
+    "before": 10370,
+    "excluded": 3780,
+    "after": 6590
+  },
+  "problem_scope": "Application classification, not NIDS attack classes. None of the ten original application classes has fewer than 100 total source rows; small evaluation partitions are explicitly listed.",
+  "source_files": [
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/manifest.json",
+      "sha256": "aaeddc7b73dd77b22a196524e34425cf8605b2dccab1bee195e81097d27e0191"
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/feature_schema.json",
+      "sha256": "c99d5b7ee704d3bcacfd9f166615356f3154f4341ccfbafb16e86cca53729a12"
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/source_capture_split.json",
+      "sha256": "a3b626ea5dfdd08ea33016a742d2dab19d354ef649773674855fb40fbaa3dee8"
+    }
+  ],
+  "raw_csv_sources_verified": [
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Bittorent/Bittorent_4G_Nightime1.csv",
+      "sha256": "1c7c1921e78ab31f2f909f5bcd74737be2d8177e453ab8ad7d8dc4b76c7b2922",
+      "rows": 4602,
+      "class_name": "BitTorrent",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Bittorent/Bittorent_5G_Daytime1.csv",
+      "sha256": "dff7debe6ba279fab6b2b1861be7cabc7a9e5c18c41faf8f52adaf7de1f5daf1",
+      "rows": 4173,
+      "class_name": "BitTorrent",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Bittorent/Bittorent_5G_Nightime1.csv",
+      "sha256": "8196a5336322f595d0b67999c13eb89113415457065bd31ded6c485f2f9a132f",
+      "rows": 6504,
+      "class_name": "BitTorrent",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Bittorent/Bittorent_HomeBroadband_Nightime1.csv",
+      "sha256": "adead7a97850b82d17084c934980f447181ea26c2187ee8767e2155b214ba7ae",
+      "rows": 6440,
+      "class_name": "BitTorrent",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Bittorent/Bittorent_PublicWifi_Nightime1.csv",
+      "sha256": "eb9de3e2b5072ac75b655dbbf170918996c275e860988f4d8d782cd8995836bc",
+      "rows": 5537,
+      "class_name": "BitTorrent",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/ChromeRDP/ChromeRDP_5G_Daytime1.csv",
+      "sha256": "0f33e1787e7343b8315e39f07471ba8db9c3c3b0ec001eb88151d177545b2be4",
+      "rows": 483,
+      "class_name": "ChromeRDP",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/ChromeRDP/ChromeRDP_Campus_Daytime1.csv",
+      "sha256": "e7c34c77d2788fd07c08830e68b5dc0d93e0dd10b8887bee6410d83bb8542c96",
+      "rows": 381,
+      "class_name": "ChromeRDP",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/ChromeRDP/ChromeRDP_PublicWifi_Nightime1.csv",
+      "sha256": "b3f7d202dd04abb36efacb8267e79169bdad14570cf9f047122c5696b94b703c",
+      "rows": 417,
+      "class_name": "ChromeRDP",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Discord/Discord_5G_Daytime1.csv",
+      "sha256": "1efadce69967d396d2ebc6e16636ebbb293fd8edc14bd6f37f9552d277d28468",
+      "rows": 310,
+      "class_name": "Discord",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Discord/Discord_Campus_Daytime1.csv",
+      "sha256": "7364b149d4025c27e7a211f6895d2bdbbc8ef65c4cfaf4659c48642ed819fbdd",
+      "rows": 295,
+      "class_name": "Discord",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Discord/Discord_PublicWifi_Nightime1.csv",
+      "sha256": "2851acf0151f68666f4e29594863bd3802a4a2de9ccc87a0108bccb9d3ce6f75",
+      "rows": 227,
+      "class_name": "Discord",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/EA Origin/EAOrigin_5G_Daytime1.csv",
+      "sha256": "b46fd3bea200115c0a74c7b17f7594aa7a68d48b76ca219b9d376682fa8d6adb",
+      "rows": 391,
+      "class_name": "EA Origin",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/EA Origin/EAOrigin_5G_Daytime2.csv",
+      "sha256": "28578277b524dc0c21b157598d290ae10cc5e07632d7c6139c62771911221ebe",
+      "rows": 2508,
+      "class_name": "EA Origin",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/EA Origin/EAOrigin_Campus_Daytime1.csv",
+      "sha256": "99a36f3ea25bfa55e978fedb14a8e9b3cbb0f794690084c548ad7e5d53dcc4c7",
+      "rows": 1200,
+      "class_name": "EA Origin",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/EA Origin/EAOrigin_HomeBroadband_Nighttime1.csv",
+      "sha256": "66f5dac07ceb4066d525dd8d40d13d559bfcc0e180dc3ebe7cf71f62fbac2420",
+      "rows": 461,
+      "class_name": "EA Origin",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Microsoft Teams/MicrosoftTeams_5G_Daytime1.csv",
+      "sha256": "f53d29b4480ef1fcbba463354bdb28d704862804a4134d2b5b781af329eee776",
+      "rows": 445,
+      "class_name": "Microsoft Teams",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Microsoft Teams/MicrosoftTeams_Campus_Daytime1.csv",
+      "sha256": "423e65f034053bdc241f0329919dbd99ec648e20d72f71cf17a428dd1839fc8b",
+      "rows": 531,
+      "class_name": "Microsoft Teams",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Slack/Slack_5G_Daytime1.csv",
+      "sha256": "bb3e46cceb45e557ea246682648ef47fdecb1fb0d7b7e356797687e290f956f4",
+      "rows": 919,
+      "class_name": "Slack",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Slack/Slack_Campus_Daytime1.csv",
+      "sha256": "db03b5f3dba41a2cde3f724171784f8750b5f61e69245b59890a11b069bb4be0",
+      "rows": 782,
+      "class_name": "Slack",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Steam/Steam_5G_Daytime1.csv",
+      "sha256": "c368f7691b55972949488594c0497255b9d3999e7b67ee85c74aa801075bf228",
+      "rows": 887,
+      "class_name": "Steam",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Steam/Steam_Campus_Daytime1.csv",
+      "sha256": "a5c79243813c84933ec335c07d78724e45e6a778ac9048bd3f02e633a0d34ad8",
+      "rows": 1873,
+      "class_name": "Steam",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Steam/Steam_HomeBroadband_Nightime1.csv",
+      "sha256": "475397be64c00e70dc171cc60f583915fbecbe687a94f6e77eda68b375620842",
+      "rows": 2130,
+      "class_name": "Steam",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Steam/Steam_PublicWiFi_Nightime1.csv",
+      "sha256": "147b4918e3f05c8c1edcbd9874d4b4c5602adc377b58b2b4dfe11b3f5dace6f9",
+      "rows": 778,
+      "class_name": "Steam",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Teamviewer/Teamviewer_5G_Daytime1.csv",
+      "sha256": "bb63cff3c88f0470e5a4ea82920e9f9b34b882de0cc358a4c5ba3be6bdbd38b5",
+      "rows": 760,
+      "class_name": "TeamViewer",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Teamviewer/Teamviewer_HomeBroadband_Daytime1.csv",
+      "sha256": "8317414632e8cf8ea1baaa8f52d3b546922f7ba2da8d94c074ecbbab2b134b44",
+      "rows": 54,
+      "class_name": "TeamViewer",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Webex/Webex_5G_Daytime1.csv",
+      "sha256": "3422eafecbf91797c8f2c643851b8b1f149cbcbce60adf2aed0c9f2b27b228e4",
+      "rows": 1093,
+      "class_name": "Webex",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Webex/Webex_Campus_Daytime1.csv",
+      "sha256": "ce02e4406278ad968b07ca18ffc944abf5afe451b95e097a996e11346f84b392",
+      "rows": 667,
+      "class_name": "Webex",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Webex/Webex_HomeBroadband_Daytime1.csv",
+      "sha256": "3e8ea74304dc209066cddbbd308028ebf70c36a35a0ae5405265530f79777ace",
+      "rows": 567,
+      "class_name": "Webex",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Zoom/Zoom_5G_Daytime1.csv",
+      "sha256": "cb544a211a1dc28652545cd5f2338a84f6ca61f9b0c02cf6808c52b051a476cd",
+      "rows": 610,
+      "class_name": "Zoom",
+      "frozen_split": "train"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Zoom/Zoom_Campus_Daytime1.csv",
+      "sha256": "b1045561892e3c4a803c6f76bbdb8838ef17dcc6572cfd7327f4cd0a5f31518b",
+      "rows": 290,
+      "class_name": "Zoom",
+      "frozen_split": "test"
+    },
+    {
+      "path": "../malaya_network_gt_20260716/repo/csv_output/Zoom/Zoom_HomeBroadband_Nightime1.csv",
+      "sha256": "cea8dbc3390de4dbfa1565f05f6c029cac160cd22b62e4d80716594217f6c31d",
+      "rows": 427,
+      "class_name": "Zoom",
+      "frozen_split": "train"
+    }
+  ],
+  "cache_shards_verified": [
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/BitTorrent/part-000000-f000-c000000.npy",
+      "sha256": "d7148addb021be3fa4f8a6a397b22f702988ebf19656bb45c16317ef4e68ba99",
+      "rows": 4602
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/BitTorrent/part-000001-f001-c000000.npy",
+      "sha256": "78b1f8be3af049a57df65b0331fa9b1913bb1740a66e442ea98037636088892d",
+      "rows": 4173
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/BitTorrent/part-000002-f002-c000000.npy",
+      "sha256": "2b6277190fad2b686da63385a8c4ba56b441bdb373bcedeee2d5d9864f93c9bf",
+      "rows": 6504
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/BitTorrent/part-000003-f003-c000000.npy",
+      "sha256": "717ce543d30865ec6a694413a4e93bd278ac4bb70d82ed3d4b44148cecada182",
+      "rows": 6440
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/BitTorrent/part-000000-f004-c000000.npy",
+      "sha256": "d8909c0a60b00d382e869775dba05473cd9833d987b25880976e3150a490a395",
+      "rows": 5537
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/ChromeRDP/part-000000-f005-c000000.npy",
+      "sha256": "bcad03005181bb225df7eec7b789e2adf181692a7746f227ee20db8bae938317",
+      "rows": 483
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/ChromeRDP/part-000000-f006-c000000.npy",
+      "sha256": "0cc03b21451472c20246d739712c8c9d8526b7e09a7fab36803fbfaf9a1d138a",
+      "rows": 381
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/ChromeRDP/part-000001-f007-c000000.npy",
+      "sha256": "80fc2a08ef6f4c4990569019a8b13cbeeec3bab6c4294ef44ef27227ad0fcb3d",
+      "rows": 417
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Discord/part-000000-f008-c000000.npy",
+      "sha256": "626978a6b56fc2698d489c422b7f47656cd3dad188418b778af5fc7de90771f4",
+      "rows": 310
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Discord/part-000001-f009-c000000.npy",
+      "sha256": "a72c599f986315968dabe09f99bbf1e3d3e07e9b7bdcc5c20ded836bde685250",
+      "rows": 295
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/Discord/part-000000-f010-c000000.npy",
+      "sha256": "3b92c71a91745b7b3e8480b04008a62d4d6ec6ee125987a75be3e56550fdd18d",
+      "rows": 227
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/EA Origin/part-000000-f011-c000000.npy",
+      "sha256": "3b421340a8fbfd9d968857e809ccad3f0bb454d2f03d89e890d594ce06dd1fe6",
+      "rows": 391
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/EA Origin/part-000001-f012-c000000.npy",
+      "sha256": "164094930ccec260d21fb7bed74a02f04bad19a35f81fe4a62b6843feba626dc",
+      "rows": 2508
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/EA Origin/part-000000-f013-c000000.npy",
+      "sha256": "1fc85c54779fca72e2b5497870039b2410f95224c90e4c7b433beee91cebf9d0",
+      "rows": 1200
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/EA Origin/part-000002-f014-c000000.npy",
+      "sha256": "e704ab74a8373d8f16d289a870016a2009ad27fa6d62a28251b24dd6d96b87fc",
+      "rows": 461
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/Microsoft Teams/part-000000-f015-c000000.npy",
+      "sha256": "5f63b370049f9189940ea73a66d11868e98d462070cd0b6189116e0b8a73f0db",
+      "rows": 445
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Microsoft Teams/part-000000-f016-c000000.npy",
+      "sha256": "1ac5878fad14dbaa1b897fa9c7784806f1d0e265062b093b14a7f0bb0dac24f6",
+      "rows": 531
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Slack/part-000000-f017-c000000.npy",
+      "sha256": "03232be4c5f92f08505872aaf04e474993cd9f692147c5356fcd6961438d3415",
+      "rows": 919
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/Slack/part-000000-f018-c000000.npy",
+      "sha256": "4101118d5cb2c3e73ac79acf5f6668bba25973691e223a341947b0ac4778ab99",
+      "rows": 782
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/Steam/part-000000-f019-c000000.npy",
+      "sha256": "560781b5407324ab23bdd5f9badb08ef694ed8fe9cbbc9a4e83e11f2e27016b2",
+      "rows": 887
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Steam/part-000000-f020-c000000.npy",
+      "sha256": "642322220acd166d4a31f81a0b9d6265134c647fda3d413cbdfc4ecdbb75904f",
+      "rows": 1873
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Steam/part-000001-f021-c000000.npy",
+      "sha256": "f5bf662c1fa0c3eb0305e56c33f1b6c85c7dad3d400b2bfc8f1e492eb1ce6d68",
+      "rows": 2130
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Steam/part-000002-f022-c000000.npy",
+      "sha256": "ecf6afd439371dab0c18cd281ed48983a123ee1d9b24f7ea9bbb646ce2cc548e",
+      "rows": 778
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/TeamViewer/part-000000-f023-c000000.npy",
+      "sha256": "1421f88036fb1fe69a00465006d106a24195fa67da8f9a7817c4b046ae0b68dc",
+      "rows": 760
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/TeamViewer/part-000000-f024-c000000.npy",
+      "sha256": "627a36e2fcb6634bf45cee13977b048743a657e6f618a837c9ea682e61d3a200",
+      "rows": 54
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Webex/part-000000-f025-c000000.npy",
+      "sha256": "131cef40b5eca932e22dc45f33d1dfc1d8a4c38e78ed7ac9b0dd17d1799fc70b",
+      "rows": 1093
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Webex/part-000001-f026-c000000.npy",
+      "sha256": "f652b8f175be85b1f6a40cc7d6a68e90173e78f4551a200ad5dee797cb3d6c7d",
+      "rows": 667
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/Webex/part-000000-f027-c000000.npy",
+      "sha256": "40e94ae0154b66dc31559888166a2b1a552ef1f53a506d3a7a7bfdcc90763a44",
+      "rows": 567
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Zoom/part-000000-f028-c000000.npy",
+      "sha256": "f6e4d2d70cafb12bb3c2b25755a345c3b146b03355c122552178bab3eb7b3fbf",
+      "rows": 610
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/test/Zoom/part-000000-f029-c000000.npy",
+      "sha256": "437ed6a33ecd92cefab369e497104930319be2a23fa576618530ebcc1fafe0e2",
+      "rows": 290
+    },
+    {
+      "path": "../ofra_formal_v3_cache_20260716/malaya-network-gt/train/Zoom/part-000001-f030-c000000.npy",
+      "sha256": "a913c8720c6e2e8778d06c7200982e430fb27f9883fd2bb20134a5a6212df18e",
+      "rows": 427
+    }
+  ],
+  "audited_source_sha256": {
+    "ncd/exp_h_malaya.py": "fe8128e3f97378df7da7ea8ae708ece55b1fc97101c854f784b8e13f50b1b946",
+    "ncd/audit_quality_malaya.py": "c783b9f3e748e0debb84415f83290d12b417fdcd4083cf0bce6e9efa281a0c0f"
+  }
+}
