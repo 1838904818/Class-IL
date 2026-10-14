@@ -1,23 +1,23 @@
 # 类增量 NIDS 选题侦察 第 1 天
 
-2026-10-14 第 21 节阶段报告。DGC 否决保持；只量化问题，不提出机制。四套全量输入已验证，训练/测试不截断、不补样。正式矩阵在运行，尚未完成“各数据集实际开跑”的第 1 天要求。
+2026-10-14 第 21.8 节阶段报告。DGC 否决保持；只量化问题，不提出机制。四套全量输入已验证，训练/测试不截断、不补样。20 个 HPC 任务全部提交；12:42 MYT 均排队，尚未完成“四数据集实际开跑”的要求。
 
 ## 跑了什么
 
-执行源 `ab33ca61747b0e499c4006b02e4eeda29589d7f3`。命令：`python -I -u ncd/run_problem_scout.py --config ncd/configs/problem_scout_section21.json --output-dir ncd/results/problem_scout/section21/formal_v1`。12:05 MYT 在 RTX 4060 Ti 启动，按 NSL→UNSW→CIC17→CSE18 串行执行六方法 × 五 seeds（120 单元、510 checkpoints）；日志 `results/problem_scout/section21/formal_v1/run.log`。同入口 GPU 冒烟完成 24 单元/102 checkpoints、退出 0，混淆指标独立复算一致，仅作实现证据。
+HPC 执行源 `1f35f6587bb63aba85c43b0654d15709d46fc3d8`，入口 `ncd/hpc/run_problem_scout.sbatch`，配置 `ncd/configs/problem_scout_section21.json`。20 个独立 (数据集, seed) 任务，各跑六方法，无依赖；每任务 1 GPU/2 CPU，NSL、UNSW、CIC17、CSE18 分别 4/4/8/24 GiB，时限 1/1/4/24 h。账户最多同时 2 GPU，由 Slurm 排队。精确部署包同入口 GPU 冒烟完成 24 单元/102 checkpoints/228 行，4 次退出 0、stderr 空；126 组混淆指标独立复算一致，仅作实现证据。[提交命令、20 job ID、来源和监控记录](results/problem_scout/section21/hpc_jobs.json)。
 
-首个正式单元 [NSL Joint seed 1](results/problem_scout/section21/formal_v1/nsl_kdd/joint_seed1/result.json)：最终 Macro-F1 **55.89%**、平衡准确率 **60.62%**，四阶段累计训练 **55.54 s**；不是五 seed 上限或 G1 差距结论。
+本地源 `ab33ca61747b0e499c4006b02e4eeda29589d7f3` 的 [NSL/UNSW 冗余结果](results/problem_scout/section21/formal_v1)已完成 60 单元/270 checkpoints，结果哈希核验一致；CIC 首阶段启动后已按 21.8 停止，未产生 CIC checkpoint，不作科学证据。全矩阵索引仍为未完成。首个 NSL Joint seed1 累计训练 55.54 s（本地实测）；**HPC 正式耗时尚无**，不以排队/冒烟时间替代。两端按身份采用先完成的有效结果，不按分数挑选、不重复计数。
 
 ## 数据结果
 
 “重合”指测试行匹配任一训练行，原始特征和模型输入分别完整值比较。
 
-| 数据集 | 完整训练行 | ID 测试行 | 原始重合 | 模型表示重合 |
-|---|---:|---:|---:|---:|
-| NSL-KDD | 125,973 | 22,544 | 664 | 664 |
-| UNSW-NB15 | 120,991 | 30,248 | 0 | 13 |
-| CIC-IDS-2017 | 2,262,203 | 565,673 | 0 | 179 |
-| CSE-CIC-IDS2018 | 12,882,081 | 3,255,102 | 0 | 4,030 |
+| 数据集 | 完整训练行 | ID 测试行 | 原始/模型重合 | HPC job ID（seeds 1,2,3,4,42） |
+|---|---:|---:|---:|---|
+| NSL-KDD | 125,973 | 22,544 | 664 / 664 | 486341, 486347, 486351, 486356, 486360 |
+| UNSW-NB15 | 120,991 | 30,248 | 0 / 13 | 486342, 486348, 486352, 486357, 486361 |
+| CIC-IDS-2017 | 2,262,203 | 565,673 | 0 / 179 | 486345, 486349, 486354, 486358, 486362 |
+| CSE-CIC-IDS2018 | 12,882,081 | 3,255,102 | 0 / 4,030 | 486346, 486350, 486355, 486359, 486363 |
 
 UNSW 从 257,673 行删除 2,445 个冲突组的全部 40,400 行及同标签重复 excess 66,034 行，seed 42 重划分；独立复核一致。13 条 Normal 碰撞来自 float32 舍入，不事后删测试样本。NSL 保留官方划分。CIC 缓存**仅保证原始跨划分不重合，并非全局去重/无标签噪声**：训练重复 excess 264,889 / 3,780,187，冲突成员 6,068 / 1,259,263。533 个分片及 18 个准备后数组已验证。
 
@@ -25,10 +25,10 @@ S1 全部 3,255,102 条目标测试行中，18,183 条与 CIC17 训练原始重�
 
 ## 基线代码可用性
 
-[DER++ 官方源码](https://github.com/aimagelab/mammoth/tree/e75a491c69fd729edeb01431afb753d9157d9a81)及 MIT 许可已核实；声明适配为 200/类 reservoir、共享 MLP/Adam/类平衡 CE，保留双独立回放项及更新前 logits，不称原协议复现。Replay、iCaRL、Replay+LwF、RCL-tab 的旧类仅访问已存回放（修正历史旧完整池重访）；Joint 每 checkpoint 从头训练全部已见类。
+[DER++ 官方源码](https://github.com/aimagelab/mammoth/tree/e75a491c69fd729edeb01431afb753d9157d9a81)及 MIT 许可已核实；适配为 200/类 reservoir、共享 MLP/Adam/类平衡 CE，保留双独立回放项及更新前 logits，不称原协议复现。第 21 节旧类只访问已存回放；Joint 每 checkpoint 从头训练全部已见类。第 15 节真实序列及第 17/19 节 Exp H 的旧类完整池重访会低估遗忘，相关结论标为“在旧回放协议下得到”；历史数字保持，不重跑已结束路线。
 
 母表 75 条已筛选，**近期 NIDS 按本协议跑通为 0**：ACIL 是既有策略框架且 PAPA 未激活；2025 EAAI `incremental-nids` 有代码，但包序列输入不匹配且 KD 转 float 丢梯度；RPL/SSF 为二分类；SPIDER 仅 README/LICENSE；其余身份/代码绑定未解决不等于无代码。[逐项一手来源与检查](results/problem_scout/section21/baseline_availability.json)。不重写无代码论文，不把缺项当败北。
 
 ## 判定与下一步
 
-数据与代码核查完成，正式比较未完成，**第 21 节尚未达标**。继续矩阵并实测期限；10 月 16 日在本报告更新 G1–G7、最大差距的文献图及按 21.5 合格的候选（不足三项不凑数），保留基线缺项与数据限制。当前不作空白或排名结论。
+数据与代码核查、20 任务提交完成；正式比较未完成，**第 21 节尚未达标**。每 10 分钟监控，补报首批 HPC 实测耗时；CSE18 单任务预测超过 24 h 才拆 Joint，全部提交后实测仍明显超 10 月 16 日才考虑 CSE18 训练截断。10 月 16 日在本报告更新 G1–G7、文献图及合格候选，不足三项不凑数；当前不作空白或排名结论。
