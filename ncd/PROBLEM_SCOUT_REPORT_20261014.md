@@ -1,12 +1,14 @@
 # 类增量 NIDS 选题侦察 第 1 天
 
-2026-10-14 第 21.8 节阶段报告。DGC 否决保持；只量化问题，不提出机制。四套全量输入已验证，训练/测试不截断、不补样。20 个 HPC 任务全部提交；12:42 MYT 均排队，尚未完成“四数据集实际开跑”的要求。
+2026-10-14 第 21.8 节阶段报告。DGC 否决保持；只量化问题，不提出机制。四套全量输入已验证，训练/测试不截断、不补样。20 个 HPC 任务全部提交；12:55 MYT 首两个完成，CIC 仍待开跑，第 21 节尚未达标。
 
 ## 跑了什么
 
 HPC 执行源 `1f35f6587bb63aba85c43b0654d15709d46fc3d8`，入口 `ncd/hpc/run_problem_scout.sbatch`，配置 `ncd/configs/problem_scout_section21.json`。20 个独立 (数据集, seed) 任务，各跑六方法，无依赖；每任务 1 GPU/2 CPU，NSL、UNSW、CIC17、CSE18 分别 4/4/8/24 GiB，时限 1/1/4/24 h。账户最多同时 2 GPU，由 Slurm 排队。精确部署包同入口 GPU 冒烟完成 24 单元/102 checkpoints/228 行，4 次退出 0、stderr 空；126 组混淆指标独立复算一致，仅作实现证据。[提交命令、20 job ID、来源和监控记录](results/problem_scout/section21/hpc_jobs.json)。
 
-本地源 `ab33ca61747b0e499c4006b02e4eeda29589d7f3` 的 [NSL/UNSW 冗余结果](results/problem_scout/section21/formal_v1)已完成 60 单元/270 checkpoints，结果哈希核验一致；CIC 首阶段启动后已按 21.8 停止，未产生 CIC checkpoint，不作科学证据。全矩阵索引仍为未完成。首个 NSL Joint seed1 累计训练 55.54 s（本地实测）；**HPC 正式耗时尚无**，不以排队/冒烟时间替代。两端按身份采用先完成的有效结果，不按分数挑选、不重复计数。
+HPC 首批实测：NSL seed1（486341）六方法 Slurm 墙钟 **252 s**、累计训练 **200.15 s**；UNSW seed1（486342）分别 **243 s / 229.90 s**，均退出 0，12 单元/54 checkpoints/90 行；程序内墙钟分别 250.01/241.83 s。[原始耗时的脱敏副本](results/problem_scout/section21/hpc_timing)。GPU 利用率取数因设备编号查询失败而缺失，不能记为 0；额外分配内诊断待用户确认，不改活动实验源。
+
+本地源 `ab33ca61747b0e499c4006b02e4eeda29589d7f3` 的 [NSL/UNSW 冗余结果](results/problem_scout/section21/formal_v1)完成 60 单元/270 checkpoints，权重哈希及混淆指标独立复核；转入 CIC 首阶段后已按 21.8 停止，未产出 CIC checkpoint。矩阵索引仍为未完成；两端按身份采用先完成的有效结果，不按分数挑选、不重复计数。
 
 ## 数据结果
 
