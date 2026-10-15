@@ -19,6 +19,15 @@ from pathlib import Path
 SEEDS = (1, 2, 3, 4, 42)
 DATASETS = ("NSL-KDD", "UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018")
 CORE_METHODS = ("joint", "replay", "icarl", "replay_lwf", "rcl_tab", "derpp")
+G7_MEASUREMENT_LIMITS = {
+    "training_seconds_total": "Recorded cumulative successful checkpoint training-loop intervals; includes in-loop DER++ memory updates, not total cell walltime.",
+    "evaluation_seconds_total": "Sum of saved checkpoint evaluation intervals, including scorer construction and ID/available shift evaluation; not repeated or failed-attempt evaluation cost.",
+    "buffer_selection_seconds_total": "Sum of saved post-training selection intervals, including iCaRL herding; DER++ updates memory inside training, so its near-zero selection timer is not zero memory-management cost.",
+    "walltime": "Training, evaluation and selection do not exhaust walltime. Data loading, construction, serialization and other overhead, plus failed/cancelled attempts, require separate logs; never add overlapping runner and Slurm durations.",
+    "cuda_memory": "Maximum observed PyTorch training-phase allocated/reserved bytes, captured before selection/evaluation; not device-wide usage or a whole-cell peak. Null means unmeasured; missing checkpoint observations can underestimate the peak.",
+    "replay_memory": "Maximum saved post-checkpoint payload and allocated replay-storage bytes are distinct; neither includes model/optimizer memory, temporary herding arrays, host RSS or whole-process memory.",
+    "comparability": "Stage costs are descriptive for each recorded execution environment; local and HPC timings are not hardware-matched speed comparisons.",
+}
 
 
 def finite(value):
@@ -124,6 +133,51 @@ def validate_confusion(metrics):
             raise ValueError(f"{key} disagrees with independent confusion recomputation")
 
 
+def checkpoint_costs(cell):
+    """Keep absent/invalid costs distinct from measured zero and unmeasured CUDA."""
+    identity = cell.get("identity", {})
+    context = "/".join(str(identity.get(k, "unknown")) for k in ("dataset", "method", "seed"))
+
+    def required(record, field, scope, nullable=False):
+        if field not in record:
+            raise ValueError(f"Missing G7 cost field {field} in {context} {scope}")
+        value = record[field]
+        if nullable and value is None:
+            return None
+        if isinstance(value, bool) or not finite(value) or value < 0:
+            raise ValueError(f"Invalid G7 cost field {field} in {context} {scope}: expected a finite nonnegative number")
+        return value
+
+    checkpoints = cell["checkpoints"]
+    if not checkpoints:
+        raise ValueError(f"No successful checkpoints for G7 costs in {context}")
+    training = required(cell, "training_seconds_total", "cell")
+    fields = ("training_seconds", "evaluation_seconds", "buffer_selection_seconds",
+              "peak_cuda_allocated_bytes", "peak_cuda_reserved_bytes",
+              "replay_bytes_after", "replay_allocated_bytes_after")
+    recorded = {field: [] for field in fields}
+    for index, checkpoint in enumerate(checkpoints):
+        scope = f"checkpoint {index}"
+        for field in fields:
+            recorded[field].append(required(checkpoint, field, scope, nullable=field.startswith("peak_cuda_")))
+    totals = {}
+    for field in ("training_seconds", "evaluation_seconds", "buffer_selection_seconds"):
+        total = sum(recorded[field])
+        totals[field] = required({field: total}, field, "checkpoint sum")
+    if not math.isclose(training, totals["training_seconds"], rel_tol=1e-12, abs_tol=1e-9):
+        raise ValueError(f"G7 training_seconds_total differs from successful checkpoint training sum in {context}")
+    return {
+        "training_seconds_total": training,
+        "evaluation_seconds_total": totals["evaluation_seconds"],
+        "buffer_selection_seconds_total": totals["buffer_selection_seconds"],
+        "peak_cuda_allocated_bytes": max((v for v in recorded["peak_cuda_allocated_bytes"] if v is not None), default=None),
+        "peak_cuda_reserved_bytes": max((v for v in recorded["peak_cuda_reserved_bytes"] if v is not None), default=None),
+        "maximum_replay_bytes": max(recorded["replay_bytes_after"]),
+        "maximum_replay_allocated_bytes": max(recorded["replay_allocated_bytes_after"]),
+        "cost_scope": "Cumulative successful checkpoint training with separate evaluation/selection totals; failed-attempt walltime requires separate logs",
+    }
+
+
 def analyze(cells, methods=CORE_METHODS):
     keyed = {}
     for cell in cells:
@@ -149,6 +203,7 @@ def analyze(cells, methods=CORE_METHODS):
            "smoke": smoke, "scientific_comparisons_final": not missing and not smoke,
            "coverage_caveat": "Partial summaries are provisional; missing methods may change the best CIL method. Additional NIDS baseline eligibility is recorded separately.",
            "selection_policy": "Fixed method per dataset/metric using five-seed mean; classwise envelope for G2 only",
+           "G7_measurement_limits": dict(G7_MEASUREMENT_LIMITS),
            "candidate_ranking_status": "pending_quantitative_matrix_and_targeted_literature_evidence",
            "candidates": [], "G1": [], "G2": [], "G3": [], "G4": [], "G5": [], "G6": [], "G7": []}
     for dataset in DATASETS:
@@ -197,12 +252,7 @@ def analyze(cells, methods=CORE_METHODS):
                 out["G4"].append({**base, "is_old_at_final": own_task < len(tasks) - 1,
                                   **error_flow(final["id"]["confusion_matrix"], cid, tasks)})
             out["G7"].append({"dataset": dataset, "method": method, "seed": seed,
-                              "training_seconds_total": cell["training_seconds_total"],
-                              "peak_cuda_allocated_bytes": max((c["peak_cuda_allocated_bytes"] for c in cell["checkpoints"] if c["peak_cuda_allocated_bytes"] is not None), default=None),
-                              "peak_cuda_reserved_bytes": max((c["peak_cuda_reserved_bytes"] for c in cell["checkpoints"] if c["peak_cuda_reserved_bytes"] is not None), default=None),
-                              "maximum_replay_bytes": max(c["replay_bytes_after"] for c in cell["checkpoints"]),
-                              "maximum_replay_allocated_bytes": max(c.get("replay_allocated_bytes_after", c["replay_bytes_after"]) for c in cell["checkpoints"]),
-                              "cost_scope": "Cumulative successful checkpoint training; failed-attempt walltime requires separate logs"})
+                              **checkpoint_costs(cell)})
     return out
 
 

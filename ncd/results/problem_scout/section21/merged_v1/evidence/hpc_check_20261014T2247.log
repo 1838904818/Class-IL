@@ -1,0 +1,402 @@
+SECTION21 MONITOR 2026-10-15 06:47 MYT
+
+2026-10-15T06:47:06.2785006+08:00
+# AGENTS.md — 最高优先级工作指令
+
+生效日期：2026-10-09。下达人：项目负责人 Wu Liqiang。
+
+本文件**优先于** `internal/` 下所有 protocol、review、next-action、handoff 文件中关于
+"执行授权 / 门禁 / 审查"的规定。`internal/expert-handoff-stage-a-r6-20261009/RESEARCH_TARGET_LOCK.md`
+第 2–6 节（研究 gap、研究对象、RQ1–RQ3、RO1–RO3）**保持不变**；被撤销的只是你自己加的流程门槛。
+
+---
+
+## 1. 立即停止
+
+- R6 / Gate S / Gate E / Stage A / V14–V16 observability 全线停止。不修复、不审查、不提交、不再写交接包。
+- 不再新建任何 protocol / manifest / bindings / precheck / review-request / review-response /
+  terminal-evidence / next-action / handoff 类 JSON 或 Markdown。
+- 不再发起 "independent review" 子线程来批准你自己的实验或代码。
+- 不再把"只跑了 synthetic test 的准备工作"当作进展汇报。
+
+过去一个月（9 月 7 日以后）几乎没有产生任何新的科研数字，这是不可接受的。
+
+## 2. 撤销的规则
+
+| 原规则 | 现在 |
+|---|---|
+| one-use authority / no automatic retry | **撤销。** 失败就读日志、修 bug、重跑。 |
+| HPC (DICC) 提交前需审查与授权 | **预先授权。** 可随时提交、重复提交、并行提交（在账户配额内）。 |
+| 真实数据 / GPU / checkpoint 需授权 | **随时可用。** |
+| 丢弃 stdout/stderr 以防泄密 | **禁止丢弃。** 必须保留完整日志。数据集均为公开数据集。 |
+| SHA-256 绑定所有输入 | **不需要。** 可复现只要求：git commit、config、seed、命令、日志路径，写进每个结果 JSON。 |
+| result-blind 执行边界 | **撤销。** |
+
+## 3. 保留的规则
+
+- 诚实：不编造结果、不编造引用（见 `CLAUDE.md`）；负面结果如实报告。
+- 不改变研究目标（RQ1–RQ3）。新方向直接服务 RQ1 / RO1。
+- 不删除历史文件；旧目录保持原样，新工作放新目录。
+
+## 4. 进展的唯一标准
+
+**真实数据上跑出的新数字。** 文档、测试、审查、计划都不算进展。
+一个工作日结束时没有新数字，就要在汇报里说明原因。
+
+## 5. 当前任务
+
+严格按 [`docs/WORK_ORDER_2026-10-09.md`](docs/WORK_ORDER_2026-10-09.md) 的顺序执行。不要另起方向。
+
+## 6. 汇报格式（每次 ≤ 1 页）
+
+1. 跑了什么：命令 / HPC job id / git commit
+2. 结果：一张数字表（必要时一张图）
+3. 是否达到工作单中该阶段的判定标准：是 / 否
+4. 下一步：一行
+
+禁止使用 `PASS_BEFORE_ONE_USE_...`、`BLOCKED_PENDING_...` 这类状态码，用普通的话说清楚。
+
+## 7. 遇到阻塞
+
+- 根据 2026-10-13 用户指令及工作单第 16 节：每次提交 sbatch 前，必须通过同一个入口完成本地端到端冒烟（1 seed、1 epoch、每类 64 行），确认最终汇总文件生成。
+- 作业失败必须在 1 小时内发现；常规实现错误立即修复、冒烟验证并重提交，无需另等用户确认。保留原始日志与结果来源记录。
+
+卡住超过半天（环境、数据、HPC 报错），立即停下，写一段话说明：卡在哪、试过什么、需要负责人做什么。
+**不要通过设计新流程、新门禁、新审查来"绕过"阻塞。**
+
+## 21. 选题侦察（2026-10-14，负责人决定，3 个工作日）
+
+### 21.0 背景
+
+DGC 的否决接受（类间前提 0.075，CI 含 0；且 RCL 已有样本级自适应门控）。
+四个机制（NCD、IRD、CRR、DGC）都建立在"依赖漂移有害"的前提上，而该前提在本设置中没有得到稳健支持。
+**不再在解释漂移 / 依赖保持方向上设计新机制。**第 4 次失败的根本原因是选题，而不是执行。
+
+本节**不设计机制**，只回答一个问题：**类增量 NIDS 在干净数据上，到底在哪里失败得最严重、改进空间最大、文献最空白？**
+机制由负责人根据本节结果另行下达。
+
+### 21.1 数据（全部用干净版本）
+
+- NSL-KDD：保持官方划分（审计未触发）。
+- UNSW-NB15：按 18.2 **全局去重 + 删除标签冲突组后重新划分**。
+- CIC-IDS-2017、CSE-CIC-IDS2018：沿用当前按特征哈希分组的缓存（审计确认无跨集重复）。
+- 任务顺序、类映射与第 15 / 17 节一致。
+
+### 21.2 方法
+
+在同一协议、同一回放预算、类平衡 CE、seeds {1, 2, 3, 4, 42} 下：
+
+1. **Joint**（每个 checkpoint 用全部已见类的完整训练数据重训）：上限，**必须重新跑**，旧的 Joint 结果 seed 和来源都对不上；
+2. Replay、iCaRL、Replay + LwF、RCL-tab（已有实现）；
+3. **DER++**（Buzzega et al., NeurIPS 2020），通用持续学习中公认的强基线；
+4. **1–2 个 2024–2026 年的类增量 NIDS 方法**：从 `lit_review_2025_2026/master_list.json` 中挑有**公开代码**的。
+   半个工作日内跑不通就放弃，并在报告里写明原因。不要自己重新实现没有代码的论文。
+
+### 21.3 失败分类（每个数据集、每个类都要报告）
+
+| 编号 | 问题 | 计算方式 |
+|---|---|---|
+| G1 | 总体差距 | Joint − 最好的类增量方法，Macro-F1 和平衡准确率 |
+| G2 | 逐类差距 | 最终 checkpoint 上每个类的 recall：Joint − 最好的类增量方法；按训练样本数分组（< 1k、1k–10k、> 10k） |
+| G3 | 遗忘 vs 从未学会 | 每个类在自己的任务结束时的 recall（学会了没有）vs 最终 recall（后来丢了没有） |
+| G4 | 错误流向 | 旧类的错误被判成了什么：更新的类（近因偏差）、Normal（漏报）、其他旧类 |
+| G5 | 运维指标 | 攻击 recall 与正常流量误报率（FPR）：Joint vs 最好的类增量方法 |
+| G6 | 跨环境 | 只用 S1（CIC-2017 → 2018）：偏移 recall 的 Joint − 类增量差距 |
+| G7 | 成本 | 训练时间、显存、回放内存 |
+
+### 21.4 文献空白图
+
+对 G1–G6 中差距最大的 3 个问题，各列出 2024–2026 年**明确针对该问题**的类增量或持续学习 NIDS 工作（一手来源、附 DOI / arXiv），并说明它们在什么协议下报告了多大的改进。
+标出：哪个问题**差距大、而且几乎没人针对性地解决**。
+
+### 21.5 排序规则（预先声明）
+
+一个问题成为候选，需要同时满足：
+1. 在 **≥ 2 个数据集**上，Joint 与最好的类增量方法之间的差距 **≥ 5 个百分点**（按对应指标）；
+2. 5 seeds 下差距的方向一致；
+3. 21.4 中针对它的工作 ≤ 2 篇，或者已有工作在我们的协议下无效。
+
+按"差距 × 涉及的数据集数"排序。报告**前 3 个候选问题**，附原始数字，**不提出机制**。
+
+### 21.6 交付
+
+| 时间 | 交付 |
+|---|---|
+| 第 1 天 | 数据去重完成；Joint 和已有方法在 4 个数据集上开跑；DER++ 和 NIDS 基线的代码可用性结论 |
+| 第 3 天 | 一个报告：G1–G7 表格、文献空白图、按 21.5 排出的前 3 个候选问题 |
+
+### 21.7 第 1 天审查补充（2026-10-14）
+
+1. **时间风险**：正式矩阵在本地 GPU 上按 NSL → UNSW → CIC17 → CSE18 **串行**执行，而且训练不截断。
+   CSE18 有 1288 万训练行，Joint 在每个 checkpoint 都要从头训练，5 seeds 很可能超出 3 天期限。
+   - CIC17 和 CSE18 **立即提交 HPC 并行跑**，本地只跑 NSL 和 UNSW。
+   - 提交后用前几个单元的实测耗时估算总时长。若预计超过 10 月 16 日，**只对训练集**恢复历史截断（Normal 160k、其他类每类 40k），测试集仍不截断，并在报告中写明。
+     选题侦察的目的是比较差距大小，不需要每一行训练数据都用上。
+2. **旧类回放池问题**：你在新代码中修正了一个历史问题。`ncd/run_crr_real_sequence.py` 的 `_select_buffer` 在每次增量时，都从旧类的**完整训练池**重新抽取回放样本（iCaRL 用当前模型在完整池上做 herding）。
+   这意味着第 15 节真实序列、第 17 / 19 节 Exp H 中的类增量方法实际接触到的旧数据远超回放预算，遗忘被低估。
+   - 发现得好。
+   - **不需要重跑**这些已否决或已结束的路线，但在最终报告中列出受影响的实验和结论，标为"在旧回放协议下得到"。
+   - 第 21 节及以后的所有实验一律使用修正后的协议（旧类只能访问已存的回放样本）。
+3. **近期 NIDS 基线全部跑不通**：接受，不要重写无代码的论文。报告中保留逐项核查记录即可。
+
+### 21.8 HPC 全量执行（2026-10-14，负责人指令，取代 21.7 第 1 条）
+
+- **4 个数据集全部提交 HPC，不截断训练数据。**
+- 按 **(数据集, seed)** 拆成独立任务，共 20 个，每个任务内跑全部方法；需要的话再按方法拆开。
+  小任务排队更快，单个失败也只需重跑那一个。任务之间不设依赖。
+- CSE18 的 Joint 最重：如果单个任务预计超过 24 小时，再按方法拆开，让 Joint 单独成为一个任务。
+- 本地 GPU 继续跑 NSL 和 UNSW，作为冗余。HPC 和本地谁先完成就用谁的结果，不需要双重确认。
+- 提交前照第 16 节做一次端到端冒烟。提交后报告 20 个 job id，以及前几个任务的实测耗时。
+- 只有在**全部任务都已提交、按实测耗时仍然明显赶不上 10 月 16 日**时，才对 CSE18 的训练集恢复截断，并在报告中写明。
+
+### 21.9 HPC 并发限制的处理（2026-10-14）
+
+账户最多同时用 **2 块 GPU**，20 个任务实际上是两两串行。CSE18 每个任务时限 24 小时，按这个节奏很可能超过 10 月 16 日。
+
+1. **本地 GPU 不要闲着。**NSL / UNSW 已全部完成，本地立即从**队列尾部**开始跑 CIC17：seed 42 → 4 → 3 …
+   HPC 从头部跑。同一个 (数据集, seed) 哪边先完成就用哪边，另一边对应的任务直接 `scancel`，避免重复占用。
+2. **让 CSE18 seed 1 尽早开始**：用 `scontrol hold` / `release` 或调整顺序，让它排在 CIC17 剩余 seed 之前，尽快拿到 CSE18 的实测耗时。
+3. 拿到 CSE18 seed 1 的 Joint 实测耗时后，立即估算 5 个 seed 的总时长。若超过 10 月 16 日：
+   - 先把 CSE18 的 Joint 单独拆出任务；
+   - 仍然不够，再按 21.8 的兜底规则对 CSE18 训练集截断。
+4. 你提到的"额外分配内诊断"（GPU 利用率查询）**不需要负责人确认**，按 AGENTS.md 直接做；不做也可以，它不影响结论。
+
+Name                 : Local Area Connection
+InterfaceDescription : TAP-Windows Adapter V9 for OpenVPN Connect
+Status               : Up
+ifIndex              : 14
+
+
+DestinationPrefix : 10.11.0.0/16
+NextHop           : 192.168.80.37
+InterfaceIndex    : 14
+RouteMetric       : 256
+
+
+WARNING:
+
+Unauthorized access to this system is forbidden and will be prosecuted by law.
+By accessing this system, you agree that your actions may be monitored if unauthorized usage is suspected.
+
+2026-10-15T06:47:22+08:00
+             JOBID                 NAME         USER        STATE         TIME               NODELIST(REASON)
+            486363        s21-cic18-s42    <HPC_USER>      PENDING         0:00            (QOSMaxGRESPerUser)
+            486355         s21-cic18-s3    <HPC_USER>      RUNNING      4:38:43                          gpu07
+            486359         s21-cic18-s4    <HPC_USER>      RUNNING         0:17                          gpu06
+JobID|JobName|User|State|ExitCode|ElapsedRaw|Start|End|AllocTRES
+486350|s21-cic18-s2|<HPC_USER>|COMPLETED|0:0|16915|2026-10-15T02:05:10|2026-10-15T06:47:05|billing=150000,cpu=2,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+486355|s21-cic18-s3|<HPC_USER>|RUNNING|0:0|16723|2026-10-15T02:08:39|Unknown|billing=150000,cpu=2,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+486359|s21-cic18-s4|<HPC_USER>|RUNNING|0:0|17|2026-10-15T06:47:05|Unknown|billing=150000,cpu=2,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+486363|s21-cic18-s42|<HPC_USER>|PENDING|0:0|0|Unknown|Unknown|
+             JOBID PARTITION     NAME     USER ST          START_TIME  NODES SCHEDNODES           NODELIST(REASON)
+            486363  gpu-a100 s21-cic1 leon1213 PD 2026-10-15T12:42:01      1 (null)               (QOSMaxGRESPerUser)
+sstat: error: StepId=486350.0 not found running.
+JobID|AveCPU|MaxRSS|AveRSS|TRESUsageInAve
+486355.0|05:21:16|23890364K|12469648K|cpu=05:21:16,energy=0,fs/disk=5275750353,mem=12469648K,pages=138,vmem=0
+2026-10-15T06:47:05.5047740540 7728 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/stdout.log
+2026-10-15T02:05:13.1046494770 1113 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/job_start.json
+2026-10-15T06:47:05.5047740540 1286 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/job_exit.json
+2026-10-15T06:46:34.5084072840 67967 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/resources.jsonl
+2026-10-15T03:20:17.4612688890 572 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/stderr.log
+2026-10-15T06:47:05.4847738170 28195 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/result.json
+2026-10-15T05:44:28.5043317920 151008 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/result.json
+2026-10-15T05:38:27.9601969970 3847 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_001.json
+2026-10-15T05:44:28.5083318390 5193 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_003.json
+2026-10-15T05:33:27.6007726020 3001 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_000.json
+2026-10-15T05:40:28.1295670460 4753 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_002.json
+2026-10-15T04:13:21.0393074350 151025 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/result.json
+2026-10-15T04:12:20.9706063400 3845 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_001.json
+2026-10-15T04:13:21.0473075290 5203 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_003.json
+2026-10-15T04:10:20.8451294800 3001 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_000.json
+2026-10-15T04:13:21.0433074820 4763 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_002.json
+2026-10-15T06:47:05.4967739590 150980 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/result.json
+2026-10-15T06:45:34.3716957090 3839 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_001.json
+2026-10-15T06:47:05.5007740060 5175 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_003.json
+2026-10-15T06:39:33.7154281920 2999 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_000.json
+2026-10-15T06:46:34.5004071900 4756 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_002.json
+2026-10-15T04:43:23.5620865000 151157 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/result.json
+2026-10-15T04:41:23.3165206430 3881 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_001.json
+2026-10-15T04:43:23.5740866560 5248 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_003.json
+2026-10-15T04:37:23.0893923670 3000 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_000.json
+2026-10-15T04:42:23.4573038060 4816 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_002.json
+2026-10-15T05:10:25.7290937640 150981 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/result.json
+2026-10-15T05:09:25.6044145140 3845 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_001.json
+2026-10-15T05:10:25.7690942160 5183 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_003.json
+2026-10-15T05:05:25.3136270200 3000 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_000.json
+2026-10-15T05:09:25.6084145590 4736 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_002.json
+2026-10-15T03:47:19.1921977300 150982 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/result.json
+2026-10-15T02:55:15.9438060350 3869 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_001.json
+2026-10-15T03:47:19.1961977770 5164 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_003.json
+2026-10-15T02:29:14.5575726770 2991 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_000.json
+2026-10-15T03:20:17.4492687490 4747 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_002.json
+2026-10-15T06:47:05.4767737220 8300 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/run.log
+2026-10-15T06:47:05.4807737700 5530 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/final_rows.csv
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/stdout.log
+DERPP_EPOCH_DONE epoch=8 buffer_rows=1400
+CHECKPOINT_TRAINED CSE-CIC-IDS2018 derpp seed=2 task=3 train_seconds=66.997
+CHECKPOINT_EVALUATED CSE-CIC-IDS2018 derpp seed=2 task=3
+CELL_COMPLETE CSE-CIC-IDS2018 derpp seed=2
+MATRIX_COMPLETE cells=6/6 smoke=False result=../../../../../..<HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/result.json
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/stderr.log
+<HPC_HOME>/ofra-etg/section21-20261014/code-1f35f65/ncd/train_cil.py:75: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:203.)
+  dataset = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/resources.jsonl
+{"utc": "2026-10-14T22:42:33.913046+00:00", "pid": 1263163, "disk_free_bytes": 205136362209280, "cpu_seconds": 19342.01, "rss_bytes": 6846910464, "available_ram_bytes": 2098672394240, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:43:34.041807+00:00", "pid": 1263163, "disk_free_bytes": 205132738330624, "cpu_seconds": 19448.36, "rss_bytes": 6846910464, "available_ram_bytes": 2098721488896, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:44:34.154251+00:00", "pid": 1263163, "disk_free_bytes": 205129085091840, "cpu_seconds": 19554.65, "rss_bytes": 6846910464, "available_ram_bytes": 2098879860736, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:45:34.286800+00:00", "pid": 1263163, "disk_free_bytes": 205125339578368, "cpu_seconds": 19659.72, "rss_bytes": 6423195648, "available_ram_bytes": 2099160920064, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:46:34.386797+00:00", "pid": 1263163, "disk_free_bytes": 205122260959232, "cpu_seconds": 19764.91, "rss_bytes": 6505246720, "available_ram_bytes": 2099757776896, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+2026-10-15T06:42:07.1095623840 5683 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/attempts/20261014T180841_486355_1007133/stdout.log
+2026-10-15T02:08:41.2174255360 1113 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/attempts/20261014T180841_486355_1007133/job_start.json
+2026-10-15T06:47:07.6865419110 67249 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/attempts/20261014T180841_486355_1007133/resources.jsonl
+2026-10-15T03:23:46.7554518050 572 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/attempts/20261014T180841_486355_1007133/stderr.log
+2026-10-15T05:51:00.7629672040 24553 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/result.json
+2026-10-15T05:15:57.3809627010 151023 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_lwf_seed3/result.json
+2026-10-15T05:14:57.2759754080 3850 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_lwf_seed3/checkpoints/checkpoint_001.json
+2026-10-15T05:15:57.3849627670 5191 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_lwf_seed3/checkpoints/checkpoint_003.json
+2026-10-15T05:10:56.8800102370 2998 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_lwf_seed3/checkpoints/checkpoint_000.json
+2026-10-15T05:14:57.2759754080 4767 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_lwf_seed3/checkpoints/checkpoint_002.json
+2026-10-15T04:17:50.7052165070 151028 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_seed3/result.json
+2026-10-15T04:16:50.6122175240 3850 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_seed3/checkpoints/checkpoint_001.json
+2026-10-15T04:17:50.7092165730 5203 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_seed3/checkpoints/checkpoint_003.json
+2026-10-15T04:13:50.3892215030 2996 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_seed3/checkpoints/checkpoint_000.json
+2026-10-15T04:16:50.6162175900 4766 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/replay_seed3/checkpoints/checkpoint_002.json
+2026-10-15T04:47:54.6609179410 151171 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/icarl_seed3/result.json
+2026-10-15T04:46:54.5479203980 3912 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/icarl_seed3/checkpoints/checkpoint_001.json
+2026-10-15T04:47:54.6649180070 5230 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/icarl_seed3/checkpoints/checkpoint_003.json
+2026-10-15T04:42:53.3119172160 3004 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/icarl_seed3/checkpoints/checkpoint_000.json
+2026-10-15T04:46:54.5519204640 4813 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/icarl_seed3/checkpoints/checkpoint_002.json
+2026-10-15T03:50:48.1302942580 150990 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/joint_seed3/result.json
+2026-10-15T02:57:44.9898143380 3871 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/joint_seed3/checkpoints/checkpoint_001.json
+2026-10-15T03:50:48.1342943240 5171 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/joint_seed3/checkpoints/checkpoint_003.json
+2026-10-15T02:32:42.8892911780 2987 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/joint_seed3/checkpoints/checkpoint_000.json
+2026-10-15T03:23:46.7434516070 4751 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/joint_seed3/checkpoints/checkpoint_002.json
+2026-10-15T05:51:00.7749674020 150976 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/rcl_tab_seed3/result.json
+2026-10-15T05:45:00.1970067620 3848 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/rcl_tab_seed3/checkpoints/checkpoint_001.json
+2026-10-15T05:51:00.7789674670 5170 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/rcl_tab_seed3/checkpoints/checkpoint_003.json
+2026-10-15T05:39:59.7080433840 2996 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/rcl_tab_seed3/checkpoints/checkpoint_000.json
+2026-10-15T05:47:00.3830000960 4750 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/cse_cic_ids2018/rcl_tab_seed3/checkpoints/checkpoint_002.json
+2026-10-15T06:42:07.0855619860 6255 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/run.log
+2026-10-15T05:51:00.7629672040 4645 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_3/all/final_rows.csv
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_3/all/attempts/20261014T180841_486355_1007133/stdout.log
+DERPP_EPOCH_DONE epoch=3 buffer_rows=400
+DERPP_EPOCH_DONE epoch=4 buffer_rows=400
+DERPP_EPOCH_DONE epoch=5 buffer_rows=400
+DERPP_EPOCH_DONE epoch=6 buffer_rows=400
+DERPP_EPOCH_DONE epoch=7 buffer_rows=400
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_3/all/attempts/20261014T180841_486355_1007133/stderr.log
+<HPC_HOME>/ofra-etg/section21-20261014/code-1f35f65/ncd/train_cil.py:75: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:203.)
+  dataset = TensorDataset(torch.from_numpy(x), torch.from_numpy(y))
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_3/all/attempts/20261014T180841_486355_1007133/resources.jsonl
+{"utc": "2026-10-14T22:43:07.118093+00:00", "pid": 1007136, "disk_free_bytes": 205135275884544, "cpu_seconds": 18818.08, "rss_bytes": 10405240832, "available_ram_bytes": 2041784328192, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:44:07.249286+00:00", "pid": 1007136, "disk_free_bytes": 205130880253952, "cpu_seconds": 18921.71, "rss_bytes": 10405314560, "available_ram_bytes": 2041003081728, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:45:07.374741+00:00", "pid": 1007136, "disk_free_bytes": 205126484623360, "cpu_seconds": 19025.34, "rss_bytes": 10405314560, "available_ram_bytes": 2042117615616, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:46:07.474051+00:00", "pid": 1007136, "disk_free_bytes": 205124370694144, "cpu_seconds": 19129.08, "rss_bytes": 10405314560, "available_ram_bytes": 2042457255936, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:47:07.595735+00:00", "pid": 1007136, "disk_free_bytes": 205120809730048, "cpu_seconds": 19232.77, "rss_bytes": 10405314560, "available_ram_bytes": 2042965028864, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+SSH_EXIT=0
+
+REMOTE COMPLETION HASH CHECK 06:50 MYT
+WARNING:
+
+Unauthorized access to this system is forbidden and will be prosecuted by law.
+By accessing this system, you agree that your actions may be monitored if unauthorized usage is suspected.
+
+2026-10-15T06:50:32+08:00
+JobID|JobName|User|State|ExitCode|ElapsedRaw|Start|End|TotalCPU|MaxRSS|AllocTRES
+486350|s21-cic18-s2|<HPC_USER>|COMPLETED|0:0|16915|2026-10-15T02:05:10|2026-10-15T06:47:05|05:30:32||billing=150000,cpu=2,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+486350.batch|batch||COMPLETED|0:0|16915|2026-10-15T02:05:10|2026-10-15T06:47:05|00:00.019|5584K|cpu=2,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+486350.extern|extern||COMPLETED|0:0|16915|2026-10-15T02:05:10|2026-10-15T06:47:05|00:00.001|0|billing=150000,cpu=2,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+486350.0|python||COMPLETED|0:0|16915|2026-10-15T02:05:10|2026-10-15T06:47:05|05:30:32|17297820K|cpu=2,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+486350.1|sh||COMPLETED|0:0|1|2026-10-15T02:08:56|2026-10-15T02:08:57|00:00.017|184K|cpu=1,gres/gpu:a100=1,gres/gpu=1,mem=24G,node=1
+a22bbe09db001d0306be90749b228ed1aa310d5d2e0707c5ed338a35a83d5468  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_000.pt
+deb32fc049f9c5e118f23df549f3abbca43854101515728265d3b980cff19d60  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_001.pt
+5581ae171ca0f0cd1b1a5d1beb6daf94fe1da0b6e898f5755e590a3edb63331d  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_002.pt
+4ec88f98403527789802d934ae569aabf9c3244c31dffddb4a69446672ffe392  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_003.pt
+dbb493d58f6c94d840eb82dcbfbb60468d24fe5fd3b9acafda9e43e29db3b02b  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_000.pt
+dfb0c24931bd866f719605f976cc582d0997b3564bd0074246c7ea8f06a126e2  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_001.pt
+9944daa560edde12e006a55a7011eb1fcc9ce1e7a9c53eb5665a1cec16f9ce39  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_002.pt
+487d20449bbd225c5230bc9d68205815db67312e6d800167d8148b542dddb0cc  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_003.pt
+a9edd3599205efff4a1d5b1e8198dd4a53d7e05a89486daa4ce1fe063975a37b  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_000.pt
+82c704efc771094a6d1e9fd3a0a842434963f774a9ea5269bd53fb55d6f0047f  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_001.pt
+997e46971d70455da45ef092239125f940d963eaf4031d57c7c48dfe73dd8d87  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_002.pt
+e21e44f22171e316f32ec6acc468e4fcc4e76bb22d691568f1d8c8d395932796  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_003.pt
+1f4e519a9e18ae21e11e795ada920cb0f3c255e4db0a28a2c47bab8f2cd8a865  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_000.pt
+bc4567be0b5db0c51c7de0906380735a6ad55f14b149e52e2a2830cb45ceddfd  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_001.pt
+d3de79e3679f0ae72d5caa131dffd1819c2120d8c48956ad0164bd267ba2380f  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_002.pt
+ff53e617256f7a12bfa67077a461dfb18f76fe0b01863899b10094c817b05442  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_003.pt
+0af0adf1332e46143c7ad70bb06eadf45fde0fb0a9c06d9088f18a0b98e1381d  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_000.pt
+ec609adca50a8ab528989c9eb4d2f203a717cf7ef3766ee87594d62f4a1eaee5  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_001.pt
+0cd04727afbcad34127a8570c39441368f7d07cc1efefe7cd5573f072f72ba5b  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_002.pt
+b77a8e8254950106a2605db251c506e0643b4a2212c8852857c595cdd9078a64  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_003.pt
+c2b7f05e8c930d05d877661600741a813d4b84640fcdd7029dde0696614f4761  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_000.pt
+7be89bda00b4d8b8bf48da68fd4efb177a5bc8b2c0883b7b84d61446300d8ce4  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_001.pt
+12760a97184af0ec4db83daef6708fd5eadb6816d96a4987e14761ddc1a0556b  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_002.pt
+e4a6859460bf21f3e695adf5c773b8b5947473c3b263918c5a3c5fffe1bb9252  <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_003.pt
+1da219f1b33ba1403f6bf02e6b1b4bf45f8c1da368b4eec8df890941d5161b9c  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/stdout.log
+d0c1a7ea91ba54c042c3816a78f410d3e681b2126152fb4e4193dc6e9636350b  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/job_start.json
+e59691a83636d42092e5979c2d30e8549560d18ca0e3137fb18d39b9e1ede384  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/job_exit.json
+901b7cabd341641c329a7d9ae484e1b65cfaa0b4447a856c46cce8fb6c15c3b2  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/resources.jsonl
+a934b6cb44d6bf4d2b308aca17b84af5dd5d930350109701f84e9de333625981  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/attempts/20261014T180512_486350_1263051/stderr.log
+ed8ebd6f139acbf92709df5d802658e2a4d7b833e940e8df7e3f420ed3ee5a88  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/result.json
+4c74b73b8dea137e2ca5505d5838f413440014e7417ea751569bac94873431fa  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/result.json
+eb452296e0a6cc00828b403207cfbab2b5caf1dd4fadf36bc5095c571e38368b  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_001.json
+ae666550f1f79d3a923a1cc3c35060883ac3fbf7a76c8fdba2c25d6beea0ec10  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_003.json
+2210c3dec46da15a3a430c2dca7422d381836ed646d51f1a7eff403060d56b5a  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_000.json
+9ffc7f01318dd11ce105db129e1a771309fbf207f07ec401637f329db8a77513  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/rcl_tab_seed2/checkpoints/checkpoint_002.json
+9de362e86b6c38058cbe59cc86d32f44e33f22dc733439f2a427f076abeeabdc  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/result.json
+cfb727553686c4816a2356cb6de4fc7fe606e3a18202a5288e917e05c83440f0  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_001.json
+732948628991a20cf85efa779f15490f02236c07dfcb955d01329790cb80e806  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_003.json
+4819e222bd0dcab1ff9cca4d0c86369600ccefa2fa97466154bb12bc62d06671  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_000.json
+688cb039de123a6117818724c23af5b73bc140ec87068e72697a05b2ab73fc49  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_seed2/checkpoints/checkpoint_002.json
+8d900b70e8230793e76257c73d66e73150a3814cc5f5f32bd44dc591f1285861  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/result.json
+0d5f1032e91b719d957984bbae1ce5e69748ea00cc7136b9192c490f5deebba4  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_001.json
+748ea78f7a0b1d2520a14ee72947d89ebfb795653881131bd67188ff06fabe31  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_003.json
+7e306720a90694af1436c6430f5e90a87c35242893f3d0154bce52d8391bf25b  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_000.json
+b5432a62627adbb1ace02e167d85c339d5a20995c8789af03a40ff2bd0839070  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/derpp_seed2/checkpoints/checkpoint_002.json
+da50936959e0af45ab72d4332a9d3bd67ecefee01f13f0758c699ec6e2827b60  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/result.json
+e21317f925984893580bf44252b099691cab38d2fb905b173afa2e6f9823574f  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_001.json
+632ca0a371b0a9d35d830a14010d8fb4d1d726ab3fc8d30ce039677b9f847608  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_003.json
+4fd1c5cf08b1041ed9bc6f061a4132105b6f0c921f2812ff3cf10a12b6b6d93c  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_000.json
+bf363935ee51e6d8437c094a5198d488abd58a38efd46adcd458411c61ef0243  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/icarl_seed2/checkpoints/checkpoint_002.json
+ebaae9a47e2b1e04cb978104d04f508507590759f0df0c1bd2e4f8f68aefa634  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/result.json
+70f44138795a3be6031ca2d0d1d1caac4855faed8638c4a7f0c057d053e40ca3  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_001.json
+83b568c8fd2753aacb4dd4a8fd12792a1d240d65a179ffb54feab2db61179a29  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_003.json
+01f514c5deb0ef3af8d23d69e9c3b6baf4f282f316e398e679aad9d0cea24558  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_000.json
+e0ad2b1a74c1ec151b4df20dd8cd8a90a7c46ae357452bf3363980d4c02236cf  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/replay_lwf_seed2/checkpoints/checkpoint_002.json
+26e3b0e791dbece478beaafcde8ea84b5cc792d44c4a90ab3a3c2dece97810dc  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/result.json
+757907b34a931c37699499955a6d91bb478dcf0b895d10bf24daa508f79d74a4  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_001.json
+9866d7a07ca468d703dec6f9cd3cf4e7a0d00c73584e487bbdd382a5e0638b96  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_003.json
+9c228c552359c6c3c5bbfc69b060191dfd582f5d966a264e09ca4a3bfdbf09cc  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_000.json
+328da03589f2dc4602be97d58854da5cac5f67f1b85e4986a344347ae722ec15  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/cse_cic_ids2018/joint_seed2/checkpoints/checkpoint_002.json
+a917f801a853e90838e07286b3d936657b7ce42a69c3e757be22fff254196e29  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/run.log
+29920eb1ec2c803881807b1c7b46af2cf8adc7697e0ccfd6b72ee2983712f877  <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_2/all/final_rows.csv
+JobID|AveCPU|MaxRSS|AveRSS|TRESUsageInAve
+486355.0|05:26:44|23890364K|8986480K|cpu=05:26:44,energy=0,fs/disk=5276680339,mem=8986480K,pages=138,vmem=0
+486359.0|00:02:55|9638076K|9637988K|cpu=00:02:55,energy=0,fs/disk=5246559748,mem=9637988K,pages=4,vmem=0
+2026-10-15T06:48:07.6735096740 90 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/stdout.log
+2026-10-15T06:47:07.6047989020 1113 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/job_start.json
+2026-10-15T06:50:07.7709307450 950 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/resources.jsonl
+2026-10-15T06:47:07.6127989970 0 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/stderr.log
+2026-10-15T06:48:07.6695096270 90 <HPC_HOME>/ofra-etg/section21-20261014/protected/formal/cic18/seed_4/all/run.log
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/job_start.json
+  "job_helper_sha256": "bdd5076fb562b404cc9c51727d65fda9f321bab106a57100e0e20d1d448a2626",
+  "stdout": "stdout.log",
+  "stderr": "stderr.log"
+}
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/stdout.log
+CHECKPOINT_TRAINING CSE-CIC-IDS2018 joint seed=4 task=0 train_rows=11202128 replay_rows=0
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/stderr.log
+FILE <HPC_SCRATCH>/ofra-etg/section21-20261014/results/formal/cic18/seed_4/all/attempts/20261014T224707_486359_2017890/resources.jsonl
+{"utc": "2026-10-14T22:47:07.583074+00:00", "pid": 2017894, "disk_free_bytes": 205120604209152, "cpu_seconds": 0.0, "rss_bytes": 1589248, "available_ram_bytes": 2100615835648, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:48:07.618809+00:00", "pid": 2017894, "disk_free_bytes": 205118498668544, "cpu_seconds": 29.5, "rss_bytes": 10100027392, "available_ram_bytes": 2095714332672, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:49:07.682242+00:00", "pid": 2017894, "disk_free_bytes": 205114044317696, "cpu_seconds": 89.54, "rss_bytes": 10100199424, "available_ram_bytes": 2095852163072, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+{"utc": "2026-10-14T22:50:07.738490+00:00", "pid": 2017894, "disk_free_bytes": 205111280271360, "cpu_seconds": 149.55, "rss_bytes": 10100215808, "available_ram_bytes": 2096149561344, "gpu_csv": "No devices were found", "gpu_query_exit": 6}
+SSH_EXIT=0
+
+SCP_SEED_2_EXIT=0
+SCP_SEED_3_EXIT=0
+SCP_SEED_4_EXIT=0
+
+LOCAL READONLY SUBAGENT 06:47:23 MYT
+PID143656 executable/creation match; live command unavailable from earlier denied CIM, no bypass. CPU1835.0625s (+127), RSS9902714880 bytes, private6605975552; available3683MiB, commit headroom8503853056; instantaneous GPU11%,1063MiB. RCL completed with all4 actualweightSHA, JSON=embedded, canonicalidentity,12source/config/data/finite/8epochs/fullcounts checked. RCLresult b239ac198cbf3ad3cfc93aa244db6c8e24a22ff5a1c0adae7d8780db8a62afba. cp003 5774439f6a321062d5f8eace5f4d320f79c967fd5674574f2071c2f140c44194. Optimization1824.4875365000044s;eval5.880644199991366s;selection0.07767149998107925s. cp003JSONmtime06:39:36.679705;DER++task0epoch1done06:45:15.5cells20cp only, whole package pending. Stderr627B known warning. Repository HEADs/dirty/paperSHA unchanged.
+
