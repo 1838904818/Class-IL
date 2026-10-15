@@ -1,4 +1,16 @@
-# 类增量 NIDS 选题侦察｜资格判定与文献未核项
+# 类增量 NIDS 选题侦察｜步数对照与历史资格判定
+
+2026-10-16，Section22：**新增训练步数下限对照，完整结果尚待生成，不能判定欠训练假象或真实缺陷。** 这是一项 RQ2/RO2 协议敏感性检查，不提出机制，不改 RQ1/RQ3 或整体创新完成门槛。Section21 的原始结果与分析保留不变。依第22.4节，Two-Stage、AdvAs-IIDS、ExBCIL 标为“全文不可得”，停止检索；不以补齐这三篇作为当前执行前提，也不把未知改善写成零。
+
+## Section22 步数对照
+
+[执行入口](run_step_budget.py)：NSL-KDD、去重 UNSW-NB15、CIC-IDS-2017；Replay、Replay+LwF、RCL-tab、iCaRL、DER++；seeds 1/2/3/4/42；S=500/2000，共150个完整增量序列。每任务更新数为 `max(8 * ceil(实际训练行数 / batch_size), S)`，补足部分允许在额外 epoch 中途停止，任务内 Adam 不重置。Replay/LwF/RCL/iCaRL 的实际训练行数包括已存回放；DER++ 保持原来的当前任务流和独立回放采样。每个 checkpoint 记录实际更新数、完整/部分 epoch 和样本呈现次数。
+
+只改变训练步数下限。数据缓存、学习率、类别平衡 CE、任务顺序、200/类存储和各方法参数不变；不重跑 Joint/CSE18。第22.1节文字中的 batch384 与原始结果绑定配置不符，**实际 Section21 batch256，Section22 保持256**。正式训练/测试全量；冒烟的1 seed、1 epoch、每类至多64行不属于正式结果。
+
+交付将逐类列出最后任务新类和所有旧类的原协议/500/2000 recall（五seed均值、SD及原值），各方法 Macro-F1/BAcc，以及相对原 Joint 重算的 G1/G2。第22.3节按五个指定小类（NSL U2R、UNSW Shellcode/Worms、CIC17 Botnet/Infiltration）分别计算 Replay S2000 与 Joint 的五seed均值比值：全部≥50%且三个数据集都满足才判A；全部<20%才判B；混合或中间值交负责人判断。所有150个单元未齐前不作最终判定；额外报告逐seed配对值，不跨类混合掩盖差异。
+
+## Section21 历史结果（8 epochs）
 
 2026-10-15，Section21：**21.5 合格候选为 0；21.4 仍缺三篇全文的协议/成对改善幅度，故第21节尚未整体完成。** 不提出机制、不改 DGC 否决或 RQ1/RQ3，不等于整个研究完成。
 
@@ -25,4 +37,4 @@ G2合格逐类缺口：UNSW Backdoor12.29/Fuzzers8.17、CIC17 Botnet8.38/Normal8
 
 G7累计优化/评估/选择99035.11/419.22/648.47s，**不是墙钟**；训练阶段PyTorch allocated/reserved峰值72597504/96468992B、回放payload/allocated624080B，不是整体设备/进程峰值。[尝试成本及测量限制](results/problem_scout/section21/support_v1/attempt_costs.json)：HPC分配85177s=选中77967+完成重复2285+取消重复4925；runner不叠加。连续GPU遥测缺失，本地退出码/部分中止成本未知，异硬件不比速度；未改论文、科学源或数据。
 
-**下一步/阻塞。** Two-Stage、AdvAs-IIDS、ExBCIL经出版社、作者平台及机构入口有界检索仍无所需全文表；未知不记零或无效。需要合法可读全文/实验页后补21.4；停止重复同一入口检索，保留heartbeat至合格交付，10月16日仍缺则如实报告。
+**历史未核项。** Two-Stage、AdvAs-IIDS、ExBCIL经有界检索仍为“全文不可得”，改善幅度/详细协议未知；依Section22.4停止检索，不再等待这些文献后才推进实验。原21.5零候选是原协议下的判断，不预判Section22结果。当前下一步是完成步数对照并按22.3报告，由负责人据新数字决定后续选题。

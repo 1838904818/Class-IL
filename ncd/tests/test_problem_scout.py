@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from ncd.data import PreparedData
 from ncd import run_problem_scout as scout
+from ncd import crr_benchmarks as benchmarks
 from ncd.train_cil import extract_features, herding_select
 
 
@@ -28,6 +29,109 @@ def config():
 
 
 class ProblemScoutTests(unittest.TestCase):
+    def test_minimum_steps_stop_mid_extra_epoch_and_keep_full_baseline(self):
+        data = fixture()
+        x, y = data.x_train[:10], data.y_train[:10]
+        for epochs, floor, expected in [(1, 5, (5, 1, 2, 18)), (3, 5, (9, 3, 0, 30)),
+                                        (1, 6, (6, 2, 0, 20)), (1, 0, (3, 1, 0, 10))]:
+            stats, batches = {}, []
+            for epoch, epoch_batches in scout.training_epoch_batches(x, y, 4, 17, epochs, floor, stats):
+                batches.extend((epoch, bx.clone(), by.clone()) for bx, by in epoch_batches)
+            self.assertEqual((stats["optimizer_steps"], stats["completed_epochs"],
+                              stats["partial_epoch_batches"], stats["examples_presented"]), expected)
+            self.assertEqual(stats["effective_epochs"], expected[-1] / len(y))
+            self.assertEqual(len(batches), max(epochs * 3, floor))
+            self.assertEqual(stats["baseline_steps"], epochs * 3)
+            historical = [(epoch, bx, by) for epoch in range(epochs)
+                          for bx, by in scout.loader(x, y, 4, 17 + epoch)]
+            for observed, original in zip(batches, historical):
+                self.assertEqual(observed[0], original[0])
+                self.assertTrue(torch.equal(observed[1], original[1]))
+                self.assertTrue(torch.equal(observed[2], original[2]))
+
+    def test_all_cil_methods_count_optimizer_steps_including_rcl_branch(self):
+        data, cfg = fixture(), config()
+        x, y = data.x_train[:10], data.y_train[:10]
+        for method in ["replay", "icarl", "replay_lwf", "rcl_tab", "derpp"]:
+            scout.seed_everything(17)
+            model = scout.MLP(3, 8, 4)
+            teacher = copy.deepcopy(model)
+            stats, actual_updates = {}, []
+            original = torch.optim.Adam.step
+            def counted_step(optimizer, *args, **kwargs):
+                actual_updates.append(optimizer)
+                return original(optimizer, *args, **kwargs)
+            with patch.object(torch.optim.Adam, "step", counted_step):
+                if method == "derpp":
+                    memory = scout.ClassReservoir(2, 3, 4)
+                    scout.train_derpp(model, x, y, memory, cfg | {"min_steps_per_task": 5},
+                                      17, torch.device("cpu"), stats)
+                    self.assertEqual(sum(memory.observations), 18)
+                else:
+                    benchmarks._train(model, x, y, method=method, old_model=teacher,
+                                      old_classes=(0, 1), seen_classes=(0, 1, 2, 3), epochs=1,
+                                      batch_size=4, learning_rate=.001, seed=17, regularization=.1,
+                                      temperature=2., rcl_features=2, min_steps=5, training_stats=stats)
+            self.assertEqual(len(actual_updates), 5, method)
+            self.assertEqual(len({id(optimizer) for optimizer in actual_updates}), 1, method)
+            self.assertEqual(stats["optimizer_steps"], 5, method)
+            self.assertEqual(stats["completed_epochs"], 1, method)
+            self.assertEqual(stats["partial_epoch_batches"], 2, method)
+
+    def test_zero_floor_matches_historical_epoch_loader_models_and_derpp_memory(self):
+        data, cfg = fixture(), config() | {"epochs_per_task": 2}
+        def historical_batches(x, y, batch_size, seed, epochs, min_steps=0, training_stats=None):
+            # Independent schedule used before Section22: exactly one seeded loader per epoch.
+            for epoch in range(epochs):
+                yield epoch, benchmarks.loader(x, y, batch_size, seed + epoch)
+        for method in ["replay", "icarl", "replay_lwf", "rcl_tab", "derpp"]:
+            outputs = []
+            for historical in [True, False]:
+                scout.seed_everything(41)
+                model = scout.MLP(3, 8, 4)
+                teacher = copy.deepcopy(model)
+                if method == "derpp":
+                    memory = scout.ClassReservoir(2, 3, 4)
+                    # DER++ only needs these fields for progress printing in the historical adapter.
+                    def historical_derpp_batches(*args, **kwargs):
+                        stats = args[6]
+                        stats["partial_epoch_batches"] = 0
+                        yield from historical_batches(*args, **kwargs)
+                    helper = historical_derpp_batches if historical else benchmarks.training_epoch_batches
+                    with patch.object(scout, "training_epoch_batches", helper):
+                        scout.train_derpp(model, data.x_train, data.y_train, memory, cfg, 41, torch.device("cpu"))
+                    outputs.append((copy.deepcopy(model.state_dict()), memory.state()))
+                else:
+                    helper = historical_batches if historical else benchmarks.training_epoch_batches
+                    with patch.object(benchmarks, "training_epoch_batches", helper):
+                        benchmarks._train(model, data.x_train, data.y_train, method=method, old_model=teacher,
+                                          old_classes=(0, 1), seen_classes=(0, 1, 2, 3), epochs=2,
+                                          batch_size=4, learning_rate=.001, seed=41, regularization=.1,
+                                          temperature=2., rcl_features=2)
+                    outputs.append((copy.deepcopy(model.state_dict()), None))
+            for name in outputs[0][0]:
+                self.assertTrue(torch.equal(outputs[0][0][name], outputs[1][0][name]), (method, name))
+            if method == "derpp":
+                self.assertTrue(torch.equal(outputs[0][1]["x"], outputs[1][1]["x"]))
+                self.assertTrue(torch.equal(outputs[0][1]["logits"], outputs[1][1]["logits"]))
+                self.assertEqual(outputs[0][1]["observations"], outputs[1][1]["observations"])
+
+    def test_cell_records_step_budget_and_resume_without_retraining(self):
+        data, cfg = fixture(), config() | {"min_steps_per_task": 5}
+        identity = {"dataset": "NSL-KDD", "method": "replay", "seed": 1, "regularization": 0.0}
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "dataset" / "cell"
+            result = scout.run_cell(data, None, None, {}, cfg, identity, output, torch.device("cpu"))
+            for record in result["checkpoints"]:
+                schedule = record["training_schedule"]
+                self.assertEqual(schedule["optimizer_steps"], 5)
+                self.assertEqual(schedule["rows_per_epoch"], record["train_rows"])
+                self.assertEqual(schedule["baseline_steps"], 3)
+                self.assertEqual(schedule["completed_epochs"], 1)
+                self.assertEqual(schedule["partial_epoch_batches"], 2)
+            with patch.object(scout, "_train", side_effect=AssertionError("unexpected retraining")):
+                self.assertEqual(result, scout.run_cell(data, None, None, {}, cfg, identity, output, torch.device("cpu")))
+
     def test_indexed_preallocated_and_mmap_herding_exactly_match_history(self):
         torch.manual_seed(271)
         model = scout.MLP(7, 16, 5)
@@ -184,7 +288,8 @@ class ProblemScoutTests(unittest.TestCase):
             root = Path(temp)
             (root / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
             (root / "selection.json").write_text(json.dumps(selection), encoding="utf-8")
-            args = ["run_problem_scout.py", "--config", str(root / "config.json"), "--output-dir", str(root / "results"), "--smoke"]
+            args = ["run_problem_scout.py", "--config", str(root / "config.json"), "--output-dir", str(root / "results"),
+                    "--smoke", "--min-steps-per-task", "500"]
             with patch.object(scout, "ROOT", root), patch.object(scout.sys, "argv", args), \
                  patch.dict(scout.sys.modules, {"ncd.prepare_problem_scout_data": module}), \
                  patch.object(scout, "digest", return_value="c" * 64), \
@@ -197,6 +302,9 @@ class ProblemScoutTests(unittest.TestCase):
                 self.assertTrue(result["smoke"])
                 self.assertEqual(len(result["cells"]), 6)
                 self.assertEqual(result["expected"]["seeds"], [1])
+                self.assertEqual(result["provenance"]["effective_config"]["min_steps_per_task"], 0)
+                self.assertEqual(result["provenance"]["effective_config"]["smoke_requested_min_steps_per_task"], 500)
+                self.assertEqual(result["provenance"]["effective_config"]["epochs_per_task"], 1)
                 self.assertEqual(len(result["final_rows"]), 24)
                 self.assertTrue((root / "results/final_rows.csv").is_file())
                 train.reset_mock(); derpp.reset_mock()

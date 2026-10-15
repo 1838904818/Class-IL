@@ -31,7 +31,7 @@ import numpy as np
 import sklearn
 import torch
 import torch.nn.functional as F
-from ncd.crr_benchmarks import _class_balanced_cross_entropy, _train
+from ncd.crr_benchmarks import _class_balanced_cross_entropy, _train, training_epoch_batches
 from ncd.model import MLP
 from ncd.run_crr_real_sequence import _scorer, _write_csv
 from ncd.source_commit import source_commit
@@ -176,12 +176,15 @@ class ClassReservoir:
         return (self.x.numel() + self.logits.numel()) * 4 + 8 * self.n_classes
 
 
-def train_derpp(model, x, y, memory, config, task_seed, device):
+def train_derpp(model, x, y, memory, config, task_seed, device, training_stats=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=float(config["learning_rate"]))
     rng = np.random.default_rng(task_seed + 8317)
-    for epoch in range(int(config["epochs_per_task"])):
+    schedule = training_stats if training_stats is not None else {}
+    for epoch, batches in training_epoch_batches(
+            x, y, int(config["batch_size"]), task_seed, int(config["epochs_per_task"]),
+            int(config.get("min_steps_per_task", 0)), schedule):
         model.train()
-        for bx, by in loader(x, y, int(config["batch_size"]), task_seed + epoch):
+        for bx, by in batches:
             bx, by = bx.to(device), by.to(device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(bx)
@@ -196,7 +199,11 @@ def train_derpp(model, x, y, memory, config, task_seed, device):
             loss.backward()
             optimizer.step()
             memory.add(bx, by, logits, rng)
-        print(f"DERPP_EPOCH_DONE epoch={epoch + 1} buffer_rows={len(memory)}", flush=True)
+        if schedule["partial_epoch_batches"]:
+            print(f"DERPP_EPOCH_PARTIAL epoch={epoch + 1} batches={schedule['partial_epoch_batches']} "
+                  f"optimizer_steps={schedule['optimizer_steps']} buffer_rows={len(memory)}", flush=True)
+        else:
+            print(f"DERPP_EPOCH_DONE epoch={epoch + 1} buffer_rows={len(memory)}", flush=True)
 
 
 def herding_select_indexed(model, x, rows, count, device, batch_size, *, mmap_threshold_bytes, scratch_dir=None):
@@ -396,8 +403,14 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                 torch.cuda.reset_peak_memory_stats(device)
             started = time.perf_counter()
             print(f"CHECKPOINT_TRAINING {identity['dataset']} {method} seed={seed} task={t} train_rows={len(train_y)} replay_rows={before_n}", flush=True)
+            min_steps = int(config.get("min_steps_per_task", 0))
+            training_schedule = {} if min_steps else None
             if method == "derpp":
-                train_derpp(model, current_x, current_y, memory, config, task_seed, device)
+                if training_schedule is None:
+                    train_derpp(model, current_x, current_y, memory, config, task_seed, device)
+                else:
+                    train_derpp(model, current_x, current_y, memory, config, task_seed, device,
+                                training_stats=training_schedule)
             else:
                 _train(model, train_x, train_y, method="replay" if method == "joint" else method,
                        old_model=teacher, old_classes=previous_seen, seen_classes=seen,
@@ -405,7 +418,8 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                        learning_rate=float(config["learning_rate"]), seed=task_seed,
                        regularization=float(identity["regularization"]), temperature=float(config["temperature"]),
                        rcl_features=int(config["rcl_features"]), rcl_temperature=float(config["rcl_temperature"]),
-                       rcl_beta=float(config["rcl_beta"]), rcl_prediction_weight=float(config["rcl_prediction_weight"]))
+                       rcl_beta=float(config["rcl_beta"]), rcl_prediction_weight=float(config["rcl_prediction_weight"]),
+                       **({"min_steps": min_steps, "training_stats": training_schedule} if min_steps else {}))
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
             training_seconds = time.perf_counter() - started
@@ -434,6 +448,12 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                      "replay_allocated_bytes_after": memory.allocated_bytes() if memory is not None else after_bytes,
                      "train_rows": len(train_y), "new_training_rows": len(current_y),
                      "train_class_counts": {str(c): int(np.sum(train_y == c)) for c in seen}}
+            if training_schedule is not None:
+                baseline_steps = int(config["epochs_per_task"]) * ((len(train_y) + int(config["batch_size"]) - 1) // int(config["batch_size"]))
+                expected_steps = max(baseline_steps, min_steps)
+                if training_schedule.get("optimizer_steps") != expected_steps or training_schedule.get("target_steps") != expected_steps:
+                    raise ValueError("training optimizer-step count does not match requested budget")
+                state["training_schedule"] = training_schedule
             checkpoint_save(checkpoint, state)
             print(f"CHECKPOINT_TRAINED {identity['dataset']} {method} seed={seed} task={t} train_seconds={training_seconds:.3f}", flush=True)
             del train_x, train_y, current_x, current_y
@@ -450,6 +470,8 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                                            "replay_examples_before", "replay_examples_after", "replay_bytes_before", "replay_bytes_after",
                                            "replay_allocated_bytes_after",
                                            "train_rows", "new_training_rows", "train_class_counts")}
+            if "training_schedule" in state:
+                record["training_schedule"] = state["training_schedule"]
             record.update(new_classes=list(task), checkpoint_file=checkpoint.relative_to(output).as_posix(),
                           checkpoint_sha256=checkpoint_hash, identity_hash=canonical_hash(identity),
                           id=evaluate(scorer, data.x_test, data.y_test, seen, data, config, device),
@@ -494,6 +516,8 @@ def main():
     parser.add_argument("--methods", nargs="+", choices=METHODS)
     parser.add_argument("--seeds", nargs="+", type=int, choices=SEEDS)
     parser.add_argument("--device", choices=("cpu", "cuda"))
+    parser.add_argument("--min-steps-per-task", type=int,
+                        help="Minimum optimizer updates per task; retain all configured epochs before extra batches")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--evaluate-only", action="store_true")
     args = parser.parse_args()
@@ -502,10 +526,22 @@ def main():
         config["problem_scout_data_root"] = args.data_root
     if args.device:
         config["device"] = args.device
+    if args.min_steps_per_task is not None:
+        if args.min_steps_per_task < 0:
+            parser.error("--min-steps-per-task must be nonnegative")
+        if args.min_steps_per_task:
+            config["min_steps_per_task"] = args.min_steps_per_task
+        else:
+            config.pop("min_steps_per_task", None)
+    if int(config.get("min_steps_per_task", 0)) < 0:
+        parser.error("config min_steps_per_task must be nonnegative")
     datasets, methods, seeds = args.datasets or config["datasets"], args.methods or config["methods"], args.seeds or config["seeds"]
     if args.smoke:
         seeds = [1]
         config.update(epochs_per_task=1, buffer_per_class=min(16, int(config["buffer_per_class"])))
+        if config.get("min_steps_per_task", 0):
+            config["smoke_requested_min_steps_per_task"] = config["min_steps_per_task"]
+            config["min_steps_per_task"] = 0
     config["smoke"] = bool(args.smoke)
     device = torch.device(config["device"])
     if device.type == "cuda" and not torch.cuda.is_available():

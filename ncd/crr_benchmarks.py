@@ -627,6 +627,47 @@ def _pair_margin_mse(
     return torch.stack(losses).mean() if losses else student.new_zeros(())
 
 
+def training_epoch_batches(x, y, batch_size, seed, epochs, min_steps=0, training_stats=None):
+    """Yield deterministic epochs, with a possibly partial final extra epoch.
+
+    The optimizer is owned by the caller and is never reset between epochs.
+    Counts advance after a yielded batch has been consumed by the training loop.
+    With min_steps=0, the loaders and their order are identical to range(epochs).
+    """
+    if epochs < 0 or min_steps < 0 or batch_size <= 0 or len(y) == 0:
+        raise ValueError("training requires nonnegative epochs/steps and positive rows/batch size")
+    batches_per_epoch = (len(y) + batch_size - 1) // batch_size
+    baseline_steps = epochs * batches_per_epoch
+    target_steps = max(baseline_steps, min_steps)
+    stats = training_stats if training_stats is not None else {}
+    stats.update(requested_epochs=epochs, min_steps_per_task=min_steps,
+                 rows_per_epoch=len(y), batches_per_epoch=batches_per_epoch,
+                 baseline_steps=baseline_steps, target_steps=target_steps,
+                 optimizer_steps=0, completed_epochs=0, epochs_started=0,
+                 partial_epoch_batches=0, partial_epoch_examples=0,
+                 examples_presented=0, effective_epochs=0.0)
+
+    def counted_batches(epoch, count):
+        iterator = iter(loader(x, y, batch_size, seed + epoch))
+        for _ in range(count):
+            bx, by = next(iterator)
+            yield bx, by
+            stats["optimizer_steps"] += 1
+            stats["examples_presented"] += len(by)
+            stats["partial_epoch_batches"] += 1
+            stats["partial_epoch_examples"] += len(by)
+            stats["effective_epochs"] = stats["examples_presented"] / len(y)
+        if count == batches_per_epoch:
+            stats["completed_epochs"] += 1
+            stats["partial_epoch_batches"] = 0
+            stats["partial_epoch_examples"] = 0
+
+    for epoch in range((target_steps + batches_per_epoch - 1) // batches_per_epoch):
+        stats["epochs_started"] += 1
+        count = min(batches_per_epoch, target_steps - stats["optimizer_steps"])
+        yield epoch, counted_batches(epoch, count)
+
+
 def _train(
     model: MLP,
     x: np.ndarray,
@@ -646,6 +687,8 @@ def _train(
     rcl_temperature: float = 0.5,
     rcl_beta: float = 1.0,
     rcl_prediction_weight: float = 0.5,
+    min_steps: int = 0,
+    training_stats: dict | None = None,
 ) -> float:
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     device = next(model.parameters()).device
@@ -655,9 +698,9 @@ def _train(
         old_model.eval()
         for parameter in old_model.parameters():
             parameter.requires_grad_(False)
-    for epoch in range(epochs):
+    for epoch, batches in training_epoch_batches(x, y, batch_size, seed, epochs, min_steps, training_stats):
         model.train()
-        for bx, by in loader(x, y, batch_size, seed + epoch):
+        for bx, by in batches:
             bx, by = bx.to(device), by.to(device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(bx)
