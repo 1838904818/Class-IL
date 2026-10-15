@@ -8,6 +8,10 @@
 
 只改变训练步数下限。数据缓存、学习率、类别平衡 CE、任务顺序、200/类存储和各方法参数不变；不重跑 Joint/CSE18。第22.1节文字中的 batch384 与原始结果绑定配置不符，**实际 Section21 batch256，Section22 保持256**。正式训练/测试全量；冒烟的1 seed、1 epoch、每类至多64行不属于正式结果。
 
+按原始 checkpoint 的实际行数重算，最后任务 Replay/LwF/RCL/iCaRL 的原更新数为 NSL32、UNSW96、CIC17 88（当前新类行数52/1284/1616，加已存旧类800/1600/1200行）；DER++ 当前流更新数为8/48/56，旧回放另在每步内采样。这修正了第22.1节基于batch384的24/64步估算，不改变实验问题。
+
+2026-10-16 02:40 MYT 已从源提交`0a16c4b0b2c407dc2a97bfd7658635106a681b26`启动正式矩阵，先2000后500，命令为`python -I -u ncd/run_step_budget.py --output-dir ncd/results/problem_scout/section22`。30个真实数据冒烟单元已完整退出（两组各15，退出码0）；正式数值由[配对分析入口](analyze_step_budget.py)从最终ID混淆计数复算。完整正式覆盖与22.3判定仍待生成，冒烟或代码测试不构成科学结论。
+
 交付将逐类列出最后任务新类和所有旧类的原协议/500/2000 recall（五seed均值、SD及原值），各方法 Macro-F1/BAcc，以及相对原 Joint 重算的 G1/G2。第22.3节按五个指定小类（NSL U2R、UNSW Shellcode/Worms、CIC17 Botnet/Infiltration）分别计算 Replay S2000 与 Joint 的五seed均值比值：全部≥50%且三个数据集都满足才判A；全部<20%才判B；混合或中间值交负责人判断。所有150个单元未齐前不作最终判定；额外报告逐seed配对值，不跨类混合掩盖差异。
 
 ## Section21 历史结果（8 epochs）
