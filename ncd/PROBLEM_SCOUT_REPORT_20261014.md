@@ -20,6 +20,10 @@ G4按真实类引入时间定义“更新类”，Normal优先、其后更新类
 
 **执行与恢复。** [总控入口](run_bias_control.py)命令为`python -I -u ncd/run_bias_control.py --output-dir ncd/results/problem_scout/section23/controls_v1`，顺序完成84个开发单元、冻结选择后才执行120个正式单元。训练源码、实际配置与历史lambda文件均绑定SHA；每任务checkpoint包含已完成校正和memory状态，完成单元经hash核验后跳过。24个真实数据冒烟单元已完成，故障恢复与全矩阵续跑没有重复训练；一次Windows状态文件替换失败保留原日志并已增加有界重试。补丁后的额外1个真实数据冒烟和108项相关测试通过。这些运行链路检查不提供校正有效性证据，完整科学结果仍待交付。
 
+完整矩阵于2026-10-17 23:32:10 MYT在本地RTX4060Ti启动，训练源提交固定为`b19de59991ea744305f710ad4e6ca3ff9b860c93`，通过`NCD_SOURCE_COMMIT`传递给每个单元。当前为开发阶段，不代表120个正式单元已完成；完整raw与23.4判定尚未交付。仅报告/分析代码更新不改变本次训练来源，恢复不得改用更新后的HEAD冒充原源提交。
+
+**可复算分析。** [分析入口](analyze_bias_controls.py)从混淆计数重算各checkpoint的Macro-F1/BAcc、逐类precision/recall/F1、新旧类平均recall和Normal FPR，分别报告相对同base S2000与Joint的配对变化。它重新核算84个开发单元的候选均值与24个冻结选择，并要求120个正式单元完整才给23.4判定；缺失为null，不作零分。命令：`python -I ncd/analyze_bias_controls.py --baseline ncd/results/problem_scout/section21/merged_v1 --steps-2000 ncd/results/problem_scout/section22/steps_2000_v1 --controls ncd/results/problem_scout/section23/controls_v1 --output-dir ncd/results/problem_scout/section23/analysis_v1 --weights portable`。portable模式验证小结果、sidecar和选择文件的实际字节，不读取权重；本地完整交付前另用`--weights verify`核验实际checkpoint SHA。当前分析输出仅为partial/pending，不是正式校正结论。
+
 **23.4未判定。** 正式完整结果后，按`(校正后Macro-F1−原固定最佳Macro-F1)/(Joint−原固定最佳Macro-F1)`计算填补比例，不截断负值或超过100%的值；NSL分母非正，比例记为不适用。负责人已确认：达到70%须“同一种校正、同一base角色”在UNSW和CIC17都满足，即都叠加Replay或都叠加各库固定最佳方法。另列允许跨库选不同base的敏感性结果，但不用于宣布已解决。若每库所有校正/base中最好结果均不足30%则未解决，否则中间状态交负责人。两个base分别报告，选择规则及全部组合保留，不逐seed择优。此检查不关闭锁定的RQ1/RQ3或总体创新门槛。
 
 ---
