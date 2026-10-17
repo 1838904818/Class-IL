@@ -1,0 +1,37 @@
+{
+  "base_config": "ncd/configs/problem_scout_section21.json",
+  "datasets": ["NSL-KDD", "UNSW-NB15", "CIC-IDS-2017"],
+  "best_methods": {"NSL-KDD": "replay_lwf", "UNSW-NB15": "rcl_tab", "CIC-IDS-2017": "derpp"},
+  "development_seeds": [5, 6],
+  "reporting_seeds": [1, 2, 3, 4, 42],
+  "min_steps_per_task": 2000,
+  "epochs_per_task": 8,
+  "batch_size": 256,
+  "development_validation_fraction": 0.1,
+  "selection_metric": "final_training_holdout_macro_f1_mean_over_seeds_5_6",
+  "selection_tie_break": "lowest_candidate_index",
+  "bic_holdout_per_class_max": 20,
+  "bic_holdout_fraction": 0.1,
+  "bic_training_memory_per_class": 180,
+  "ssil_old_replay_batch_size": 64,
+  "candidates": {
+    "wa": [{}],
+    "bic": [{"steps": 100, "learning_rate": 0.01}, {"steps": 300, "learning_rate": 0.01}],
+    "ssil": [{"tkd_weight": 0.5}, {"tkd_weight": 1.0}],
+    "cbf": [{"epochs": 10, "learning_rate": 0.0001}, {"epochs": 30, "learning_rate": 0.0001}]
+  },
+  "sources": {
+    "wa": "https://arxiv.org/abs/1911.07053",
+    "bic": "https://arxiv.org/abs/1905.13260",
+    "ssil": "https://arxiv.org/abs/2003.13947",
+    "cbf": "https://arxiv.org/abs/1807.09536"
+  },
+  "adaptations": {
+    "shared": "Existing MLP, Adam, batch-class-balanced CE, task order and 200/class maximum retained. New corrections are borrowed controls, not proposed mechanisms.",
+    "wa": "Mean L2 norm ratio scales latest-task weights and biases after each incremental task; no positive-weight clamp; original base losses retained.",
+    "bic": "Persistent class-introduction holdout never enters feature training or replay; up to20 heldout plus180 training-memory slots per class. Balanced calibration uses min available heldout per seen class; latest-task alpha/beta fitted with frozen model and folded into head before next task. Adam instead of original SGD.",
+    "ssil": "Separated old/new CE and taskwise old KL, with64 additional old replay rows per base batch. Original LwF/RCL/DER++ auxiliary losses retained as an explicit stacked adaptation. Single-class task softmax CE/KL is identically zero. Additional replay exposure recorded.",
+    "cbf": "Post-base equal-count random subset from current data and stored old memory, at most200/class, Adam at0.1x base learning rate; post-base teacher taskwise distillation includes new task; no image augmentation or herding. Extra updates counted separately.",
+    "development": "Seeds5/6 only; stratified10% training holdout for candidate selection, disjoint from all optimization and BiC calibration. Official ID test is never used for selection. Formal1/2/3/4/42 restore original training pool, subject only to BiC internal holdout. Fixed historical base lambdas reused."
+  }
+}

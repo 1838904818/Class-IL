@@ -1,4 +1,28 @@
-# 类增量 NIDS 选题侦察｜步数对照与历史资格判定
+# 类增量 NIDS 选题侦察｜剩余差距、步数对照与历史资格判定
+
+## Section23 剩余差距与现成偏差校正（进行中）
+
+2026-10-17：**23.2已有结果拆解完成；23.3校正对照尚未完成，不能给出23.4判定。** 下表固定使用Section22各数据集五seed平均Macro-F1最高的方法，不逐seed换方法。Joint仍为原协议参考，不是保证成立的上界。完整逐类precision/recall/F1差、带符号的F1贡献、FP来源、G4和NormalFPR见[拆解结果](results/problem_scout/section23/decomposition_v1/analysis.json)及同目录CSV；这些是算术分解，不是因果机制证明。
+
+| 数据集 / 固定S2000方法 | Joint−CIL Macro-F1，pp，均值±SD | 主要正贡献，pp | benign FPR差 CIL−Joint，pp |
+|---|---:|---|---:|
+| NSL / Replay+LwF | −3.457±2.104 | U2R +1.258，被其他类负贡献抵消 | +2.910 |
+| UNSW / RCL-tab | +5.138±1.555 | Exploits 1.304；DoS 0.982；Shellcode 0.751 | −1.740 |
+| CIC17 / DER++ | +8.975±3.419 | Bruteforce 3.666；WebAttack 2.137 | +6.178 |
+
+每类贡献为`100*(F1_Joint−F1_CIL)/类别数`；15个配对seed的贡献加和均还原总差距。CIC17上述两类合计5.803pp，占净差距64.66%；Bruteforce precision由72.16%降至37.69%，WebAttack由18.03%降至7.08%，而CIL recall约99.4%和93.8%。五seed合并错误计数中，Bruteforce、WebAttack、Botnet收到的FP分别有96.94%、97.15%、99.75%来自Normal。UNSW不同：DoS的FP有74.47%来自Exploits，Shellcode的FP来自Normal/Fuzzers/Exploits/Recon等；Exploits/Fuzzers/Recon的recall也下降，不能概括为纯precision问题。
+
+G4按真实类引入时间定义“更新类”，Normal优先、其后更新类、其余旧/同任务类，三者互斥。全体旧类错误流向更新类的合并计数比例，Joint→CIL：UNSW 90.53%→87.86%，CIC17 76.34%→83.61%；只含旧攻击类时分别为78.45%→77.94%、37.84%→34.98%。旧Normal是重要来源，不能混淆这两个人口；合并计数比率也不等于逐seed比例均值，后者单列在结果中。
+
+**原文与适配。** 已核对[WA](https://arxiv.org/html/1911.07053) Eq.6–9及bias消融、[BiC](https://arxiv.org/html/1905.13260) Sec.5、[SS-IL](https://arxiv.org/html/2003.13947) Eq.3/7与Sec.5、[EEIL平衡微调](https://arxiv.org/html/1807.09536) Sec.4–5。WA用新旧平均L2范数比同时缩放新类weight/bias；BiC用未进入特征训练的平衡留出样本拟合新类alpha/beta；SS-IL分离新旧CE并加旧任务级KL；CBF在当前类与已存旧类的等量子集上小学习率微调，蒸馏包含新任务。保留MLP/Adam/共享类别平衡CE，不复现图像论文整体协议、不宣称新机制。详见[实际运行配置](configs/bias_correction_section23.json)的adaptations：BiC留出与训练memory合计≤200/类，持久留出从类首次出现即隔离；SS-IL明确保留base辅助损失并追加旧回放，单类task的分离CE/KL恒为0；CBF随机选样替代herding，额外更新单独计费。
+
+**运行设计。** 四种校正同时叠加Replay与本表固定最佳base，共120个正式单元。基础任务保持`max(8 epochs,2000 steps)`、batch256；不重跑Joint/CSE18、不动21/22原始结果。WA无待选超参；BiC校正100/300步、SS-IL任务KD权重0.5/1、CBF微调10/30epochs，其他值固定。84个development单元仅seed5/6，按分层训练留出10%的最终Macro-F1均值选择，平分选低编号；官方ID test不参与选择。选定后冻结，各组合以1/2/3/4/42报告；正式训练恢复完整原训练池（BiC内部留出除外）。候选、阶段、数据角色、源码提交和额外成本写入结果；冒烟不是正式证据。
+
+**执行与恢复。** [总控入口](run_bias_control.py)命令为`python -I -u ncd/run_bias_control.py --output-dir ncd/results/problem_scout/section23/controls_v1`，顺序完成84个开发单元、冻结选择后才执行120个正式单元。训练源码、实际配置与历史lambda文件均绑定SHA；每任务checkpoint包含已完成校正和memory状态，完成单元经hash核验后跳过。24个真实数据冒烟单元已完成，故障恢复与全矩阵续跑没有重复训练；一次Windows状态文件替换失败保留原日志并已增加有界重试。补丁后的额外1个真实数据冒烟和108项相关测试通过。这些运行链路检查不提供校正有效性证据，完整科学结果仍待交付。
+
+**23.4未判定。** 正式完整结果后，按`(校正后Macro-F1−原固定最佳Macro-F1)/(Joint−原固定最佳Macro-F1)`计算填补比例，不截断负值或超过100%的值；NSL分母非正，比例记为不适用。负责人已确认：达到70%须“同一种校正、同一base角色”在UNSW和CIC17都满足，即都叠加Replay或都叠加各库固定最佳方法。另列允许跨库选不同base的敏感性结果，但不用于宣布已解决。若每库所有校正/base中最好结果均不足30%则未解决，否则中间状态交负责人。两个base分别报告，选择规则及全部组合保留，不逐seed择优。此检查不关闭锁定的RQ1/RQ3或总体创新门槛。
+
+---
 
 2026-10-16，Section22：**150组正式步数对照完成，按预声明22.3判为 A（协议假象），不是 B。** Replay S2000 对五个指定小类的五seed平均 recall 均达到原 Joint 的50%以上；这只否定以原短训练下的“学不进去”直接设计机制，不表示遗忘、总体差距或研究问题均已解决。这是一项 RQ2/RO2 协议敏感性检查，不提出机制，不改 RQ1/RQ3 或整体创新完成门槛。Section21 原始结果与分析保留不变。依22.4，三篇“全文不可得”的检索停止，未知改善不写成零。
 
