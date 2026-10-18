@@ -1,8 +1,8 @@
 # 类增量 NIDS 选题侦察｜剩余差距、步数对照与历史资格判定
 
-## Section25 良性误报快速诊断（首批结果，尚未完成）
+## Section25 良性误报快速诊断（部分结果，尚未完成）
 
-**首批交付：2026-10-19（MYT），并非18日按期完成。** D4/D5已完成：CIC17 seeds1/2/3、NSL seeds1/2/3/4/42；16个原始保存模型的完整测试混淆矩阵精确复现，无重训或调参。D1/D3本地批次已启动（D1先行）；D2预算解释待确定。CIC17的HPC包装/归档均通过同入口真实冒烟，但部署前连接超时，尚无作业ID；未完成不因准备成功而改为完成。
+**更新：2026-10-19（MYT），并非18日按期完成。** NSL D1五seeds已齐；D4/D5两数据集已齐，16个保存模型的原完整测试CM精确复现，无重训/调参。CIC17本地D1运行中，HPC作业488759最后核验于00:53为RUNNING；01:03连接不可用，终态与完整结果未核验。D2口径待确定，D3未完成。
 
 表中依次为 **Normal recall / Macro-F1 / 攻击类宏平均recall / 闭合率**，单位%。闭合率为逐seed `(处理−Replay)/(Joint−Replay)` 后平均，非均值之比；未完成不作零分。
 
@@ -10,22 +10,22 @@
 |---|---:|---:|
 | Replay S2000参考 | 85.49 / 52.23 / 93.27 / 0 | 91.62 / 59.90 / 62.98 / 0 |
 | Joint原协议参考 | 95.43 / 64.16 / 89.84 / 100 | 94.62 / 57.22 / 53.17 / 100 |
-| D1：Normal 2000，攻击200/类 | 未完成 | 未完成 |
+| D1：Normal 2000，攻击200/类 | 未完成 | 96.83 / 58.50 / 56.39 / −969.20 |
 | D2：Normal占总预算50% | 未完成 | 未完成 |
 | D3：Normal k-means选200 | 未完成 | 未完成 |
 | D4：测试logit加log训练先验 | 94.63 / 58.02 / 79.24 / 91.00 | 93.52 / 60.57 / 60.03 / −385.43 |
 | D5：训练支持域kNN门控 | 89.91 / 59.86 / 89.84 / 44.08 | 95.09 / 54.05 / 49.71 / −734.71 |
 | Joint+D4（补充） | 98.83 / 67.12 / 66.48 / 134.91 | 95.65 / 51.48 / 39.61 / −68.77 |
 
-**25.4判定：当前没有合格阳性结果。** D4/D5的攻击召回下降：CIC17 14.03/3.43pp，NSL 2.95/13.27pp，均超2pp护栏；NSL D5的MF1另降5.85pp。因此不支持H-prior/H-supp；H-cov待D2/D3。Joint D4的Normal增益为+3.40/+1.03pp，小于Replay的+9.14/+1.90pp，且CIC17 Joint攻击召回下降23.36pp。
+**25.4判定：当前没有合格阳性结果。** NSL D1的Normal提升5.21pp，但MF1下降1.39pp、攻击宏召回下降6.59pp，两护栏均失败；D1仅是增预算参考，不支持H-cov。D4/D5攻击宏召回降幅为CIC17 14.03/3.43pp、NSL 2.95/13.27pp，均超2pp；NSL D5的MF1另降5.85pp。不支持H-prior/H-supp，H-cov待同一D2或D3在两数据集通过。Joint D4的Normal增益为+3.40/+1.03pp，Replay为+9.14/+1.90pp。
 
-**限定与成本。** NSL seeds1/42分母为−0.525/−0.072pp，比率不稳定；不删seed。D4加号为指定适配，非[Menon ICLR2021](https://arxiv.org/html/2007.07314) Eq.9测试减号复现。D5用保存memory的最终128维嵌入、平均10NN欧氏距离、类内留一95%分位；严格低于阈值保留攻击，否则Normal，测试集不定阈值。CPU模型单元合计25.00s（不含数据加载/共享哈希），D4额外0.62s、D5额外11.51s；训练成本待齐。诊断不证明因果或新机制，不关闭RQ1/RQ3。
+**限定与成本。** NSL seeds1/42分母为−0.525/−0.072pp，闭合率被负/近零分母放大；保留全部带符号比率，不将负闭合率解释为Normal召回下降。D4加号为指定适配，非[Menon ICLR2021](https://arxiv.org/html/2007.07314) Eq.9测试减号复现。D5：保存memory的最终128维嵌入、平均10NN欧氏距离、类内留一95%分位；严格低于阈值保留攻击，否则Normal，测试不定阈值。NSL D1训练/选择/评估1099.96/0.054/3.33s（不含加载等）；共享GPU耗时非独占基准。D4/D5 CPU模型单元25.00s（不含加载/共享哈希），额外校正0.62/11.51s；未完成及重复执行成本待收齐，非零。诊断不证明因果或新机制，不关闭RQ1/RQ3。
 
-**复现。** [D4/D5入口](run_benign_posthoc.py)，源码`efd1ec04d7228cb70bed263eb74538fdedbcb302`；运行`python -I ncd/run_benign_posthoc.py --output-dir ncd/results/problem_scout/section25/posthoc_v1`并显式设置同值`NCD_SOURCE_COMMIT`，原Joint权重另传`--joint-weights-root`。[原始结果](results/problem_scout/section25/posthoc_v1/result.json)保存实际命令/权重SHA/日志；[独立分析](analyze_benign_diagnostics.py)复算40组CM、逐类P/R/F1和[配对变化](results/problem_scout/section25/analysis_v1/result.json)。D1/D3固定训练源码`5657b468d0c83af58ec60dcd60ecf83bf61594f5`，S2000不变；D3固定k200/seed42/n_init1/max_iter100，训练空间选实际行并共用缓存，成本单列。
+**复现。** [D4/D5入口](run_benign_posthoc.py)及[原始结果](results/problem_scout/section25/posthoc_v1/result.json)记录命令/权重SHA，源码`efd1ec04d7228cb70bed263eb74538fdedbcb302`。[独立分析](analyze_benign_diagnostics.py)以`--weights verify`复算45组最终CM（16参考+29处理），验证NSL D1的20个实际权重；[分析结果](results/problem_scout/section25/analysis_v1/result.json)含BAcc、逐类P/R/F1、新旧召回、SD及配对变化。NSL D1另行独立复算一致。[本地D1/D3入口](run_benign_coverage_batch.py)固定训练源码`5657b468d0c83af58ec60dcd60ecf83bf61594f5`，S2000不变；D3固定k200/seed42/n_init1/max_iter100，训练空间选实际行，共用缓存并计一次聚类成本。
 
 **最近先例（5篇）。** [GSS，NeurIPS2019](https://proceedings.neurips.cc/paper/2019/hash/e562cd9c0768d5464b64cf61da7fc6bb-Abstract.html)：梯度多样性；[Rainbow Memory，CVPR2021](https://openaccess.thecvf.com/content/CVPR2021/html/Bang_Rainbow_Memory_Continual_Learning_With_a_Memory_of_Diverse_Samples_CVPR_2021_paper.html)：类内覆盖；[CBRS，ICML2020补充B](https://proceedings.mlr.press/v119/chrysakis20a/chrysakis20a-supp.pdf)：类别重要性配额；[ECBRS，NeurIPS2023](https://papers.neurips.cc/paper_files/paper/2023/hash/3755a02b1035fbadd5f93a022170e46f-Abstract-Conference.html)：NIDS多数类替换，二元增量协议不同；[Ariffin等，arXiv:2608.04602v1](https://arxiv.org/html/2608.04602)：2026-08-05预印本，benign持续回放/按类量保留，未核实正式发表。Normal增额或多样性选样本身不新颖。
 
-下一步：完成D1/D3、确定D2预算口径并执行；保留未完成状态，按同一公式更新本表，不因等待而推迟首批交付。
+下一步：收齐CIC17 D1、完成D3、确定D2口径后执行；按同一公式更新本表，未完成不阻止已完成组交付。
 
 ## Section23 剩余差距与现成偏差校正（完整结果）
 
