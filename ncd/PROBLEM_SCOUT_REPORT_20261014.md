@@ -2,7 +2,7 @@
 
 ## Section25 良性误报快速诊断（部分结果，尚未完成）
 
-**2026-10-19（MYT）部分交付，未在18日按期完成。** D1、D3、D4/D5已齐；D2于02:47启动，尚未完成。CIC17 D1采用先完成的有效HPC三seed（488759，退出0），不按分数选来源。
+**2026-10-19（MYT）部分交付，未在18日按期完成。** D1、D3、D4/D5及NSL D2已齐；CIC17 D2尚未完成。CIC17 D1采用先完成的有效HPC三seed（488759，退出0），不按分数选来源。
 
 表中依次为 **Normal recall / Macro-F1 / 攻击类宏平均recall / 闭合率**，单位%。闭合率为逐seed `(处理−Replay)/(Joint−Replay)` 后平均，非均值之比；未完成不作零分。
 
@@ -11,23 +11,23 @@
 | Replay S2000参考 | 85.49 / 52.23 / 93.27 / 0 | 91.62 / 59.90 / 62.98 / 0 |
 | Joint原协议参考 | 95.43 / 64.16 / 89.84 / 100 | 94.62 / 57.22 / 53.17 / 100 |
 | D1：Normal 2000，攻击200/类 | 92.69 / 58.65 / 89.65 / 70.99 | 96.83 / 58.50 / 56.39 / −969.20 |
-| D2：固定最终容量，Normal配额50% | 未完成 | 未完成 |
+| D2：固定最终容量，Normal配额50% | 未完成 | 95.39 / 59.57 / 61.49 / −733.62 |
 | D3：Normal k-means选200 | 85.09 / 49.95 / 90.29 / −5.06 | 90.79 / 59.44 / 61.06 / 774.31 |
 | D4：测试logit加log训练先验 | 94.63 / 58.02 / 79.24 / 91.00 | 93.52 / 60.57 / 60.03 / −385.43 |
 | D5：训练支持域kNN门控 | 89.91 / 59.86 / 89.84 / 44.08 | 95.09 / 54.05 / 49.71 / −734.71 |
 | Joint+D4（补充） | 98.83 / 67.12 / 66.48 / 134.91 | 95.65 / 51.48 / 39.61 / −68.77 |
 
-**25.4：无合格阳性。** H-cov须同一D2/D3在两数据集闭合≥50%、ΔMF1≥0且Δ攻击宏召回≥−2pp。D3的ΔNormal/ΔMF1/Δ攻击召回：CIC17 −0.39/−2.28/−2.97pp，NSL −0.83/−0.45/−1.92pp，均未过护栏；774.31%不代表改善。D1仅增预算参考，两组均失败；保留CIC17 D1 seed3、D3 seed2的Infiltration 0/6。D4/D5四组攻击降幅均超2pp，不支持H-prior/H-supp。H-cov待D2；RQ1/RQ3及创新未关闭。
+**25.4：无合格阳性。** H-cov须同一D2/D3在两数据集闭合≥50%、ΔMF1≥0且Δ攻击宏召回≥−2pp。NSL D2的ΔNormal/ΔMF1/Δ攻击召回为+3.78/−0.33/−1.49pp，MF1失败；D3为CIC17 −0.39/−2.28/−2.97pp、NSL −0.83/−0.45/−1.92pp，亦失败。因此本次D2/D3均无法满足跨数据集H-cov判据，不否定一般覆盖假设。D1仅增预算参考，两组均失败；保留CIC17 D1 seed3、D3 seed2的Infiltration 0/6。D4/D5四组攻击降幅均超2pp，不支持H-prior/H-supp；RQ1/RQ3及创新未关闭。
 
-**限定。** NSL seeds1/42分母−0.525/−0.072pp，保留全部signed比率，符号不代表Normal改善。D2容量上限1000/1600，Normal首次500/800；早期高于Replay，不回访旧池、不补稀有类空额。D4加号是适配，非[Menon Eq.9](https://arxiv.org/html/2007.07314)复现。D5：memory的128维嵌入、平均10NN距离、类内留一95%阈值，严格低于才保留攻击。
+**限定。** NSL seeds1/42分母−0.525/−0.072pp，保留全部signed比率；D2五seed的Normal均改善而闭合为负，D3正闭合不代表改善。D2容量上限1000/1600，Normal首次500/800；早期高于Replay，不回访旧池、不补稀有类空额（NSL最终实际927条）。D4加号是适配，非[Menon Eq.9](https://arxiv.org/html/2007.07314)复现。D5：memory的128维嵌入、平均10NN距离、类内留一95%阈值，严格低于才保留攻击。
 
-**成本（训练/选择/评估秒）。** D1 NSL 1099.96/0.054/3.33、CIC17 922.47/0.064/3.83；D3 NSL 392.41/5.434/0.730、CIC17 1857.18/97.638/8.010，聚类5.390/97.400s各只计一次。另计本地重复4542.94/0.093/35.10s；HPC墙时1034s、MaxRSS9.96GiB。加载另计，共享GPU不作独占比较。D4/D5模型25.00s、校正0.62/11.51s。
+**成本（训练/选择/评估秒）。** D1 NSL 1099.96/0.054/3.33、CIC17 922.47/0.064/3.83；D2 NSL 397.67/0.037/0.817；D3 NSL 392.41/5.434/0.730、CIC17 1857.18/97.638/8.010，聚类5.390/97.400s各只计一次。另计本地重复4542.94/0.093/35.10s；D1 HPC墙时1034s、MaxRSS9.96GiB。加载另计，共享GPU不作独占比较。D4/D5模型25.00s、校正0.62/11.51s。
 
-**复现。** [分析器](analyze_benign_diagnostics.py)按HPC优先复算56组CM（16参考+40处理），`--weights verify`核验64个所选权重；[完整命令/结果](results/problem_scout/section25/analysis_v1/result.json)含BAcc、逐类P/R/F1、新旧召回、SD、配对差及来源。D4/D5复现16模型原CM，无重训；HPC结果脱敏5个路径字段，权重不入库。D3固定k200/随机种42/n_init1/max_iter100；NSL/CIC17的67,343/1,811,756条Normal训练行各选200条，均达到100次上限；缓存绑定源码、数据、sklearn。
+**复现。** [分析器](analyze_benign_diagnostics.py)按HPC D1优先复算61组CM（16参考+45处理），`--weights verify`核验84个所选权重；[完整命令/结果](results/problem_scout/section25/analysis_v1/result.json)含BAcc、逐类P/R/F1、新旧召回、SD、配对差及来源。D4/D5复现16模型原CM，无重训；HPC结果脱敏5个路径字段，权重不入库。D3固定k200/随机种42/n_init1/max_iter100；NSL/CIC17的67,343/1,811,756条Normal训练行各选200条，均达到100次上限；缓存绑定源码、数据、sklearn。
 
 **最近先例（5篇）。** [GSS，NeurIPS2019](https://proceedings.neurips.cc/paper/2019/hash/e562cd9c0768d5464b64cf61da7fc6bb-Abstract.html)：梯度多样性；[Rainbow Memory，CVPR2021](https://openaccess.thecvf.com/content/CVPR2021/html/Bang_Rainbow_Memory_Continual_Learning_With_a_Memory_of_Diverse_Samples_CVPR_2021_paper.html)：类内覆盖；[CBRS，ICML2020补充B](https://proceedings.mlr.press/v119/chrysakis20a/chrysakis20a-supp.pdf)：类别重要性配额；[ECBRS，NeurIPS2023](https://papers.neurips.cc/paper_files/paper/2023/hash/3755a02b1035fbadd5f93a022170e46f-Abstract-Conference.html)：NIDS多数类替换，二元增量协议不同；[Ariffin等，arXiv:2608.04602v1](https://arxiv.org/html/2608.04602)：2026-08-05预印本，benign持续回放/按类量保留，未核实正式发表。Normal增额或多样性选样本身不新颖。
 
-下一步：完成已确认的D2固定最终容量。D2 HPC同入口打包冒烟通过（非科学结果），正式提交尚未完成；本地训练源仍固定`5657b468`，不随报告提交变动。
+下一步：完成CIC17 D2及全部成本核验。本地D2运行中；HPC D2作业488784于02:56提交，初查排队，不算结果。同入口打包冒烟为非科学结果；训练源仍固定`5657b468`，HPC包装源`5622e4b`，不随报告提交变动。
 
 ## Section23 剩余差距与现成偏差校正（完整结果）
 
