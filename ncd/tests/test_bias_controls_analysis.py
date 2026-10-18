@@ -9,7 +9,7 @@ from pathlib import Path
 from ncd.analyze_bias_controls import (
     CORRECTIONS, DATASETS, EXPECTED_BEST, ID_BINDINGS, METHODS, ROLES, SEEDS,
     SOURCE_PATHS, analyze, base_role, canonical, checkpoint_metrics, closure,
-    decide, digest, export, finite, groups, load_controls,
+    decide, digest, export, finite, groups, load_controls, posthoc_steps, summarize_costs,
 )
 from ncd.tests.test_bias_gap_analysis import CLASSES, TASKS, cell as baseline_cell, metric
 from ncd.analyze_step_budget import validate_cell
@@ -82,7 +82,10 @@ def make_cell(root, d, base, correction, candidate, seed, phase, config, bound, 
         cp.update(identity_hash=canonical(identity), correction_complete=True, evaluation_role=ROLES[phase],
             checkpoint_file=f"checkpoints/checkpoint_{t:03d}.pt", checkpoint_sha256="c" * 64,
             training_seconds=1., correction_seconds=.1, buffer_selection_seconds=.01, evaluation_seconds=.01,
+            training_seconds_cumulative=999., correction={"optimizer_steps": 7 if correction in ("bic", "cbf") and t else 0},
             training_memory_counts={str(c): 10 for c in seen}, calibration_holdout_counts={})
+        if correction == "wa" and t:
+            cp["correction"] = {"applied": True, "gamma": 1.}
         save(directory.parent / Path(cp["checkpoint_file"]).with_suffix(".json"), cp)
     save(directory, value)
     requested = {"dataset": d, "base": base, "correction": correction, "candidate": candidate,
@@ -125,6 +128,10 @@ def write_controls(root, s2000):
              "completed_cells": {"development": 84, "formal": 120},
              "selection_sha256": selection_sha, "cells": cells}
     save(root / "result.json", index)
+    events = [dict(event=event, identity=row["identity"], attempt=1,
+                   **({"process_seconds": 5., "exit_code": 0} if event == "child_exit" else {}))
+              for row in cells for event in ("child_start", "child_exit")]
+    (root / "driver_attempts.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
     return config_path, index
 
 
@@ -154,6 +161,57 @@ class BiasControlsAnalysisTests(unittest.TestCase):
         self.assertEqual(self.coverage["weights_verified"], 0)
         self.assertEqual(self.coverage["checkpoint_payload_status"], "not_read_recorded_hashes_only")
         self.assertFalse(list(self.root.rglob("*.pt")))
+
+    def test_cost_totals_use_non_cumulative_timers_and_separate_elapsed(self):
+        costs = self.coverage["costs"]
+        totals = next(r for r in costs["rows"] if r["aggregation_level"] == "overall")
+        self.assertEqual(totals["cells"], 204)
+        self.assertEqual(totals["checkpoints"], 204 * len(TASKS))
+        self.assertEqual(totals["training_seconds"], 204 * len(TASKS))
+        self.assertAlmostEqual(totals["correction_seconds"], 204 * len(TASKS) * .1)
+        self.assertEqual(totals["subprocess_seconds"], 204 * 5.)
+        self.assertTrue(totals["process_timing_complete"])
+        self.assertEqual(totals["failed_attempts"], 0)
+        self.assertEqual(len(costs["rows"]), 1 + 2 + 48)
+        phases = {r["phase"]: r for r in costs["rows"] if r["aggregation_level"] == "phase"}
+        self.assertEqual(phases["development"]["cells"], 84)
+        self.assertEqual(phases["formal"]["cells"], 120)
+        ssil = [r for r in costs["rows"] if r["correction"] == "ssil"]
+        self.assertTrue(all(r["base_optimizer_steps"] > 0 and r["posthoc_optimizer_steps"] == 0 for r in ssil))
+        self.assertEqual(self.coverage["cost_attempt_log"]["sha256"], digest(self.root / "driver_attempts.jsonl"))
+
+    def test_cost_missing_or_unclosed_attempts_are_not_complete_elapsed(self):
+        record = next(iter(self.formal.values()))
+        for events in (None, [], [{"event": "child_start", "identity": self.index["cells"][84]["identity"], "attempt": 1}]):
+            row = summarize_costs([record], events)["rows"][0]
+            self.assertIsNone(row["subprocess_seconds"])
+            self.assertFalse(row["process_timing_complete"])
+            self.assertEqual(row["recorded_subprocess_seconds"], 0)
+            self.assertGreater(row["training_seconds"], 0)
+
+    def test_closed_form_wa_is_zero_but_other_missing_step_counters_fail(self):
+        self.assertEqual(posthoc_steps({"correction": {"gamma": 1.2}}, "wa"), 0)
+        for correction in ("bic", "cbf", "ssil"):
+            with self.assertRaisesRegex(ValueError, "Invalid post-hoc"):
+                posthoc_steps({"correction": {}}, correction)
+
+    def test_cost_failed_attempts_are_counted_and_duplicate_events_rejected(self):
+        record = next(iter(self.formal.values()))
+        identity = self.index["cells"][84]["identity"]
+        events = [{"event": event, "identity": identity, "attempt": attempt,
+                   **({"process_seconds": seconds, "exit_code": code} if event == "child_exit" else {})}
+                  for attempt, seconds, code in ((1, 2., 1), (2, 5., 0))
+                  for event in ("child_start", "child_exit")]
+        row = summarize_costs([record], events)["rows"][0]
+        self.assertEqual(row["subprocess_seconds"], 7.)
+        self.assertEqual(row["failed_attempts"], 1)
+        self.assertEqual(row["exited_attempts"], 2)
+        self.assertEqual(row["training_seconds"], len(TASKS))
+        with self.assertRaisesRegex(ValueError, "Duplicate cost attempt"):
+            summarize_costs([record], events + [events[-1]])
+        events[-1]["process_seconds"] = -1
+        with self.assertRaisesRegex(ValueError, "Invalid subprocess"):
+            summarize_costs([record], events)
 
     def test_explicit_payload_mode_refuses_unavailable_weights(self):
         with self.assertRaisesRegex(ValueError, "payload missing"):
@@ -337,7 +395,8 @@ class BiasControlsAnalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             export(out, Path(temp))
             self.assertEqual(json.loads((Path(temp) / "analysis.json").read_text()), out)
-            self.assertEqual(len(list(Path(temp).iterdir())), 7)
+            self.assertEqual(len(list(Path(temp).iterdir())), 8)
+            self.assertTrue((Path(temp) / "costs.csv").read_text().startswith("aggregation_level,"))
         self.assertEqual(digest(self.root / "result.json"), before)
 
 

@@ -31,6 +31,7 @@ SOURCE_PATHS = {"ncd/run_bias_correction.py", "ncd/section23_bias.py", "ncd/run_
                 "ncd/run_problem_scout.py", "ncd/crr_benchmarks.py", "ncd/model.py",
                 "ncd/prepare_problem_scout_data.py", "ncd/train_cil.py", "ncd/data.py",
                 "ncd/source_commit.py", "ncd/run_crr_real_sequence.py"}
+COST_TIMERS = ("training_seconds", "correction_seconds", "buffer_selection_seconds", "evaluation_seconds")
 
 
 def digest(path):
@@ -113,6 +114,14 @@ def checkpoint_metrics(cp, classes):
     return {"aggregate": aggregates, "per_class": per_class}
 
 
+def posthoc_steps(cp, correction):
+    # The closed-form WA record has no optimizer counter after the first task.
+    steps = cp["correction"].get("optimizer_steps", 0 if correction == "wa" else None)
+    require(type(steps) is int and steps >= 0, "Invalid post-hoc optimizer step count")
+    require(correction not in ("wa", "ssil") or steps == 0, "Unexpected post-hoc optimizer steps for WA/SS-IL")
+    return steps
+
+
 def validate_cell(path, row, bound, spec, s2000, weight_mode):
     cell = read(path)
     identity, expected = cell["identity"], row["identity"]
@@ -176,8 +185,9 @@ def validate_cell(path, row, bound, spec, s2000, weight_mode):
         if weight_mode == "verify":
             require(weight.is_file() and digest(weight) == cp["checkpoint_sha256"], "Checkpoint payload missing or changed")
             checked_weights += 1
-        for key in ("training_seconds", "correction_seconds", "buffer_selection_seconds", "evaluation_seconds"):
+        for key in COST_TIMERS:
             require(type(cp[key]) in (int, float) and cp[key] >= 0, "Invalid measured cost")
+        posthoc_steps(cp, correction)
         for c in cp["seen_classes"]:
             memory = cp["training_memory_counts"].get(str(c), 0)
             held = cp["calibration_holdout_counts"].get(str(c), 0)
@@ -223,6 +233,64 @@ def validate_selection(selection, selection_sha, bound, spec, development):
         require(row["selected_candidate"] == winner["candidate"], "Candidate is not the development-only winner")
         selected[key] = winner["candidate"]
     return selected
+
+
+def summarize_costs(records, events=None):
+    """Sum completed-cell counters once; subprocess time is separate elapsed time."""
+    starts, exits = {}, {}
+    for event in events or []:
+        if event["event"] not in ("child_start", "child_exit"):
+            continue
+        identity = event["identity"]
+        key = (canonical(identity), event["attempt"])
+        require(type(event["attempt"]) is int and event["attempt"] > 0, "Invalid cost attempt number")
+        target = starts if event["event"] == "child_start" else exits
+        require(key not in target, "Duplicate cost attempt event")
+        target[key] = event
+        if target is exits:
+            require(type(event["process_seconds"]) in (int, float) and math.isfinite(event["process_seconds"]) and event["process_seconds"] >= 0, "Invalid subprocess elapsed cost")
+            require(type(event["exit_code"]) is int, "Invalid subprocess exit code")
+    cells, indexed = [], set()
+    for record in records:
+        cell = record["cell"]
+        identity = cell["identity"]
+        requested = {k: identity["base_method" if k == "base" else k]
+                     for k in ("dataset", "base", "correction", "candidate", "seed", "phase", "smoke")}
+        identity_hash = canonical(requested)
+        indexed.add(identity_hash)
+        started = {k for k in starts if k[0] == identity_hash}
+        ended = {k for k in exits if k[0] == identity_hash}
+        complete = bool(ended) and started == ended and any(exits[k]["exit_code"] == 0 for k in ended)
+        cells.append({"phase": identity["phase"], "dataset": identity["dataset"],
+            "base_method": identity["base_method"], "base_role": base_role(identity["dataset"], identity["base_method"]),
+            "correction": identity["correction"], "cells": 1, "checkpoints": len(cell["checkpoints"]),
+            **{timer: math.fsum(cp[timer] for cp in cell["checkpoints"]) for timer in COST_TIMERS},
+            "base_optimizer_steps": sum(cp["training_schedule"]["optimizer_steps"] for cp in cell["checkpoints"]),
+            "posthoc_optimizer_steps": sum(posthoc_steps(cp, identity["correction"]) for cp in cell["checkpoints"]),
+            "exited_attempts": len(ended), "failed_attempts": sum(exits[k]["exit_code"] != 0 for k in ended),
+            "cells_with_complete_process_timing": int(complete),
+            "recorded_subprocess_seconds": math.fsum(exits[k]["process_seconds"] for k in sorted(ended))})
+    labels = ("phase", "dataset", "base_method", "base_role", "correction")
+    numeric = ("cells", "checkpoints", *COST_TIMERS, "base_optimizer_steps", "posthoc_optimizer_steps",
+               "exited_attempts", "failed_attempts", "cells_with_complete_process_timing", "recorded_subprocess_seconds")
+    rows = []
+    for level, keys in (("overall", ()), ("phase", ("phase",)), ("configuration", labels)):
+        group_keys = sorted({tuple(cell[k] for k in keys) for cell in cells})
+        for values in group_keys:
+            subset = [cell for cell in cells if tuple(cell[k] for k in keys) == values]
+            row = {"aggregation_level": level, **{k: dict(zip(keys, values)).get(k) for k in labels}}
+            row.update({k: math.fsum(cell[k] for cell in subset) if k.endswith("seconds") else sum(cell[k] for cell in subset) for k in numeric})
+            row["process_timing_complete"] = row["cells_with_complete_process_timing"] == row["cells"]
+            row["subprocess_seconds"] = row["recorded_subprocess_seconds"] if row["process_timing_complete"] else None
+            rows.append(row)
+    return {"scope": "Indexed completed cells only. Development includes all candidates; formal includes the frozen selected candidate. Unindexed attempts are excluded and counted separately.",
+        "definitions": {
+            "subprocess_seconds": "Sum of child_exit process_seconds, including failed exited attempts for indexed cells. This is elapsed subprocess time, not GPU utilization-hours or controller elapsed time. Null unless every indexed cell has matched start/exit events and a successful exit; recorded_subprocess_seconds retains the observed exited-attempt sum.",
+            "components": "Sum each checkpoint's non-cumulative training, post-hoc correction, buffer selection and evaluation timer once. Components are not added to subprocess elapsed time; startup, data loading, saving and other overhead are not included in these component timers.",
+            "optimizer_steps": "Base steps include SS-IL's modified training workload. Post-hoc steps are separate BiC/CBF optimization; closed-form WA (whose records omit this counter) and SS-IL have zero post-hoc optimizer steps. SS-IL extra replay/distillation time is included in training_seconds, not isolated as correction_seconds.",
+            "aggregation": "Rows are overlapping views: overall, phase, and phase/dataset/base/correction. Sum within one view only; never sum rows across aggregation levels."},
+        "attempt_log_available": events is not None,
+        "unindexed_exited_attempts": sum(k[0] not in indexed for k in exits), "rows": rows}
 
 
 def load_controls(root, spec_path, s2000, weight_mode="portable"):
@@ -291,6 +359,14 @@ def load_controls(root, spec_path, s2000, weight_mode="portable"):
         require(len(formal) == 120 and len(development) == 84 and evidence["selection_verified"], "Complete controller has missing evidence")
     evidence.update(controller_status=index["status"], controller_sha256=index_sha, provenance=bound,
                     formal_cells=len(formal), development_cells=len(development), missing_formal_cells=sorted(expected - set(formal)))
+    attempt_path = root / "driver_attempts.jsonl"
+    events = None
+    if attempt_path.is_file():
+        attempt_bytes = attempt_path.read_bytes()
+        events = [json.loads(line) for line in attempt_bytes.decode("utf-8-sig").splitlines() if line.strip()]
+        finite(events)
+        evidence["cost_attempt_log"] = {"path": "driver_attempts.jsonl", "sha256": hashlib.sha256(attempt_bytes).hexdigest()}
+    evidence["costs"] = summarize_costs([*development.values(), *formal.values()], events)
     return formal, evidence, spec
 
 
@@ -348,7 +424,8 @@ def analyze(joint, s2000, formal, coverage):
                 references[dataset, method, seed] = [checkpoint_metrics(cp, record["cell"]["class_order"]) for cp in record["cell"]["checkpoints"]]
     complete = len(formal) == 120 and coverage["selection_verified"] and coverage["development_cells"] == 84 and coverage["controller_status"] == "complete"
     out = {"schema_version": 1, "execution_status": "complete" if complete else "partial", "scientific_comparisons_final": complete,
-           "coverage": coverage, "definitions": {
+           "coverage": {k: v for k, v in coverage.items() if k != "costs"},
+           "costs": coverage.get("costs", summarize_costs([])), "definitions": {
                "levels": "Precision, recall, F1 and aggregate metrics are fractions; paired metric differences are percentage points. Count differences use examples.",
                "aggregation": "Exact paired seeds 1,2,3,4,42; arithmetic mean and sample SD (ddof=1). Missing/undefined quantities remain null; n and complete are explicit.",
                "recall_roles": "Per checkpoint, new classes are that checkpoint's introduced classes; old classes are previously introduced classes. New/old macro recall is the unweighted mean of all role classes, null if empty or unsupported.",
@@ -423,6 +500,10 @@ def export(out, directory):
              "fixed_best_gap_pp": r["closure"]["denominator_gap_pp"]["mean"], "gain_over_fixed_best_pp": r["closure"]["gain_over_fixed_best_pp"]["mean"]})
     with (directory / "configurations.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0])); writer.writeheader(); writer.writerows(rows)
+    cost_rows = out["costs"]["rows"]
+    with (directory / "costs.csv").open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(cost_rows[0]) if cost_rows else ["aggregation_level", "cells", "subprocess_seconds"])
+        writer.writeheader(); writer.writerows(cost_rows)
     message = {"execution_status": out["execution_status"], "formal_cells": out["coverage"]["formal_cells"], "development_cells": out["coverage"]["development_cells"], "section23_4": out["section23_4"]}
     (directory / "analysis.log").write_text(json.dumps(message, allow_nan=False) + "\n", encoding="utf-8")
     print(json.dumps(message, allow_nan=False))
