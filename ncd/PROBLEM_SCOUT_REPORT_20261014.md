@@ -1,8 +1,10 @@
 # 类增量 NIDS 选题侦察｜剩余差距、步数对照与历史资格判定
 
-## Section23 剩余差距与现成偏差校正（进行中）
+## Section23 剩余差距与现成偏差校正（完整结果）
 
-2026-10-17：**23.2已有结果拆解完成；23.3校正对照尚未完成，不能给出23.4判定。** 下表固定使用Section22各数据集五seed平均Macro-F1最高的方法，不逐seed换方法。Joint仍为原协议参考，不是保证成立的上界。完整逐类precision/recall/F1差、带符号的F1贡献、FP来源、G4和NormalFPR见[拆解结果](results/problem_scout/section23/decomposition_v1/analysis.json)及同目录CSV；这些是算术分解，不是因果机制证明。
+2026-10-18：**84个开发单元、24个冻结选择及120个正式单元全部完成；23.4判定为“差距未解决”。** UNSW与CIC17各自在全部校正/base中的最高闭合率仅为4.92%和19.23%，均不足30%。这是本协议下现成方法适配的负结果，不是“偏差校正普遍无效”或新机制的证据，也不关闭RQ1/RQ3或总体创新门槛。
+
+**23.2已有结果拆解。** 下表固定使用Section22各数据集五seed平均Macro-F1最高的方法，不逐seed换方法。Joint仍为原协议参考，不是保证成立的上界。完整逐类precision/recall/F1差、带符号的F1贡献、FP来源、G4和NormalFPR见[拆解结果](results/problem_scout/section23/decomposition_v1/analysis.json)及同目录CSV；这些是算术分解，不是因果机制证明。
 
 | 数据集 / 固定S2000方法 | Joint−CIL Macro-F1，pp，均值±SD | 主要正贡献，pp | benign FPR差 CIL−Joint，pp |
 |---|---:|---|---:|
@@ -18,13 +20,79 @@ G4按真实类引入时间定义“更新类”，Normal优先、其后更新类
 
 **运行设计。** 四种校正同时叠加Replay与本表固定最佳base，共120个正式单元。基础任务保持`max(8 epochs,2000 steps)`、batch256；不重跑Joint/CSE18、不动21/22原始结果。WA无待选超参；BiC校正100/300步、SS-IL任务KD权重0.5/1、CBF微调10/30epochs，其他值固定。84个development单元仅seed5/6，按分层训练留出10%的最终Macro-F1均值选择，平分选低编号；官方ID test不参与选择。选定后冻结，各组合以1/2/3/4/42报告；正式训练恢复完整原训练池（BiC内部留出除外）。候选、阶段、数据角色、源码提交和额外成本写入结果；冒烟不是正式证据。
 
-**执行与恢复。** [总控入口](run_bias_control.py)命令为`python -I -u ncd/run_bias_control.py --output-dir ncd/results/problem_scout/section23/controls_v1`，顺序完成84个开发单元、冻结选择后才执行120个正式单元。训练源码、实际配置与历史lambda文件均绑定SHA；每任务checkpoint包含已完成校正和memory状态，完成单元经hash核验后跳过。24个真实数据冒烟单元已完成，故障恢复与全矩阵续跑没有重复训练；一次Windows状态文件替换失败保留原日志并已增加有界重试。补丁后的额外1个真实数据冒烟和108项相关测试通过。这些运行链路检查不提供校正有效性证据，完整科学结果仍待交付。
+**执行与恢复。** [总控入口](run_bias_control.py)命令为`python -I -u ncd/run_bias_control.py --output-dir ncd/results/problem_scout/section23/controls_v1`，顺序完成84个开发单元、冻结选择后才执行120个正式单元。训练源码、实际配置与历史lambda文件均绑定SHA；每任务checkpoint包含已完成校正和memory状态，完成单元经hash核验后跳过。此前24个真实数据冒烟中，一次Windows状态文件替换失败保留原日志并已增加有界重试；恢复没有重复训练。补丁后的额外1个真实数据冒烟和108项相关测试通过。冒烟及测试不提供校正有效性证据，不计入下述科学结果与成本。
 
-完整矩阵于2026-10-17 23:32:10 MYT在本地RTX4060Ti启动，训练源提交固定为`b19de59991ea744305f710ad4e6ca3ff9b860c93`，通过`NCD_SOURCE_COMMIT`传递给每个单元。当前为开发阶段，不代表120个正式单元已完成；完整raw与23.4判定尚未交付。仅报告/分析代码更新不改变本次训练来源，恢复不得改用更新后的HEAD冒充原源提交。
+完整矩阵于2026-10-17 23:32:10 MYT在本地RTX4060Ti启动，2026-10-18 20:14:48 MYT完成；204个科学单元均为首次尝试、退出码0，时间区间不重叠，无重复单元。训练源提交固定为`b19de59991ea744305f710ad4e6ca3ff9b860c93`，通过`NCD_SOURCE_COMMIT`传递给每个单元；11个训练源文件及4个配置/输入文件均与该提交的Git字节一致。实际配置SHA为`7ba1972b6624597a5578933d1ccf778787c33844a4f315ac5a59eff5d6cc401f`，选择文件SHA为`b508a41a90b1ff71214127aa4d5905775b920ccb2cee37355defb2ba49a93f72`。24个选择在18日08:50:36.471510 MYT冻结，早于首个正式单元启动；84个开发分数、选择证明和候选均值均复算一致。报告/分析代码更新不改变本次训练来源。
 
-**可复算分析。** [分析入口](analyze_bias_controls.py)从混淆计数重算各checkpoint的Macro-F1/BAcc、逐类precision/recall/F1、新旧类平均recall和Normal FPR，分别报告相对同base S2000与Joint的配对变化。它重新核算84个开发单元的候选均值与24个冻结选择，并要求120个正式单元完整才给23.4判定；缺失为null，不作零分。命令：`python -I ncd/analyze_bias_controls.py --baseline ncd/results/problem_scout/section21/merged_v1 --steps-2000 ncd/results/problem_scout/section22/steps_2000_v1 --controls ncd/results/problem_scout/section23/controls_v1 --output-dir ncd/results/problem_scout/section23/analysis_v1 --weights portable`。portable模式验证小结果、sidecar和选择文件的实际字节，不读取权重；本地完整交付前另用`--weights verify`核验实际checkpoint SHA。当前分析输出仅为partial/pending，不是正式校正结论。
+**可复算分析。** [分析入口](analyze_bias_controls.py)从混淆计数重算各checkpoint的Macro-F1/BAcc、逐类precision/recall/F1、新旧类平均recall和Normal FPR，分别报告相对同base S2000与Joint的配对变化。它重新核算84个开发单元的候选均值与24个冻结选择，并要求120个正式单元完整才给23.4判定；缺失为null，不作零分。命令：`python -I ncd/analyze_bias_controls.py --baseline ncd/results/problem_scout/section21/merged_v1 --steps-2000 ncd/results/problem_scout/section22/steps_2000_v1 --controls ncd/results/problem_scout/section23/controls_v1 --output-dir ncd/results/problem_scout/section23/analysis_v1 --weights portable`。portable模式验证小结果、sidecar和选择文件的实际字节，不读取权重；本地使用同一入口的`--weights verify`另核验权重。独立计算未导入该分析器的数值函数：正式120单元/520检查点、S2000 75单元/325检查点、Joint 15单元/65检查点的指标、逐类值、配对差及均值/样本SD均一致，分析数值最大误差1.42e-14pp。开发84单元的最终Macro-F1亦独立复算一致。正式数据绑定与原S2000一致；这不等于重新读取并哈希全部数据载荷。
 
-**23.4未判定。** 正式完整结果后，按`(校正后Macro-F1−原固定最佳Macro-F1)/(Joint−原固定最佳Macro-F1)`计算填补比例，不截断负值或超过100%的值；NSL分母非正，比例记为不适用。负责人已确认：达到70%须“同一种校正、同一base角色”在UNSW和CIC17都满足，即都叠加Replay或都叠加各库固定最佳方法。另列允许跨库选不同base的敏感性结果，但不用于宣布已解决。若每库所有校正/base中最好结果均不足30%则未解决，否则中间状态交负责人。两个base分别报告，选择规则及全部组合保留，不逐seed择优。此检查不关闭锁定的RQ1/RQ3或总体创新门槛。
+本地最终分析以`--weights verify`完成，884/884个实际checkpoint载荷SHA256通过，状态为`actual_payload_sha256_checked`；公开包不包含这些权重，读者使用portable模式只能复核小结果与数值，不能据此声称重新验证了权重载荷。新增成本聚合及已有分析器共22项测试通过，成本阶段合计与独立日志加总一致。
+
+**全部正式配置。** 下表为最后任务、五seed均值±样本SD；MF1/BAcc单位%，配对ΔMF1单位pp，比较对象为同一个未校正S2000 base。该Δ不是23.4闭合率的分子（除非该base本身就是固定最好）。不逐seed换方法，不以正式seed重新调参。
+
+| 数据集 | base | 校正 | Macro-F1 | BAcc | ΔMF1 vs 同base |
+|---|---|---|---:|---:|---:|
+| NSL | Replay | WA | 60.027±2.672 | 68.939±4.040 | +0.132±1.092 |
+| NSL | Replay | BiC | 60.393±1.057 | 69.094±1.547 | +0.498±2.059 |
+| NSL | Replay | SS-IL | 56.750±1.362 | 55.401±1.437 | −3.145±2.547 |
+| NSL | Replay | CBF | 61.075±2.754 | 69.945±3.945 | +1.180±1.646 |
+| NSL | LwF | WA | 59.245±2.119 | 70.424±1.665 | −1.436±1.321 |
+| NSL | LwF | BiC | 59.891±2.750 | 69.611±2.281 | −0.790±2.485 |
+| NSL | LwF | SS-IL | 40.854±2.550 | 41.373±1.943 | −19.826±2.301 |
+| NSL | LwF | CBF | 60.399±2.197 | 70.317±3.734 | −0.281±0.975 |
+| UNSW | Replay | WA | 42.386±0.691 | 64.935±1.698 | +0.701±1.031 |
+| UNSW | Replay | BiC | 41.914±0.577 | 65.397±1.777 | +0.229±1.035 |
+| UNSW | Replay | SS-IL | 39.914±0.674 | 54.735±2.284 | −1.770±0.608 |
+| UNSW | Replay | CBF | 41.926±0.416 | 67.468±1.097 | +0.241±0.521 |
+| UNSW | RCL-tab | WA | 34.042±2.437 | 58.517±2.423 | −9.639±1.830 |
+| UNSW | RCL-tab | BiC | 43.211±0.276 | 68.367±0.359 | −0.470±0.621 |
+| UNSW | RCL-tab | SS-IL | 41.817±1.287 | 56.077±2.177 | −1.863±1.197 |
+| UNSW | RCL-tab | CBF | 43.934±0.530 | 69.185±0.569 | +0.253±0.259 |
+| CIC17 | Replay | WA | 39.001±1.994 | 64.561±6.065 | −13.717±1.314 |
+| CIC17 | Replay | BiC | 53.043±3.128 | 90.717±1.522 | +0.325±3.452 |
+| CIC17 | Replay | SS-IL | 53.422±1.432 | 72.571±0.211 | +0.703±0.512 |
+| CIC17 | Replay | CBF | 52.368±2.116 | 87.975±4.119 | −0.350±1.320 |
+| CIC17 | DER++ | WA | 54.453±1.834 | 92.930±0.327 | −0.652±0.785 |
+| CIC17 | DER++ | BiC | 54.245±2.236 | 90.564±2.285 | −0.860±2.481 |
+| CIC17 | DER++ | SS-IL | 56.830±1.886 | 88.574±1.140 | +1.726±1.208 |
+| CIC17 | DER++ | CBF | 54.456±1.992 | 92.670±1.106 | −0.649±0.533 |
+
+**23.4判定：未解决。** 按`(校正后Macro-F1−原固定最佳Macro-F1)/(Joint−原固定最佳Macro-F1)`计算闭合率；分子、分母均为五seed配对差的均值，判定不是逐seed比率的平均。不截断负值或超过100%的值；NSL分母为−3.457pp，闭合率不适用。达到70%须同一种校正、同一base角色在UNSW和CIC17都满足，即都叠加Replay或都叠加各库固定最好。下表保留全部组合，单位%。
+
+| base角色 | 校正 | UNSW闭合率 | CIC17闭合率 |
+|---|---|---:|---:|
+| Replay | WA | −25.20 | −179.42 |
+| Replay | BiC | −34.38 | −22.97 |
+| Replay | SS-IL | −73.30 | −18.75 |
+| Replay | CBF | −34.15 | −30.49 |
+| 固定最好 | WA | −187.59 | −7.27 |
+| 固定最好 | BiC | −9.14 | −9.58 |
+| 固定最好 | SS-IL | −36.26 | 19.23 |
+| 固定最好 | CBF | 4.92 | −7.23 |
+
+没有同校正/同角色组合达到双库70%；即使只作补充敏感性、允许跨库选不同base也未达到。每库在全部校正/base中的最高值仍均低于30%，满足“未解决”，不需要跨库拼接两个不同的最优校正来作结论。UNSW最佳RCL+CBF仍距Joint 4.885pp；CIC17最佳DER+++SS-IL仍距Joint 7.250pp。这里的“最佳”只是完整五seed配置均值的描述性上限，不是新增超参选择或独立确认实验。
+
+**新旧类与安全代价。** 最后任务的新类指该任务首次引入的类，旧类指此前所有类（含Normal）；均为类均衡平均recall，不是样本加权攻击检测率。以下是两库最高闭合配置的五seed均值及相对同base配对变化；完整SD与全部24配置在链接的指标表中。
+
+| 数据集 / 配置 | 新类recall % / Δpp | 旧类recall % / Δpp | Normal FPR % / Δpp |
+|---|---:|---:|---:|
+| UNSW / RCL+CBF | 74.558 / +0.656 | 67.842 / +0.016 | 25.421 / −0.224 |
+| CIC17 / DER+++SS-IL | 63.000 / −17.000 | 97.099 / +0.597 | 7.893 / −2.722 |
+
+CIC17的MF1改善并非无代价：DER+++SS-IL的BAcc下降3.802pp，新类recall由80%降至63%；Infiltration由60%降至30%，且测试仅6条，Botnet由100%降至96%。Replay+SS-IL虽提高MF1 0.703pp，最后新类recall却由83.171%降至0.108%（Botnet 0.216%、Infiltration 0%）。部分seed没有Botnet预测，precision保留未定义及有效n，不能填0后称完整五seed均值。NSL LwF+SS-IL的MF1下降19.826pp，Probe/R2L recall分别下降59.612/27.161pp，U2R为0%。UNSW RCL+CBF的Exploits/DoS F1增加1.301/0.278pp，但Shellcode F1下降0.412pp。不能只报平均MF1增益而隐藏小类退化，也不能把低recall本身等同于遗忘机制。
+
+**完整指标与原始证据。** [控制器结果](results/problem_scout/section23/controls_v1/result.json)、[冻结选择](results/problem_scout/section23/controls_v1/selection.json)和[每次进程日志](results/problem_scout/section23/controls_v1/driver_attempts.jsonl)索引所有204单元及884检查点的小结果/混淆矩阵/sidecar/日志；数据与权重不随Git发布。[完整分析JSON](results/problem_scout/section23/analysis_v1/analysis.json)、[配置及闭合率](results/problem_scout/section23/analysis_v1/configurations.csv)、[所有检查点指标均值/SD/配对变化](results/problem_scout/section23/analysis_v1/checkpoint_metrics_summary.csv)、[逐seed指标](results/problem_scout/section23/analysis_v1/checkpoint_metrics_by_seed.csv)、[逐类precision/recall/F1及计数汇总](results/problem_scout/section23/analysis_v1/checkpoint_classes_summary.csv)、[逐类逐seed及配对变化](results/problem_scout/section23/analysis_v1/checkpoint_classes_by_seed.csv)可在无数据/权重的环境复算。CSV率值为0–1，差值为pp；计数差单位为样本，不混用。
+
+**成本。** 整个控制器墙钟74,557.979s（20.711h），含开发和正式阶段；顺序子进程经过时间合计74,529.076s。下表单位秒，计时来自实际日志与checkpoint，不是估计GPU小时。[成本明细](results/problem_scout/section23/analysis_v1/costs.csv)同时按阶段/数据集/base/校正拆分。
+
+| 阶段 | 单元 / 检查点 | 子进程经过时间 | 基础训练计时 | 额外校正计时 | 评估计时 | buffer选择计时 |
+|---|---:|---:|---:|---:|---:|---:|
+| 开发5/6 | 84 / 364 | 33,488.903 | 32,597.507 | 140.356 | 22.395 | 0.445 |
+| 正式1/2/3/4/42 | 120 / 520 | 41,040.173 | 40,175.339 | 111.854 | 57.971 | 0.539 |
+
+开发/正式基础optimizer更新分别2,376,944/3,701,440步，独立后处理校正更新22,240/23,900步。SS-IL额外旧样本呈现11,700,224/15,109,120次已包含在基础训练计时，不是零开销，也不能再加一遍耗时。基础流examples_presented不完整覆盖普通DER++辅助回放；相同基础步数不代表相同FLOPs或总曝光。组件计时不含导入、缓存/哈希、序列化及进程设置等全部开销，不能替代子进程经过时间。以上不含此前冒烟、Section21/22、数据准备和随后分析。正式运行最大记录GPU allocated约68.98MiB、reserved 70MiB，但采样在训练/校正后、buffer选择/评估前，不是整进程峰值；未测主机RSS、能耗或整机利用率。不将原Joint的不同硬件/训练预算当作等成本对照。
+
+**结论边界与下一步。** 只否定“这四种已声明适配、候选范围和基座足以填补本次剩余MF1差距”。BiC隔离留出改变训练曝光；SS-IL单类任务分离CE/KL为0且保留base辅助损失；WA缩放bias；CBF随机选样，均与图像原论文完整方案有差异。五个正式seed不是新数据源上的独立外部验证；没有显著性检验或机制因果证明。保留全部负结果、选择规则和成本，交负责人据残余误差及安全代价决定后续问题，不自动设计或启动新机制；锁定RQ1/RQ3及整体研究仍未完成。
 
 ---
 

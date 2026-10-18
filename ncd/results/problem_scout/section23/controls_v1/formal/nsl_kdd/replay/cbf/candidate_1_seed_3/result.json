@@ -1,0 +1,1290 @@
+{
+  "adaptations": {
+    "bic": "Persistent class-introduction holdout never enters feature training or replay; up to20 heldout plus180 training-memory slots per class. Balanced calibration uses min available heldout per seen class; latest-task alpha/beta fitted with frozen model and folded into head before next task. Adam instead of original SGD.",
+    "cbf": "Post-base equal-count random subset from current data and stored old memory, at most200/class, Adam at0.1x base learning rate; post-base teacher taskwise distillation includes new task; no image augmentation or herding. Extra updates counted separately.",
+    "development": "Seeds5/6 only; stratified10% training holdout for candidate selection, disjoint from all optimization and BiC calibration. Official ID test is never used for selection. Formal1/2/3/4/42 restore original training pool, subject only to BiC internal holdout. Fixed historical base lambdas reused.",
+    "shared": "Existing MLP, Adam, batch-class-balanced CE, task order and 200/class maximum retained. New corrections are borrowed controls, not proposed mechanisms.",
+    "ssil": "Separated old/new CE and taskwise old KL, with64 additional old replay rows per base batch. Original LwF/RCL/DER++ auxiliary losses retained as an explicit stacked adaptation. Single-class task softmax CE/KL is identically zero. Additional replay exposure recorded.",
+    "wa": "Mean L2 norm ratio scales latest-task weights and biases after each incremental task; no positive-weight clamp; original base losses retained."
+  },
+  "checkpoints": [
+    {
+      "buffer_selection_seconds": 0.0007335000118473545,
+      "calibration_holdout_counts": {},
+      "checkpoint_file": "checkpoints/checkpoint_000.pt",
+      "checkpoint_sha256": "e3ece51e15e201a2d763873269566bae28103b92e95e4f1e5380dc673fda140f",
+      "correction": {
+        "applied": false,
+        "optimizer_steps": 0,
+        "reason": "initial task"
+      },
+      "correction_complete": true,
+      "correction_seconds": 1.2100004823878407e-05,
+      "correction_seconds_cumulative": 1.2100004823878407e-05,
+      "evaluation_role": "official_ID_test_not_used_for_selection",
+      "evaluation_seconds": 0.04462339999736287,
+      "id": {
+        "attack_family_macro_recall": 0.8520107238605898,
+        "attack_recall": 0.8520107238605898,
+        "attack_recall_definition": "P(predicted_label != Normal | true_label != Normal)",
+        "attack_support": 7460,
+        "balanced_accuracy": 0.9013940963551739,
+        "confusion_labels": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "confusion_matrix": [
+          [
+            9233,
+            478,
+            0,
+            0,
+            0
+          ],
+          [
+            1104,
+            6356,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_rows": 17171,
+        "excluded_unseen_rows": 5373,
+        "macro_f1": 0.9052067887217592,
+        "normal_fpr": 0.04922253115024199,
+        "normal_support": 9711,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "error_count": 478,
+            "error_to_newer_class": 0,
+            "error_to_normal": 0,
+            "error_to_other_old": 478,
+            "f1": 0.9210893854748603,
+            "introduced_task": 0,
+            "precision": 0.8931991873851214,
+            "recall": 0.950777468849758,
+            "support": 9711,
+            "train_count": 67343
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "error_count": 1104,
+            "error_to_newer_class": 0,
+            "error_to_normal": 1104,
+            "error_to_other_old": 0,
+            "f1": 0.8893241919686582,
+            "introduced_task": 0,
+            "precision": 0.9300556043312848,
+            "recall": 0.8520107238605898,
+            "support": 7460,
+            "train_count": 45927
+          }
+        ],
+        "total_available_rows": 22544
+      },
+      "identity_hash": "df3c2fe802901afbee79c2640832354add7ea87f6367830a8e19dd2591cca79c",
+      "new_classes": [
+        0,
+        1
+      ],
+      "new_rows_before_internal_holdout": 113270,
+      "new_training_rows": 113270,
+      "peak_cuda_allocated_bytes": 68938240,
+      "peak_cuda_reserved_bytes": 71303168,
+      "seen_classes": [
+        0,
+        1
+      ],
+      "shift": null,
+      "task_index": 0,
+      "train_rows": 113270,
+      "training_memory_counts": {
+        "0": 200,
+        "1": 200
+      },
+      "training_schedule": {
+        "baseline_steps": 3544,
+        "batches_per_epoch": 443,
+        "completed_epochs": 8,
+        "effective_epochs": 8.0,
+        "epochs_started": 8,
+        "examples_presented": 906160,
+        "min_steps_per_task": 2000,
+        "optimizer_steps": 3544,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "requested_epochs": 8,
+        "rows_per_epoch": 113270,
+        "target_steps": 3544
+      },
+      "training_seconds": 16.924777399995946,
+      "training_seconds_cumulative": 16.924777399995946
+    },
+    {
+      "buffer_selection_seconds": 0.0002612999960547313,
+      "calibration_holdout_counts": {},
+      "checkpoint_file": "checkpoints/checkpoint_001.pt",
+      "checkpoint_sha256": "edf109c4c5dba3ceb1a42476d2a4f221eb69bd70f823b1a6c6c52da05bf8e176",
+      "correction": {
+        "balanced_rows": 600,
+        "baseline_steps": 90,
+        "batches_per_epoch": 3,
+        "ce_loss_mean": 0.0003860697001881716,
+        "completed_epochs": 30,
+        "distilled_tasks": [
+          [
+            0,
+            1
+          ],
+          [
+            2
+          ]
+        ],
+        "effective_epochs": 30.0,
+        "epochs_started": 30,
+        "examples_presented": 18000,
+        "learning_rate": 0.0001,
+        "min_steps_per_task": 0,
+        "optimizer_steps": 90,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "requested_epochs": 30,
+        "rows_per_epoch": 600,
+        "selected_per_class": {
+          "0": 200,
+          "1": 200,
+          "2": 200
+        },
+        "selection": "random without replacement from current rows and stored old memory",
+        "target_steps": 90,
+        "task_kd_loss_mean": 2.53540216863573e-05,
+        "teacher": "post-base-training snapshot",
+        "temperature": 2.0,
+        "training_seconds": 0.8966157000104431
+      },
+      "correction_complete": true,
+      "correction_seconds": 0.9026756000093883,
+      "correction_seconds_cumulative": 0.9026877000142122,
+      "evaluation_role": "official_ID_test_not_used_for_selection",
+      "evaluation_seconds": 0.02306390000740066,
+      "id": {
+        "attack_family_macro_recall": 0.869009576615694,
+        "attack_recall": 0.9141787268495092,
+        "attack_recall_definition": "P(predicted_label != Normal | true_label != Normal)",
+        "attack_support": 9881,
+        "balanced_accuracy": 0.882878659836955,
+        "confusion_labels": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "confusion_matrix": [
+          [
+            8843,
+            426,
+            442,
+            0,
+            0
+          ],
+          [
+            767,
+            6353,
+            340,
+            0,
+            0
+          ],
+          [
+            81,
+            194,
+            2146,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_rows": 19592,
+        "excluded_unseen_rows": 2952,
+        "macro_f1": 0.864764045762457,
+        "normal_fpr": 0.08938317372052312,
+        "normal_support": 9711,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "error_count": 868,
+            "error_to_newer_class": 442,
+            "error_to_normal": 0,
+            "error_to_other_old": 426,
+            "f1": 0.9115555097412638,
+            "introduced_task": 0,
+            "precision": 0.9124961304302962,
+            "recall": 0.9106168262794769,
+            "support": 9711,
+            "train_count": 67343
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "error_count": 1107,
+            "error_to_newer_class": 340,
+            "error_to_normal": 767,
+            "error_to_other_old": 0,
+            "f1": 0.8803436568973879,
+            "introduced_task": 0,
+            "precision": 0.911085615947225,
+            "recall": 0.8516085790884719,
+            "support": 7460,
+            "train_count": 45927
+          },
+          {
+            "class_id": 2,
+            "class_name": "Probe",
+            "error_count": 275,
+            "error_to_newer_class": 0,
+            "error_to_normal": 81,
+            "error_to_other_old": 194,
+            "f1": 0.8023929706487194,
+            "introduced_task": 1,
+            "precision": 0.7329234972677595,
+            "recall": 0.8864105741429161,
+            "support": 2421,
+            "train_count": 11656
+          }
+        ],
+        "total_available_rows": 22544
+      },
+      "identity_hash": "df3c2fe802901afbee79c2640832354add7ea87f6367830a8e19dd2591cca79c",
+      "new_classes": [
+        2
+      ],
+      "new_rows_before_internal_holdout": 11656,
+      "new_training_rows": 11656,
+      "peak_cuda_allocated_bytes": 69330432,
+      "peak_cuda_reserved_bytes": 73400320,
+      "seen_classes": [
+        0,
+        1,
+        2
+      ],
+      "shift": null,
+      "task_index": 1,
+      "train_rows": 12056,
+      "training_memory_counts": {
+        "0": 200,
+        "1": 200,
+        "2": 200
+      },
+      "training_schedule": {
+        "baseline_steps": 384,
+        "batches_per_epoch": 48,
+        "completed_epochs": 41,
+        "effective_epochs": 41.67949568679496,
+        "epochs_started": 42,
+        "examples_presented": 502488,
+        "min_steps_per_task": 2000,
+        "optimizer_steps": 2000,
+        "partial_epoch_batches": 32,
+        "partial_epoch_examples": 8192,
+        "requested_epochs": 8,
+        "rows_per_epoch": 12056,
+        "target_steps": 2000
+      },
+      "training_seconds": 8.902892500002054,
+      "training_seconds_cumulative": 25.827669899998
+    },
+    {
+      "buffer_selection_seconds": 0.0002277999883517623,
+      "calibration_holdout_counts": {},
+      "checkpoint_file": "checkpoints/checkpoint_002.pt",
+      "checkpoint_sha256": "a7fff2d124a0a2fc7acdc16b2a6d608e01fdb06ba0f7ad8294cfec7c7008d54e",
+      "correction": {
+        "balanced_rows": 800,
+        "baseline_steps": 120,
+        "batches_per_epoch": 4,
+        "ce_loss_mean": 0.0011726581566487463,
+        "completed_epochs": 30,
+        "distilled_tasks": [
+          [
+            0,
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ]
+        ],
+        "effective_epochs": 30.0,
+        "epochs_started": 30,
+        "examples_presented": 24000,
+        "learning_rate": 0.0001,
+        "min_steps_per_task": 0,
+        "optimizer_steps": 120,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "requested_epochs": 30,
+        "rows_per_epoch": 800,
+        "selected_per_class": {
+          "0": 200,
+          "1": 200,
+          "2": 200,
+          "3": 200
+        },
+        "selection": "random without replacement from current rows and stored old memory",
+        "target_steps": 120,
+        "task_kd_loss_mean": 0.00010327218282771092,
+        "teacher": "post-base-training snapshot",
+        "temperature": 2.0,
+        "training_seconds": 1.2963973000005353
+      },
+      "correction_complete": true,
+      "correction_seconds": 1.299397199996747,
+      "correction_seconds_cumulative": 2.2020849000109592,
+      "evaluation_role": "official_ID_test_not_used_for_selection",
+      "evaluation_seconds": 0.01991860000998713,
+      "id": {
+        "attack_family_macro_recall": 0.6831195644220283,
+        "attack_recall": 0.8009556634811217,
+        "attack_recall_definition": "P(predicted_label != Normal | true_label != Normal)",
+        "attack_support": 12766,
+        "balanced_accuracy": 0.7477685683839705,
+        "confusion_labels": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "confusion_matrix": [
+          [
+            9145,
+            99,
+            245,
+            222,
+            0
+          ],
+          [
+            575,
+            6119,
+            243,
+            523,
+            0
+          ],
+          [
+            181,
+            171,
+            2061,
+            8,
+            0
+          ],
+          [
+            1785,
+            1,
+            9,
+            1090,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_rows": 22477,
+        "excluded_unseen_rows": 67,
+        "macro_f1": 0.7568407075822531,
+        "normal_fpr": 0.05828441973020286,
+        "normal_support": 9711,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "error_count": 566,
+            "error_to_newer_class": 467,
+            "error_to_normal": 0,
+            "error_to_other_old": 99,
+            "f1": 0.8547927279525167,
+            "introduced_task": 0,
+            "precision": 0.7825603285983228,
+            "recall": 0.9417155802697972,
+            "support": 9711,
+            "train_count": 67343
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "error_count": 1341,
+            "error_to_newer_class": 766,
+            "error_to_normal": 575,
+            "error_to_other_old": 0,
+            "f1": 0.883610108303249,
+            "introduced_task": 0,
+            "precision": 0.9575899843505478,
+            "recall": 0.8202412868632708,
+            "support": 7460,
+            "train_count": 45927
+          },
+          {
+            "class_id": 2,
+            "class_name": "Probe",
+            "error_count": 360,
+            "error_to_newer_class": 8,
+            "error_to_normal": 181,
+            "error_to_other_old": 171,
+            "f1": 0.8278770837517574,
+            "introduced_task": 1,
+            "precision": 0.8057075840500391,
+            "recall": 0.8513011152416357,
+            "support": 2421,
+            "train_count": 11656
+          },
+          {
+            "class_id": 3,
+            "class_name": "R2L",
+            "error_count": 1795,
+            "error_to_newer_class": 0,
+            "error_to_normal": 1785,
+            "error_to_other_old": 10,
+            "f1": 0.461082910321489,
+            "introduced_task": 2,
+            "precision": 0.5914270211611503,
+            "recall": 0.3778162911611785,
+            "support": 2885,
+            "train_count": 995
+          }
+        ],
+        "total_available_rows": 22544
+      },
+      "identity_hash": "df3c2fe802901afbee79c2640832354add7ea87f6367830a8e19dd2591cca79c",
+      "new_classes": [
+        3
+      ],
+      "new_rows_before_internal_holdout": 995,
+      "new_training_rows": 995,
+      "peak_cuda_allocated_bytes": 69330432,
+      "peak_cuda_reserved_bytes": 73400320,
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "shift": null,
+      "task_index": 2,
+      "train_rows": 1595,
+      "training_memory_counts": {
+        "0": 200,
+        "1": 200,
+        "2": 200,
+        "3": 200
+      },
+      "training_schedule": {
+        "baseline_steps": 56,
+        "batches_per_epoch": 7,
+        "completed_epochs": 285,
+        "effective_epochs": 285.80250783699057,
+        "epochs_started": 286,
+        "examples_presented": 455855,
+        "min_steps_per_task": 2000,
+        "optimizer_steps": 2000,
+        "partial_epoch_batches": 5,
+        "partial_epoch_examples": 1280,
+        "requested_epochs": 8,
+        "rows_per_epoch": 1595,
+        "target_steps": 2000
+      },
+      "training_seconds": 8.099172999995062,
+      "training_seconds_cumulative": 33.92684289999306
+    },
+    {
+      "buffer_selection_seconds": 0.0002893000055337325,
+      "calibration_holdout_counts": {},
+      "checkpoint_file": "checkpoints/checkpoint_003.pt",
+      "checkpoint_sha256": "b15b5ad9bd9a5178d5015f17ca8a4aab18146ce2b713c51b5e53b0053fe02f0a",
+      "correction": {
+        "balanced_rows": 260,
+        "baseline_steps": 60,
+        "batches_per_epoch": 2,
+        "ce_loss_mean": 0.0003852566442911135,
+        "completed_epochs": 30,
+        "distilled_tasks": [
+          [
+            0,
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ],
+          [
+            4
+          ]
+        ],
+        "effective_epochs": 30.0,
+        "epochs_started": 30,
+        "examples_presented": 7800,
+        "learning_rate": 0.0001,
+        "min_steps_per_task": 0,
+        "optimizer_steps": 60,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "requested_epochs": 30,
+        "rows_per_epoch": 260,
+        "selected_per_class": {
+          "0": 52,
+          "1": 52,
+          "2": 52,
+          "3": 52,
+          "4": 52
+        },
+        "selection": "random without replacement from current rows and stored old memory",
+        "target_steps": 60,
+        "task_kd_loss_mean": 0.0008216564259875658,
+        "teacher": "post-base-training snapshot",
+        "temperature": 2.0,
+        "training_seconds": 0.5047804000059841
+      },
+      "correction_complete": true,
+      "correction_seconds": 0.5075757000013255,
+      "correction_seconds_cumulative": 2.7096606000122847,
+      "evaluation_role": "official_ID_test_not_used_for_selection",
+      "evaluation_seconds": 0.012657400002353825,
+      "id": {
+        "attack_family_macro_recall": 0.6032508137703436,
+        "attack_recall": 0.8040988077612405,
+        "attack_recall_definition": "P(predicted_label != Normal | true_label != Normal)",
+        "attack_support": 12833,
+        "balanced_accuracy": 0.6686371045226079,
+        "confusion_labels": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "confusion_matrix": [
+          [
+            9033,
+            97,
+            213,
+            225,
+            143
+          ],
+          [
+            533,
+            6229,
+            97,
+            325,
+            276
+          ],
+          [
+            237,
+            170,
+            1775,
+            216,
+            23
+          ],
+          [
+            1735,
+            0,
+            4,
+            715,
+            431
+          ],
+          [
+            9,
+            0,
+            0,
+            18,
+            40
+          ]
+        ],
+        "evaluated_rows": 22544,
+        "excluded_unseen_rows": 0,
+        "macro_f1": 0.5874931784812845,
+        "normal_fpr": 0.06981773246833488,
+        "normal_support": 9711,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "error_count": 678,
+            "error_to_newer_class": 581,
+            "error_to_normal": 0,
+            "error_to_other_old": 97,
+            "f1": 0.8498447643240192,
+            "introduced_task": 0,
+            "precision": 0.7822811119771369,
+            "recall": 0.9301822675316651,
+            "support": 9711,
+            "train_count": 67343
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "error_count": 1231,
+            "error_to_newer_class": 698,
+            "error_to_normal": 533,
+            "error_to_other_old": 0,
+            "f1": 0.8926626540556033,
+            "introduced_task": 0,
+            "precision": 0.9588977832512315,
+            "recall": 0.8349865951742628,
+            "support": 7460,
+            "train_count": 45927
+          },
+          {
+            "class_id": 2,
+            "class_name": "Probe",
+            "error_count": 646,
+            "error_to_newer_class": 239,
+            "error_to_normal": 237,
+            "error_to_other_old": 170,
+            "f1": 0.7871396895787139,
+            "introduced_task": 1,
+            "precision": 0.8496888463379607,
+            "recall": 0.7331681123502685,
+            "support": 2421,
+            "train_count": 11656
+          },
+          {
+            "class_id": 3,
+            "class_name": "R2L",
+            "error_count": 2170,
+            "error_to_newer_class": 431,
+            "error_to_normal": 1735,
+            "error_to_other_old": 4,
+            "f1": 0.3261861313868613,
+            "introduced_task": 2,
+            "precision": 0.4769846564376251,
+            "recall": 0.24783362218370883,
+            "support": 2885,
+            "train_count": 995
+          },
+          {
+            "class_id": 4,
+            "class_name": "U2R",
+            "error_count": 27,
+            "error_to_newer_class": 0,
+            "error_to_normal": 9,
+            "error_to_other_old": 18,
+            "f1": 0.08163265306122448,
+            "introduced_task": 3,
+            "precision": 0.04381161007667032,
+            "recall": 0.5970149253731343,
+            "support": 67,
+            "train_count": 52
+          }
+        ],
+        "total_available_rows": 22544
+      },
+      "identity_hash": "df3c2fe802901afbee79c2640832354add7ea87f6367830a8e19dd2591cca79c",
+      "new_classes": [
+        4
+      ],
+      "new_rows_before_internal_holdout": 52,
+      "new_training_rows": 52,
+      "peak_cuda_allocated_bytes": 69325824,
+      "peak_cuda_reserved_bytes": 73400320,
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "shift": null,
+      "task_index": 3,
+      "train_rows": 852,
+      "training_memory_counts": {
+        "0": 200,
+        "1": 200,
+        "2": 200,
+        "3": 200,
+        "4": 52
+      },
+      "training_schedule": {
+        "baseline_steps": 32,
+        "batches_per_epoch": 4,
+        "completed_epochs": 500,
+        "effective_epochs": 500.0,
+        "epochs_started": 500,
+        "examples_presented": 426000,
+        "min_steps_per_task": 2000,
+        "optimizer_steps": 2000,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "requested_epochs": 8,
+        "rows_per_epoch": 852,
+        "target_steps": 2000
+      },
+      "training_seconds": 8.791534299991326,
+      "training_seconds_cumulative": 42.71837719998439
+    }
+  ],
+  "class_order": [
+    "Normal",
+    "DoS",
+    "Probe",
+    "R2L",
+    "U2R"
+  ],
+  "command": "python -I ncd/run_bias_correction.py --config ncd/configs/bias_correction_section23.json --output-dir ncd/results/problem_scout/section23/controls_v1/formal/nsl_kdd/replay/cbf/candidate_1_seed_3 --dataset NSL-KDD --base replay --correction cbf --candidate 1 --seed 3 --phase formal --selection ncd/results/problem_scout/section23/controls_v1/selection.json",
+  "completed": true,
+  "correction_seconds_total": 2.7096606000122847,
+  "identity": {
+    "base_method": "replay",
+    "candidate": 1,
+    "class_order": [
+      "Normal",
+      "DoS",
+      "Probe",
+      "R2L",
+      "U2R"
+    ],
+    "command": "python -I ncd/run_bias_correction.py --config ncd/configs/bias_correction_section23.json --output-dir ncd/results/problem_scout/section23/controls_v1/formal/nsl_kdd/replay/cbf/candidate_1_seed_3 --dataset NSL-KDD --base replay --correction cbf --candidate 1 --seed 3 --phase formal --selection ncd/results/problem_scout/section23/controls_v1/selection.json",
+    "config_input_hashes": {
+      "ncd/configs/problem_scout_section21.json": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "ncd/results/crr/section15/registered/nsl-real/lambda_selections.json": "ebca8ab7f51272c722fe9b81e2bcdc440e5e62ccd18a483ed45fb16550a891af",
+      "ncd/results/crr/section15/registered/unsw-real/lambda_selections.json": "f89089c34d0bb186ddec4c4505e98543b844cc2075053a7e38658c7af486504c"
+    },
+    "config_sha256": "7ba1972b6624597a5578933d1ccf778787c33844a4f315ac5a59eff5d6cc401f",
+    "correction": "cbf",
+    "data_binding": {
+      "x_test": {
+        "dtype": "<f4",
+        "sha256": "6653758a8723598a0656c3f111dc1e138629fb4b258502d672c095843471f3fe",
+        "shape": [
+          22544,
+          116
+        ]
+      },
+      "x_train": {
+        "dtype": "<f4",
+        "sha256": "39e5f031eccb8fc087a1726a544fe49ad7bc1094af5f3e446901723b99cb2e57",
+        "shape": [
+          125973,
+          116
+        ]
+      },
+      "y_test": {
+        "dtype": "<i8",
+        "sha256": "bd8d6fabd14dafaa9630e23a8655cb9190b179a9c65df6f4b5d7be32467e2b4e",
+        "shape": [
+          22544
+        ]
+      },
+      "y_train": {
+        "dtype": "<i8",
+        "sha256": "9e21f69466a2c8f72c9abd1d96679ceb7850248d7fd9d70794a640d2a16a3aac",
+        "shape": [
+          125973
+        ]
+      }
+    },
+    "dataset": "NSL-KDD",
+    "development_split": {
+      "role": "official_ID_test_not_used_for_selection"
+    },
+    "effective_config": {
+      "batch_size": 256,
+      "buffer_per_class": 200,
+      "cpu_threads": 2,
+      "datasets": [
+        "NSL-KDD",
+        "UNSW-NB15",
+        "CIC-IDS-2017",
+        "CSE-CIC-IDS2018"
+      ],
+      "derpp_allocation_adaptation": "Classwise reservoir at 200/class replaces official global reservoir; objective and two independent memory minibatches retained; shared class-balanced CE and Adam/MLP protocol",
+      "derpp_alpha": 0.3,
+      "derpp_beta": 0.5,
+      "derpp_coefficient_source": "https://raw.githubusercontent.com/aimagelab/mammoth/e75a491c69fd729edeb01431afb753d9157d9a81/models/config/derpp.yaml (seq-cifar100, buffer500); transferred fixed coefficients, not NIDS-tuned",
+      "device": "cuda",
+      "epochs_per_task": 8,
+      "eval_batch_size": 2048,
+      "herding_mmap_threshold_bytes": 268435456,
+      "hidden": 128,
+      "lambda_files": {
+        "UNSW-NB15": "ncd/results/crr/section15/registered/unsw-real/lambda_selections.json",
+        "default": "ncd/results/crr/section15/registered/nsl-real/lambda_selections.json"
+      },
+      "learning_rate": 0.001,
+      "methods": [
+        "joint",
+        "replay",
+        "icarl",
+        "replay_lwf",
+        "rcl_tab",
+        "derpp"
+      ],
+      "min_steps_per_task": 2000,
+      "problem_scout_data_root": "../exp_h_section21_data/clean_v1",
+      "rcl_beta": 1.0,
+      "rcl_features": 8,
+      "rcl_prediction_weight": 0.5,
+      "rcl_temperature": 0.5,
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        42
+      ],
+      "smoke": false,
+      "ssil_old_replay_batch_size": 64,
+      "temperature": 2.0
+    },
+    "evaluation_role": "official_ID_test_not_used_for_selection",
+    "frozen_selection": {
+      "metric": "final training-held-out validation Macro-F1",
+      "path": "ncd/results/problem_scout/section23/controls_v1/selection.json",
+      "selected_candidate": 1,
+      "selection_seeds": [
+        5,
+        6
+      ],
+      "sha256": "b508a41a90b1ff71214127aa4d5905775b920ccb2cee37355defb2ba49a93f72"
+    },
+    "git_commit": "b19de59991ea744305f710ad4e6ca3ff9b860c93",
+    "hyperparameters": {
+      "epochs": 30,
+      "learning_rate": 0.0001
+    },
+    "lambda_file": "ncd/results/crr/section15/registered/nsl-real/lambda_selections.json",
+    "lambda_file_sha256": "ebca8ab7f51272c722fe9b81e2bcdc440e5e62ccd18a483ed45fb16550a891af",
+    "log_path": "ncd/results/problem_scout/section23/controls_v1/formal/nsl_kdd/replay/cbf/candidate_1_seed_3/run.log",
+    "method": "replay+cbf",
+    "phase": "formal",
+    "regularization": 0.0,
+    "runtime_versions": {
+      "cuda": "12.4",
+      "numpy": "2.2.6",
+      "python": "3.10.20",
+      "torch": "2.6.0+cu124"
+    },
+    "seed": 3,
+    "selection_seeds": [
+      5,
+      6
+    ],
+    "smoke": false,
+    "source_hashes": {
+      "ncd/crr_benchmarks.py": "8243d8723fa1d4de53296dd08c3a08faf3201502b189a6d9e0879427519ee923",
+      "ncd/data.py": "793d577cae42bc6974c274ac8aafae814d5af3cca22a3085c3975d8a07c6e32b",
+      "ncd/model.py": "62ba71e74f3ee56d05b71cf67ab13f62d83d0e3940c5954a001013e13693a1f0",
+      "ncd/prepare_problem_scout_data.py": "a772fdffb1071eca12cef278a5fdc6a502d5b4f65c243a5fb283ce2eedcbfc98",
+      "ncd/run_bias_control.py": "37f2410c4efed4756758c884999a0570be168dbfd1580a9d49070040d233bbac",
+      "ncd/run_bias_correction.py": "bc90ee01a89dc18177e0f324ee380fd50bcac4c193ae82946278efd17a38e8f2",
+      "ncd/run_crr_real_sequence.py": "61842b40ed9e3662ec290deae0615e3692adae04e71d6e05db3f619d833e01eb",
+      "ncd/run_problem_scout.py": "ed7aeb8783f976c8d5e2969c1171cc7148d76ff8a71fa9c37f86ae529f01a9d3",
+      "ncd/section23_bias.py": "e2c5280ecd001d6f2a88f3c6c28f2c4623a69565b38849d5eb7cf9bcb367de4f",
+      "ncd/source_commit.py": "d2ec0d53353fc097c534a3dc6320ec9c1cf584c27f0b49f04a60301b41f3a010",
+      "ncd/train_cil.py": "d2e88bf880897a74f2ac85d9564f638c6139a051b9f0e3f5175b576d805dda28"
+    },
+    "tasks": [
+      [
+        0,
+        1
+      ],
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ]
+    ]
+  },
+  "log_path": "ncd/results/problem_scout/section23/controls_v1/formal/nsl_kdd/replay/cbf/candidate_1_seed_3/run.log",
+  "schema_version": 1,
+  "setting_metadata": {
+    "cache_files": [
+      {
+        "bytes": 58451600,
+        "dtype": "float32",
+        "path": "train_x.npy",
+        "sha256": "ea40c686a23848a933cfd6d11028b5d9fcad43b579f83d8d6e304c1c595b6b82",
+        "shape": [
+          125973,
+          116
+        ]
+      },
+      {
+        "bytes": 1007912,
+        "dtype": "int64",
+        "path": "train_y.npy",
+        "sha256": "471235e010e9586643d67cdd8a7ce95411a32ee9695f2af100793cda574e2832",
+        "shape": [
+          125973
+        ]
+      },
+      {
+        "bytes": 10460544,
+        "dtype": "float32",
+        "path": "test_x.npy",
+        "sha256": "d492f282f703b1095081bcf28e72ceb8d414a74316e73c7f548264a7b671551a",
+        "shape": [
+          22544,
+          116
+        ]
+      },
+      {
+        "bytes": 180480,
+        "dtype": "int64",
+        "path": "test_y.npy",
+        "sha256": "44e10d5e7ec5e63e08db02dc1b0b9962e8857b1ccdebaae1f3f67b2993e612e6",
+        "shape": [
+          22544
+        ]
+      }
+    ],
+    "caveats": [
+      "Raw equality is defined before model float32 conversion; task0-only one-hot and float32 rounding may collapse distinct raw vectors. Transformed overlap is reported separately."
+    ],
+    "class_order": [
+      "Normal",
+      "DoS",
+      "Probe",
+      "R2L",
+      "U2R"
+    ],
+    "command": "python -I ncd/prepare_problem_scout_data.py --datasets NSL-KDD UNSW-NB15",
+    "dataset": "NSL-KDD",
+    "feature_count": 116,
+    "feature_names": [
+      "numeric__duration",
+      "numeric__src_bytes",
+      "numeric__dst_bytes",
+      "numeric__land",
+      "numeric__wrong_fragment",
+      "numeric__urgent",
+      "numeric__hot",
+      "numeric__num_failed_logins",
+      "numeric__logged_in",
+      "numeric__num_compromised",
+      "numeric__root_shell",
+      "numeric__su_attempted",
+      "numeric__num_root",
+      "numeric__num_file_creations",
+      "numeric__num_shells",
+      "numeric__num_access_files",
+      "numeric__num_outbound_cmds",
+      "numeric__is_host_login",
+      "numeric__is_guest_login",
+      "numeric__count",
+      "numeric__srv_count",
+      "numeric__serror_rate",
+      "numeric__srv_serror_rate",
+      "numeric__rerror_rate",
+      "numeric__srv_rerror_rate",
+      "numeric__same_srv_rate",
+      "numeric__diff_srv_rate",
+      "numeric__srv_diff_host_rate",
+      "numeric__dst_host_count",
+      "numeric__dst_host_srv_count",
+      "numeric__dst_host_same_srv_rate",
+      "numeric__dst_host_diff_srv_rate",
+      "numeric__dst_host_same_src_port_rate",
+      "numeric__dst_host_srv_diff_host_rate",
+      "numeric__dst_host_serror_rate",
+      "numeric__dst_host_srv_serror_rate",
+      "numeric__dst_host_rerror_rate",
+      "numeric__dst_host_srv_rerror_rate",
+      "categorical__protocol_type_icmp",
+      "categorical__protocol_type_tcp",
+      "categorical__protocol_type_udp",
+      "categorical__service_IRC",
+      "categorical__service_X11",
+      "categorical__service_Z39_50",
+      "categorical__service_auth",
+      "categorical__service_bgp",
+      "categorical__service_courier",
+      "categorical__service_csnet_ns",
+      "categorical__service_ctf",
+      "categorical__service_daytime",
+      "categorical__service_discard",
+      "categorical__service_domain",
+      "categorical__service_domain_u",
+      "categorical__service_echo",
+      "categorical__service_eco_i",
+      "categorical__service_ecr_i",
+      "categorical__service_efs",
+      "categorical__service_exec",
+      "categorical__service_finger",
+      "categorical__service_ftp",
+      "categorical__service_ftp_data",
+      "categorical__service_gopher",
+      "categorical__service_hostnames",
+      "categorical__service_http",
+      "categorical__service_http_443",
+      "categorical__service_imap4",
+      "categorical__service_iso_tsap",
+      "categorical__service_klogin",
+      "categorical__service_kshell",
+      "categorical__service_ldap",
+      "categorical__service_link",
+      "categorical__service_login",
+      "categorical__service_mtp",
+      "categorical__service_name",
+      "categorical__service_netbios_dgm",
+      "categorical__service_netbios_ns",
+      "categorical__service_netbios_ssn",
+      "categorical__service_netstat",
+      "categorical__service_nnsp",
+      "categorical__service_nntp",
+      "categorical__service_ntp_u",
+      "categorical__service_other",
+      "categorical__service_pop_2",
+      "categorical__service_pop_3",
+      "categorical__service_printer",
+      "categorical__service_private",
+      "categorical__service_red_i",
+      "categorical__service_remote_job",
+      "categorical__service_rje",
+      "categorical__service_shell",
+      "categorical__service_smtp",
+      "categorical__service_sql_net",
+      "categorical__service_ssh",
+      "categorical__service_sunrpc",
+      "categorical__service_supdup",
+      "categorical__service_systat",
+      "categorical__service_telnet",
+      "categorical__service_tftp_u",
+      "categorical__service_tim_i",
+      "categorical__service_time",
+      "categorical__service_urh_i",
+      "categorical__service_urp_i",
+      "categorical__service_uucp",
+      "categorical__service_uucp_path",
+      "categorical__service_vmnet",
+      "categorical__service_whois",
+      "categorical__flag_OTH",
+      "categorical__flag_REJ",
+      "categorical__flag_RSTO",
+      "categorical__flag_RSTR",
+      "categorical__flag_S0",
+      "categorical__flag_S1",
+      "categorical__flag_S2",
+      "categorical__flag_S3",
+      "categorical__flag_SF",
+      "categorical__flag_SH"
+    ],
+    "git_commit": "9e640bae1ca5da1d3d11083087d8359840687c13",
+    "id_counts": {
+      "DoS": 7460,
+      "Normal": 9711,
+      "Probe": 2421,
+      "R2L": 2885,
+      "U2R": 67
+    },
+    "input_files": [
+      {
+        "bytes": 19109424,
+        "path": "../kaggle_leon_release/datasets/nsl-kdd/KDDTrain+.txt",
+        "sha256": "1b86d2f957b33082081bba410fe129b475efebcc13c9014c3f447c8271aadf95"
+      },
+      {
+        "bytes": 3441513,
+        "path": "../kaggle_leon_release/datasets/nsl-kdd/KDDTest+.txt",
+        "sha256": "fa46b0935342616aa83b7c2578db355b6a7aaabbc492248172c7a1e8b7ab8f84"
+      }
+    ],
+    "log_path": "ncd/results/problem_scout/section21/preparation.log",
+    "original_counts": {
+      "test": {
+        "DoS": 7460,
+        "Normal": 9711,
+        "Probe": 2421,
+        "R2L": 2885,
+        "U2R": 67
+      },
+      "train": {
+        "DoS": 45927,
+        "Normal": 67343,
+        "Probe": 11656,
+        "R2L": 995,
+        "U2R": 52
+      }
+    },
+    "preparation_script_sha256": "b32af20c87716da730f4ef11eb95e0cc76a395a9d88f8c4c0b0263e20ffd91f4",
+    "preprocessing": "Section15 ColumnTransformer: median-impute/StandardScaler numeric + one-hot(handle_unknown=ignore), fitted only on Task0 train; final float32",
+    "quality": {
+      "raw": {
+        "conflict_groups_retained": 98,
+        "conflict_member_rows_retained": 210,
+        "equality": "Exact parsed mixed-type feature tuples; signed-zero normalized; no float32 conversion before checking",
+        "raw_feature_groups": 147790,
+        "raw_rows": 148517,
+        "split": "Official KDDTrain+/KDDTest+ unchanged by Section21 instruction",
+        "train_test_exact_overlap_rows": 664
+      },
+      "transformed": {
+        "equality": "Complete little-endian float32 feature bytes; signed-zero canonical; hash routing followed by full bytes, not hash-only equality",
+        "hash_candidate_test_rows": 664,
+        "hash_candidate_train_rows": 658,
+        "test_matching_any_train_rate": 0.029453513129879347,
+        "test_matching_any_train_rows": 664,
+        "test_rows": 22544
+      }
+    },
+    "raw_feature_names": [
+      "duration",
+      "protocol_type",
+      "service",
+      "flag",
+      "src_bytes",
+      "dst_bytes",
+      "land",
+      "wrong_fragment",
+      "urgent",
+      "hot",
+      "num_failed_logins",
+      "logged_in",
+      "num_compromised",
+      "root_shell",
+      "su_attempted",
+      "num_root",
+      "num_file_creations",
+      "num_shells",
+      "num_access_files",
+      "num_outbound_cmds",
+      "is_host_login",
+      "is_guest_login",
+      "count",
+      "srv_count",
+      "serror_rate",
+      "srv_serror_rate",
+      "rerror_rate",
+      "srv_rerror_rate",
+      "same_srv_rate",
+      "diff_srv_rate",
+      "srv_diff_host_rate",
+      "dst_host_count",
+      "dst_host_srv_count",
+      "dst_host_same_srv_rate",
+      "dst_host_diff_srv_rate",
+      "dst_host_same_src_port_rate",
+      "dst_host_srv_diff_host_rate",
+      "dst_host_serror_rate",
+      "dst_host_srv_serror_rate",
+      "dst_host_rerror_rate",
+      "dst_host_srv_rerror_rate"
+    ],
+    "runtime": {
+      "numpy": "2.2.6",
+      "pandas": "2.3.3",
+      "python": "3.10.20"
+    },
+    "seed": 42,
+    "shift_counts": {},
+    "source_files": [
+      "../kaggle_leon_release/datasets/nsl-kdd/KDDTrain+.txt",
+      "../kaggle_leon_release/datasets/nsl-kdd/KDDTest+.txt"
+    ],
+    "status": "complete",
+    "tasks": [
+      [
+        0,
+        1
+      ],
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ]
+    ],
+    "test_cap_policy": "none",
+    "train_cap_policy": "none",
+    "train_counts": {
+      "DoS": 45927,
+      "Normal": 67343,
+      "Probe": 11656,
+      "R2L": 995,
+      "U2R": 52
+    }
+  },
+  "sources": {
+    "bic": "https://arxiv.org/abs/1905.13260",
+    "cbf": "https://arxiv.org/abs/1807.09536",
+    "ssil": "https://arxiv.org/abs/2003.13947",
+    "wa": "https://arxiv.org/abs/1911.07053"
+  },
+  "tasks": [
+    [
+      0,
+      1
+    ],
+    [
+      2
+    ],
+    [
+      3
+    ],
+    [
+      4
+    ]
+  ],
+  "train_counts": {
+    "0": 67343,
+    "1": 45927,
+    "2": 11656,
+    "3": 995,
+    "4": 52
+  },
+  "training_seconds_total": 42.71837719998439
+}
