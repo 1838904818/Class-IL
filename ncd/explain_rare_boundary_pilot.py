@@ -309,7 +309,7 @@ def run(args: argparse.Namespace, output: Path) -> None:
     result = {
         "schema_version": 1, "completed": True, "dataset": args.dataset, "seed": args.seed,
         "git_commit": source_commit(ROOT), "script_sha256": digest(Path(__file__)),
-        "command": portable_command, "command_note": "Equivalent repo-relative command; original argv retained only in local run.log.",
+        "command": portable_command, "command_note": "Equivalent repo-relative command; local command invocation is recorded by the runner.",
         "log_path": path_label(output / "run.log"),
         "scope": "Exploratory small fixed-probe RQ1 observation; no silent-drift threshold, hypothesis test, causal claim, or RQ1/overall completion claim.",
         "config": {"probe_seed": args.probe_seed, "background_seed": args.background_seed,
@@ -361,7 +361,6 @@ def main() -> None:
     with (output / "run.log").open("x", encoding="utf-8", buffering=1) as log:
         with redirect_stdout(Tee(sys.stdout, log)), redirect_stderr(Tee(sys.stderr, log)):
             try:
-                print(f"COMMAND argv={json.dumps(sys.argv)}", flush=True)
                 run(args, output)
             except Exception:
                 traceback.print_exc()
