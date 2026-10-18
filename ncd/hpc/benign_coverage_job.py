@@ -1,4 +1,4 @@
-"""Run the bounded Section25 CIC17 D1 sequence within one allocation.
+"""Run a bounded Section25 CIC17 D1 or fixed-final D2 sequence in one allocation.
 
 Only the existing training entry computes scientific outputs. This wrapper
 serializes seeds, keeps attempt logs, and protects small evidence, not weights.
@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from ncd.hpc.problem_scout_job import copy_small, sample, under, utc, write_json
 
+D2_TRAINING_SOURCE = "5657b468d0c83af58ec60dcd60ecf83bf61594f5"
+
 
 def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -30,11 +32,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("code-root", "data-root", "output-root", "protected-root"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--treatment", choices=("D1", "D2"), default="D1")
+    parser.add_argument("--d2-budget-mode", choices=("fixed_final",))
+    parser.add_argument("--training-source-commit")
     parser.add_argument("--local-smoke", action="store_true")
     args = parser.parse_args()
     source = os.environ.get("NCD_SOURCE_COMMIT", "")
     if not re.fullmatch(r"[0-9a-f]{40}", source):
-        parser.error("NCD_SOURCE_COMMIT must identify the complete execution commit")
+        parser.error("NCD_SOURCE_COMMIT must identify the complete wrapper execution commit")
+    if (args.treatment == "D2") != (args.d2_budget_mode is not None):
+        parser.error("D2 requires explicit fixed_final; D1 does not accept a D2 budget mode")
+    if args.treatment == "D2" and args.training_source_commit != D2_TRAINING_SOURCE:
+        parser.error("D2 requires the explicit frozen --training-source-commit " + D2_TRAINING_SOURCE)
+    # Preserve the original D1 interface and its historical execution identity.
+    # New callers may separately identify the unchanged child training source.
+    training_source = args.training_source_commit or source
+    if not re.fullmatch(r"[0-9a-f]{40}", training_source):
+        parser.error("training source must be a complete commit")
     for name in ("code_root", "data_root", "output_root", "protected_root"):
         setattr(args, name, getattr(args, name).resolve())
     if args.code_root != ROOT:
@@ -60,7 +74,7 @@ def main():
     if (sum(info["train_counts"].values()), sum(info["id_counts"].values())) != (2262203, 565673):
         parser.error("the existing full uncapped CIC17 cache is required")
     seeds = [1] if args.local_smoke else [1, 2, 3]
-    suffix = Path("smoke" if args.local_smoke else "formal") / "cic17/D1"
+    suffix = Path("smoke" if args.local_smoke else "formal") / "cic17" / args.treatment
     output, protected = args.output_root / suffix, args.protected_root / suffix
     output.mkdir(parents=True, exist_ok=True)
     protected.mkdir(parents=True, exist_ok=True)
@@ -70,8 +84,10 @@ def main():
     attempt = output / "attempts" / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
                                     + "_" + os.environ.get("SLURM_JOB_ID", "local") + f"_{os.getpid()}")
     attempt.mkdir(parents=True)
-    record = {"schema_version": 1, "job_id": os.environ.get("SLURM_JOB_ID"), "source_commit": source,
-              "dataset": "CIC-IDS-2017", "treatment": "D1", "seeds": seeds, "smoke": args.local_smoke,
+    record = {"schema_version": 2, "job_id": os.environ.get("SLURM_JOB_ID"), "source_commit": source,
+              "wrapper_source_commit": source, "training_source_commit": training_source,
+              "dataset": "CIC-IDS-2017", "treatment": args.treatment, "d2_budget_mode": args.d2_budget_mode,
+              "seeds": seeds, "smoke": args.local_smoke,
               "started_utc": utc(), "config_sha256": sha256(config), "data_receipt_sha256": sha256(receipt),
               "job_helper_sha256": sha256(Path(__file__)),
               "batch_entry_sha256": sha256(ROOT / "ncd/hpc/run_benign_coverage.sbatch"),
@@ -79,6 +95,7 @@ def main():
               "attempt": attempt.relative_to(output).as_posix(), "cells": [], "execution_status": "running"}
     started, previous, child = time.monotonic(), {}, None
     exit_code, stopping = 1, False
+    child_env = dict(os.environ, NCD_SOURCE_COMMIT=training_source)
 
     def stop(signum, _frame):
         nonlocal stopping
@@ -106,8 +123,10 @@ def main():
                 raise InterruptedError("stop requested before next seed")
             cell = output / f"seed_{seed}"
             command = [sys.executable, "-I", "-u", "ncd/run_benign_coverage.py", "--dataset", "CIC-IDS-2017",
-                       "--seed", str(seed), "--treatment", "D1", "--output-dir", str(cell),
+                       "--seed", str(seed), "--treatment", args.treatment, "--output-dir", str(cell),
                        "--data-root", str(args.data_root), "--device", "cuda"]
+            if args.treatment == "D2":
+                command += ["--d2-budget-mode", args.d2_budget_mode]
             if args.local_smoke:
                 command.append("--smoke")
             stdout, stderr = attempt / f"seed_{seed}.stdout.log", attempt / f"seed_{seed}.stderr.log"
@@ -117,7 +136,7 @@ def main():
             record["cells"].append(item)
             write_json(output / "result.json", record)
             with stdout.open("wb") as out, stderr.open("wb") as err:
-                child = subprocess.Popen(command, cwd=ROOT, stdout=out, stderr=err)
+                child = subprocess.Popen(command, cwd=ROOT, env=child_env, stdout=out, stderr=err)
                 item["pid"] = child.pid
                 print(json.dumps({"event": "cell_started", **item}), flush=True)
                 while True:
@@ -143,7 +162,9 @@ def main():
                 raise RuntimeError(f"seed {seed} exited {exit_code}; preserve this attempt and diagnose before resubmission")
             result = json.loads((cell / "result.json").read_text(encoding="utf-8"))
             identity = result["identity"]
-            expected = {"dataset": "CIC-IDS-2017", "treatment": "D1", "seed": seed, "git_commit": source, "smoke": args.local_smoke}
+            expected = {"dataset": "CIC-IDS-2017", "treatment": args.treatment, "seed": seed,
+                        "git_commit": training_source, "d2_budget_mode": args.d2_budget_mode,
+                        "smoke": args.local_smoke}
             if not result.get("completed") or any(identity.get(k) != v for k, v in expected.items()) or len(result["checkpoints"]) != 4:
                 raise ValueError("training entry did not produce the complete bound cell")
             effective = identity["effective_config"]
