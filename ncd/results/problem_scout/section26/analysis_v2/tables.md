@@ -2,10 +2,10 @@ Section26.9: Normal refreshes every task; old attack training/validation pools a
 
 | Dataset / method (n/5) | Benign FPR ↓ | Attack detection ↑ | Macro-F1 | BAcc | Normal recall | Attack-family guard recall |
 |---|---:|---:|---:|---:|---:|---:|
-| CIC-IDS-2017 / Replay (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
-| CIC-IDS-2017 / WACB (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
+| CIC-IDS-2017 / Replay (5/5) | 13.15 ± 2.16 | 99.19 ± 0.19 | 52.70 ± 2.44 | 92.53 ± 0.29 | 86.85 ± 2.16 | 97.79 ± 0.17 |
+| CIC-IDS-2017 / WACB (1/5) 未完成 | 9.20 | 99.01 | 56.63 | 92.92 | 90.80 | 97.64 |
 | CIC-IDS-2017 / Freq (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
-| CIC-IDS-2017 / Replay + LA (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
+| CIC-IDS-2017 / Replay + LA (5/5) | 4.39 ± 1.09 | 93.30 ± 2.36 | 56.84 ± 1.91 | 72.91 ± 7.89 | 95.61 ± 1.09 | 74.06 ± 8.58 |
 | CIC-IDS-2017 / DER++ (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
 | CIC-IDS-2017 / FARQ (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
 | CIC-IDS-2017 / FARQ-all (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
