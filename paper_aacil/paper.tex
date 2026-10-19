@@ -62,6 +62,11 @@
 \providecommand{\CICKDGroupStatusText}{The CIC-IDS-2017 KD group and its paired comparisons remain pending.}
 \providecommand{\RetentionComparisonAppendix}{}
 \providecommand{\KDReassessmentText}{The separately authorized KD reassessment remains pending; it does not amend the original CBF failure.}
+\providecommand{\CompactSelectionText}{The fixed-capacity retention selection is incomplete.}
+\providecommand{\CompactResultsText}{No complete fixed-capacity group is presented.}
+\providecommand{\CompactValidationTable}{}
+\providecommand{\CompactFormalTables}{}
+\providecommand{\CompactCapacityAppendix}{}
 \providecommand{\KDReassessmentTables}{}
 \newcommand{\generatedtable}[2]{\InputIfFileExists{generated/#1.tex}{}{\par\noindent\textit{#2: pending generated evidence; no value imputed.}\par}}
 \newcommand{\curvefigure}[2]{%
@@ -95,7 +100,7 @@ The contribution is an evidence-bounded experimental study:
 \item A low-false-alarm evaluation reporting actual test FPR, binary attack detection, family-level performance, and negative registered outcomes rather than relying on aggregate accuracy alone.
 \item A separately identified post-hoc control, Replay-BS, demonstrating a dataset-dependent difference under matched benign exposure while retaining the limitation of unmatched total computation.
 \end{itemize}
-The study follows three named decision rules: the original superiority protocol, the validation-selected retention protocol, and the fixed-KD reassessment. Their complete criteria and documented chronology are given in Appendix~\ref{app:protocols}; each retains its own outcome.
+The study follows the original superiority protocol, the validation-selected retention protocol, and the fixed-KD reassessment, followed by a fixed-capacity retention extension. Their criteria and chronology are given in Appendix~\ref{app:protocols}; each retains its own outcome.
 
 \section{Related Work}
 \subsection{Replay and class-incremental bias}
@@ -224,6 +229,11 @@ Only UNSW-NB15 development seeds $\{5,6\}$ select hyperparameters and the main v
 
 For each version, eligible configurations have final validation balanced accuracy at least the original AA-CIL development mean minus three percentage points. The configuration with lowest mean validation forgetting is retained, and the lowest-forgetting eligible version is selected as the candidate main method. All choices are frozen across datasets before evaluation seeds $\{1,2,3,4,42\}$ are used. Every version is reported, not only the selected one. If no configuration is eligible, there is no eligible main method; any configuration retained for descriptive formal reporting is explicitly a fallback, not an eligibility success. Test labels never select the gate threshold, hyperparameters, or main version.
 
+\subsection{Fixed-capacity retention candidates}
+A subsequent extension constrains the family learner to a fixed parameter count across tasks, no more than twice the full original family model, at most one extra component, and a single inference model. KD-weak reduces the family DER coefficients; KD+WA and KD+CBF apply alignment or balanced fine-tuning after KD. EMA-KD maintains one slow family copy (decay $0.999$), uses replay-logit MSE with weight one, and predicts only with that copy. DUAL uses two fixed encoders and a joint concatenation head: the stable encoder has the frozen KD coefficient, while the plastic encoder has no distillation loss. The all-attack output capacity is allocated initially; unseen classes remain masked until introduction. There is no taskwise branch expansion.
+
+The fixed-capacity retention protocol uses both UNSW-NB15 and NSL-KDD development seeds $\{5,6\}$ with the fixed attack validation cohorts and permanent Normal holdout. It requires each dataset's validation forgetting to be at most its lowest external-five value plus one percentage point before comparing mean validation final BAcc. Within one point of BAcc, the simpler candidate is preferred. Gate coefficients are $\lambda_G\in\{0.25,0.5\}$; KD-weak searches each DER coefficient in $\{0.25,0.5\}$, and the other KD configurations retain coefficients of one. CBF uses one epoch at $0.1$ times the base learning rate. If no candidate meets both forgetting constraints, the lowest-mean-forgetting version is frozen only as an explicitly ineligible descriptive fallback. All five candidates are reported on formal seeds, with UNSW and NSL still designated development datasets.
+
 \section{Experimental Setup}
 \subsection{Benchmarks and task protocol}
 We use the prepared NSL-KDD, deduplicated UNSW-NB15, and CIC-IDS-2017 benchmarks \citep{nsl,unsw,cic}. Normal and an initial attack family appear in the first task, followed by the fixed attack-family sequence. The data manifest and generated protocol table specify label mappings, task groupings, split sizes, and feature dimensions. Test rows from unobserved classes are excluded at intermediate checkpoints; final metrics use the complete prepared test set. No test row is selected for training, memory construction, or primary calibration.
@@ -288,6 +298,12 @@ The validation-selected retention protocol makes retention mandatory on both UNS
 \paragraph{Separately scoped KD reassessment.}
 \KDReassessmentText
 \CICKDGroupStatusText
+
+\paragraph{Fixed-capacity retention extension.}
+\CompactSelectionText
+\CompactValidationTable
+\CompactResultsText
+\CompactFormalTables
 
 \subsection{Primary calibration-set operating points}
 Table~\ref{tab:main-results} reports methods at the common calibration target, actual test FPR and completed seed counts at \EvidenceCutoff.
@@ -355,7 +371,7 @@ Clean labeled benign data are a substantial resource. They may be contaminated, 
 The test-Normal sensitivity analysis deliberately uses test labels and is not a deployable calibration rule or a replacement for the primary result. Threshold tightening exchanges false alarms for missed attacks, and same-population calibration does not establish out-of-sample reliability. Post-hoc mean curves at a common threshold and averages of per-seed interpolated ADR at a fixed FPR are different summaries; neither changes the holdout-calibrated protocol decisions.
 
 \subsection{Scope of statistical and architectural claims}
-The benchmark uses few paired seeds, fixed task orders, a finite known label universe, prepared tabular features, and a shared training implementation. These choices support controlled within-protocol comparisons but do not cover arbitrary task order, unseen network environments, or open-world label discovery. A matched schedule is not matched total computation or exposure. CSE-CIC-IDS2018 was not run for this study. Joint remains an offline reference whose available information differs from incremental methods.
+The benchmark uses few paired seeds, fixed task orders, a finite known label universe, prepared tabular features, and a shared training implementation. These choices support controlled within-protocol comparisons but do not cover arbitrary task order, unseen network environments, or open-world label discovery. A matched schedule is not matched total computation or exposure. The fixed-capacity extension uses both UNSW and NSL for validation selection, so even its later five-seed results on these datasets are developmental, not blind confirmation. CSE-CIC-IDS2018 outcomes remain sealed and are not part of the present evidence. Joint remains an offline reference whose available information differs from incremental methods.
 
 All reported paired tests are unadjusted. Selection of a comparator from the highest or lowest observed whole-group mean and the small seed count limit inferential strength. A nonsignificant harm test is not an equivalence or noninferiority result. KD was not selected as the primary version by validation: its UNSW-NB15 reassessment is exploratory, and its NSL-KDD outcomes were already available before direct authorization. The first two NSL seeds also predate the reassessment document. We therefore do not describe NSL as blind confirmation or infer whether those available results had been inspected.
 
@@ -376,7 +392,7 @@ Tables and numerical prose are generated from repository result files rather tha
 
 \appendix
 \section{Decision protocols and documented chronology}\label{app:protocols}
-This appendix makes the three decision rules self-contained. Times below are the repository's document-recording timestamps, not claims of external preregistration or evidence that a reader had inspected results. All times are UTC+08:00 on 19 October 2026. Formal comparisons use the fixed paired seeds $\{1,2,3,4,42\}$, one-sided paired $t$ tests at $p<0.05$, and thresholds set only from the common permanent Normal training holdout at $\alpha=2\%$. A partial group supplies descriptive means at its actual $n$, not a five-seed significance conclusion. A known necessary-condition failure remains a failure when another comparison is incomplete.
+This appendix makes the decision rules self-contained. Times below are the repository's document-recording timestamps, not claims of external preregistration or evidence that a reader had inspected results. Unless stated otherwise, times are UTC+08:00 on 19 October 2026. Formal comparisons use the fixed paired seeds $\{1,2,3,4,42\}$, one-sided paired $t$ tests at $p<0.05$, and thresholds set only from the common permanent Normal training holdout at $\alpha=2\%$. A partial group supplies descriptive means at its actual $n$, not a five-seed significance conclusion. A known necessary-condition failure remains a failure when another comparison is incomplete.
 
 \subsection{Original superiority protocol}\label{app:original-protocol}
 The revised original criteria were recorded at 14:31:21 (revision \texttt{aa16079}); the common holdout-calibration and separate gate/family update-budget clarification was recorded at 14:34:56 (\texttt{fe42938}). The comparator set contains Replay, DER++, WACB, Freq, Replay+LA, TS-mem and AA-noAttMem. The strongest comparator is chosen once per dataset and endpoint from the highest complete five-seed mean, never independently for individual seeds. The conjunction requires:
@@ -403,8 +419,14 @@ The fixed-KD reassessment was recorded at 20:47:57 (\texttt{88d6355}), after the
 
 NSL-KDD seeds 1 and 2 had completed before the reassessment document was recorded, and all five had completed before direct execution authorization at approximately 21:29. Result availability does not establish that the results were inspected, but it rules out describing this NSL evidence as blind confirmation. The reassessment's NSL final-BAcc superiority condition failed. The remaining CIC-IDS-2017 comparison is reported at its actual completeness and cannot reverse that necessary-condition failure. The original manuscript cutoff was later removed for completion of the remaining experiments; it does not redefine the criteria or turn partial trajectories into complete results.
 
+\subsection{Fixed-capacity retention protocol}\label{app:compact-protocol}
+The fixed-capacity extension was specified on 20 October 2026 before its development results. It preserves the earlier failed decisions and freezes each candidate using only UNSW/NSL validation seeds $\{5,6\}$. Each candidate first requires signed validation forgetting no greater than the external-five minimum plus one percentage point on both datasets; among eligible configurations, mean validation final BAcc selects the configuration and main version. A BAcc tie within one point favors KD-weak/KD+WA/KD+CBF, then EMA-KD, then DUAL. An ineligible fallback is identified explicitly rather than recast as a successful selection.
+
+The external CSE-CIC-IDS2018 assessment is separate from the development-dataset reports. Its frozen candidate must satisfy all four conditions: forgetting not significantly higher than the external-five minimum; final BAcc significantly higher than Replay-BS; mean final BAcc no more than two percentage points below original AA-CIL; and ADR not significantly below original AA-CIL. The two-point BAcc condition is a fixed mean-difference rule, not a significance or noninferiority test. CSE aggregate metrics remain unavailable here until complete five-seed groups and their guarded release exist; no CSE outcome may change the frozen choice. The pipeline additionally withholds its reference summaries until all 35 physical reference cells are complete. Missing external evidence does not support a resolved-trade-off claim.
+
 \RetentionComparisonAppendix
 \KDReassessmentTables
+\CompactCapacityAppendix
 \section{Additional calibration targets}
 \generatedtable{alpha_sensitivity}{Additional calibration-target results}
 These results reuse the permanently held-out calibration source. They are sensitivity results, not a search over test thresholds. Actual test FPR accompanies each target, and an undefined per-class quantity remains undefined.

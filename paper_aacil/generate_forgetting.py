@@ -1,4 +1,8 @@
-"""Render saved stagewise summary as LaTeX; no inference or metric recomputation."""
+"""Render historical stagewise tables; no inference or metric recomputation.
+
+Compact candidates use generate_section31_comparisons.py. Their arrival in the
+shared summary must not alter this historical table's method set or AA macros.
+"""
 from __future__ import annotations
 
 import argparse
@@ -19,6 +23,7 @@ METHODS = {
 }
 DATA = {"NSL-KDD": "NSL", "UNSW-NB15": "UNSW", "CIC-IDS-2017": "CIC17"}
 ORDER = {method: i for i, method in enumerate(METHODS)}
+COMPACT_METHODS = {"aacil_kd_weak", "aacil_kd_wa", "aacil_kd_cbf", "aacil_ema_kd", "aacil_dual"}
 
 
 def escape(text):
@@ -48,7 +53,8 @@ def table(caption, label, columns, header, rows, note):
 
 
 def render(summary):
-    groups = sorted(summary["groups"], key=lambda g: (list(DATA).index(g["dataset"]),
+    historical_groups = [group for group in summary["groups"] if group["method"] not in COMPACT_METHODS]
+    groups = sorted(historical_groups, key=lambda g: (list(DATA).index(g["dataset"]),
                     ORDER.get(g["method"], 999), g["method"]))
     grouped = defaultdict(list)
     for group in groups:
@@ -139,7 +145,9 @@ def main():
             macros.append("\\newcommand{\\"+prefix+suffix+"}{"+f"{100*stat['mean']:.2f}"+"}")
             macros.append("\\newcommand{\\"+prefix+suffix+"SD}{"+f"{100*stat['sample_sd']:.2f}"+"}")
     (args.output_dir/"forgetting_macros.tex").write_text("\n".join(macros)+"\n", encoding="utf-8")
-    print(json.dumps({"status": "complete", "groups": len(summary["groups"]),
+    compact_count = sum(group["method"] in COMPACT_METHODS for group in summary["groups"])
+    print(json.dumps({"status": "complete", "groups": len(summary["groups"])-compact_count,
+        "compact_groups_handled_by_separate_generator": compact_count,
         "files": ["forgetting_results.tex", "forgetting_decomposition.tex", "forgetting_per_class.tex", "forgetting_macros.tex"]}))
 
 

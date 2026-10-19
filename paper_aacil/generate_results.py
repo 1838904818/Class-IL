@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 import datetime as dt
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -31,6 +32,9 @@ RETENTION = ['aacil_kd','aacil_iso','aacil_wa','aacil_cbf','aacil_ncm']
 RETENTION_NAMES = {m:'AA-CIL-'+m.removeprefix('aacil_').upper() for m in RETENTION}
 RETENTION_METRICS = ['average_incremental_accuracy','final_balanced_accuracy',
                      'forgetting_all_old_classes','final_attack_detection','final_macro_f1','final_normal_fpr']
+COMPACT_NAMES = {'aacil_kd_weak':'KD-weak', 'aacil_kd_wa':'KD+WA',
+                 'aacil_kd_cbf':'KD+CBF', 'aacil_ema_kd':'EMA-KD', 'aacil_dual':'DUAL'}
+COMPACT_DATASETS = ['UNSW-NB15', 'NSL-KDD']
 
 
 def read(path):
@@ -152,6 +156,87 @@ def architecture():
     fig.tight_layout(pad=.1);fig.savefig(PAPER/'figures'/'architecture.pdf',bbox_inches='tight');plt.close(fig)
 
 
+def require_current_comparison_inputs(comparison):
+    """Allow a compact-only append without rerunning historical paired tests.
+
+    A changed clock alone is not a changed dependency. The exception requires
+    unchanged protocol, saved group values, paired scalar inputs, comparator
+    means, seed availability and recorded source/configuration bindings.
+    """
+    summary_path=ROOT/comparison['source_summary']
+    current=read(summary_path)
+    if current['completed_at']==comparison['source_summary_completed_at']:
+        return
+    def fail():
+        raise ValueError('Historical comparison inputs changed; regenerate the affected comparison')
+    if current['protocol']!=comparison['stagewise_protocol']:
+        fail()
+    prior_time=dt.datetime.fromisoformat(comparison['source_summary_completed_at'])
+    for cell in current['cells']:
+        if dt.datetime.fromisoformat(cell['completed_at'])>prior_time and not (
+                cell['method'] in COMPACT_NAMES and cell['dataset'] in COMPACT_DATASETS):
+            fail()
+    groups={(g['dataset'],g['method']):g for g in current['groups']}
+    cells={(c['dataset'],c['method'],c['seed']):c for c in current['cells']}
+    rows={}
+    def row(dataset, method, seed):
+        key=(dataset,method,seed)
+        if key not in rows:
+            if key not in cells:
+                fail()
+            path=summary_path.parent/dataset.lower().replace('-','_')/f'{method}_seed{seed}'/'result.json'
+            r=read(path); entry=cells[key]
+            if (not r.get('completed') or (r['dataset'],r['method'],r['seed'])!=key
+                    or r['protocol']!=current['protocol'] or r['source_result']!=entry['source_result']
+                    or r['completed_at']!=entry['completed_at']):
+                fail()
+            rows[key]=r
+        return rows[key]
+    descriptive=comparison.get('all_versions_descriptive',[])
+    if comparison.get('section')=='29.9':
+        descriptive=[dict(d,method=comparison['candidate']) for d in comparison['dataset_results']]
+    for old in descriptive:
+        group=groups.get((old['dataset'],old['method']),{})
+        if old['n']!=group.get('n',0) or old['seeds']!=group.get('seeds',[]):
+            fail()
+        for metric, value in old.get('metrics',{}).items():
+            if value!=group.get('metrics',{}).get(metric):
+                fail()
+    tests=[t for d in comparison['dataset_results'] for t in d.get('tests',[])]+comparison.get('ISO_minus_KD_descriptive',[])
+    for test in tests:
+        ds, candidate, reference, metric=(test[k] for k in ('dataset','candidate','reference','metric'))
+        cg, rg=groups.get((ds,candidate),{}), groups.get((ds,reference),{})
+        paired_seeds=[s for s in SEEDS if s in cg.get('seeds',[]) and s in rg.get('seeds',[])]
+        if paired_seeds!=[p['seed'] for p in test.get('paired_values',[])]:
+            fail()
+        for pair in test.get('paired_values',[]):
+            if (row(ds,candidate,pair['seed'])['metrics'].get(metric)!=pair['candidate']
+                    or row(ds,reference,pair['seed'])['metrics'].get(metric)!=pair['reference']):
+                fail()
+        selection=test.get('comparator_selection')
+        if selection:
+            now={m:groups[ds,m]['metrics'][metric]['mean'] for m in selection['external_set']
+                 if groups.get((ds,m),{}).get('complete_five_seed')
+                 and sorted(groups[ds,m].get('seeds',[]))==SEEDS}
+            if now!=selection['five_seed_group_means']:
+                fail()
+    for d in comparison['dataset_results']:
+        for method, count in d.get('available_group_counts',{}).items():
+            if groups.get((d['dataset'],method),{}).get('n',0)!=count:
+                fail()
+    for binding in comparison.get('formal_selection_bindings',[])+comparison.get('source_bindings',[]):
+        r=row(binding['dataset'],binding['method'],binding['seed'])
+        if r['training_git_commit']!=binding['training_git_commit']:
+            fail()
+        if any(r.get('training_configuration',{}).get(k)!=v for k,v in binding.get('configuration',{}).items()):
+            fail()
+        if 'source_result' in binding and r['source_result']!=binding['source_result']:
+            fail()
+        if 'source_completed_at' in binding and {
+                b.get('source_completed_at') for b in r['stage_bindings']}!={binding['source_completed_at']}:
+            fail()
+
+
 def retention_evidence(selection_path, comparison_path):
     """Read the frozen choice and the separately generated formal assessment.
 
@@ -184,9 +269,7 @@ def retention_evidence(selection_path, comparison_path):
             or a.get('selection_test_metrics_used') is not False
             or a.get('selected_main')!=s['selected_main']):
         raise ValueError('Regenerate Section29.8 comparisons for the current frozen selection')
-    source_summary=ROOT/a['source_summary']
-    if read(source_summary)['completed_at']!=a['source_summary_completed_at']:
-        raise ValueError('Stagewise summary is newer; regenerate Section29.8 comparisons before paper results')
+    require_current_comparison_inputs(a)
     for g in a['all_versions_descriptive']:
         v=versions[g['method']]
         if g['selected_candidate_id']!=v['selected_candidate_id'] or g['development_eligible']!=v['eligible']:
@@ -319,6 +402,144 @@ def retention_comparison_outputs(evidence):
     return (r'\section{Retention-extension paired comparisons}'+''.join(included)) if included else ''
 
 
+def compact_evidence(selection_path, comparison_path):
+    """Present the frozen compact selection and saved development-dataset groups.
+
+    This path never opens CSE outputs, performs inference, or revises selection.
+    External-dataset release and assessment remain a separate guarded workflow.
+    """
+    out={'selection_complete':False, 'groups':[], 'per_version':[],
+         'selected_main':None, 'cse_status':'sealed_not_consumed'}
+    if not selection_path.is_file():
+        return out
+    s=read(selection_path)
+    if (s.get('completed') is not True or s.get('selection_complete') is not True
+            or s.get('selection_datasets')!=COMPACT_DATASETS
+            or s.get('selection_seeds')!=[5,6] or s.get('formal_seeds')!=SEEDS
+            or s.get('test_metrics_used_for_selection') is not False):
+        raise ValueError('Compact presentation requires the complete validation-only selection')
+    keep=('method','selected_candidate_id','configuration','eligible','selection_reason')
+    versions={v['method']:{k:v[k] for k in keep+('average_validation_final_bacc',
+        'average_validation_forgetting','forgetting_constraint_by_dataset')} for v in s['per_version']}
+    if set(versions)!=set(COMPACT_NAMES):
+        raise ValueError('The immutable compact selection must retain all five candidates')
+    main={k:s['selected_main'][k] for k in keep}
+    if any(main[k]!=versions[main['method']][k] for k in keep):
+        raise ValueError('Compact main differs from its immutable per-version choice')
+    capacity=[]
+    for v in s['per_version']:
+        for ds in COMPACT_DATASETS:
+            c=v['datasets'][ds]['source_results'][0]['architecture_capacity']
+            capacity.append({'dataset':ds,'method':v['method'], **{k:c[k] for k in
+                ('training_parameters','inference_parameters','optimizer_parameters','extra_components')}})
+    out.update(selection_complete=True, selection_result=selection_path.relative_to(ROOT).as_posix(),
+        selection_sha256=hashlib.sha256(selection_path.read_bytes()).hexdigest(),
+        selection_completed_at=s['completed_at'], source_commit=s['source_commit'],
+        main_selection_status=s['main_selection_status'], selected_main=main,
+        per_version=[versions[m] for m in COMPACT_NAMES], capacity=capacity,
+        forgetting_ceiling_by_dataset=s['forgetting_ceiling_by_dataset'])
+    if not comparison_path.is_file():
+        return out
+    a=read(comparison_path)
+    if (a.get('section')!='31' or a.get('selection_sha256')!=out['selection_sha256']
+            or a.get('selection_test_metrics_used') is not False or a.get('selected_main')!=main):
+        raise ValueError('Regenerate compact comparisons for the immutable selection')
+    if a.get('cse_release_guard') is not None or any(g['dataset'] not in COMPACT_DATASETS
+            for g in a.get('descriptive_groups',[])):
+        raise ValueError('Use a development-only compact comparison for this sealed-CSE presentation')
+    for g in a.get('descriptive_groups',[]):
+        v=versions[g['method']]
+        if (g.get('n')!=5 or sorted(g.get('seeds',[]))!=SEEDS or not g.get('complete_five_seed')
+                or g.get('selected_candidate_id')!=v['selected_candidate_id']
+                or g.get('development_eligible')!=v['eligible']):
+            raise ValueError('Compact formal table accepts only complete fixed-configuration groups')
+        out['groups'].append(g)
+    out.update(comparison_result=comparison_path.relative_to(ROOT).as_posix(),
+        comparison_completed_at=a['completed_at'])
+    return out
+
+
+def compact_outputs(evidence):
+    if not evidence['selection_complete']:
+        return {'CompactSelectionText':'The compact-family validation selection is incomplete.',
+                'CompactResultsText':'No complete compact-family group is presented.',
+                'CompactValidationTable':'', 'CompactFormalTables':'', 'CompactCapacityAppendix':''}
+    main=evidence['selected_main']; c=main['configuration']; name=COMPACT_NAMES[main['method']]
+    eligible=sum(v['eligible'] for v in evidence['per_version'])
+    text=(f'The fixed-capacity retention protocol completed validation-only selection at '
+          +evidence['selection_completed_at'].replace('T',' ')+'. ')
+    text+=(f'{eligible} of five candidates satisfy the joint forgetting constraint. ' if eligible else
+           'None of the five candidates satisfies the forgetting constraint on both development datasets. ')
+    text+=(name+(' is the eligible validation-selected version' if main['eligible'] else
+        ' is retained only as an ineligible descriptive fallback with the lowest average signed validation forgetting')
+        +r', with $\lambda_G='+f"{c['lambda_g']:g}"+r'$ and family DER coefficients $\alpha='
+        +f"{c['der_alpha']:g}"+r'$, $\beta='+f"{c['der_beta']:g}"+'$. ')
+    if not main['eligible']:
+        text+='This selection did not meet the retention requirement and does not resolve the trade-off.'
+    rows=[]
+    for v in evidence['per_version']:
+        c=v['configuration']; flags=v['forgetting_constraint_by_dataset']
+        rows.append([COMPACT_NAMES[v['method']], f"{c['lambda_g']:g}",
+            f"{c['der_alpha']:g}/{c['der_beta']:g}", f"{100*v['average_validation_final_bacc']:.2f}",
+            f"{100*v['average_validation_forgetting']:.2f}",
+            'yes' if flags['UNSW-NB15'] else 'no', 'yes' if flags['NSL-KDD'] else 'no'])
+    ceilings=evidence['forgetting_ceiling_by_dataset']
+    table('compact_selection','Fixed-capacity protocol: validation-only choices, not formal test results.',
+        ['Candidate',r'$\lambda_G$',r'DER $\alpha/\beta$','Mean val. BAcc','Mean val. forget','UNSW','NSL'],rows,
+        cols='lrrrrcc',note=(r'Seeds 5/6 only. BAcc is in percent and signed forgetting in percentage points; means average the two development datasets. '
+        'The last two columns indicate each dataset\'s forgetting constraint. Ceilings are '
+        +f"{100*ceilings['UNSW-NB15']:.2f} pp (UNSW) and {100*ceilings['NSL-KDD']:.2f} pp (NSL), "
+        'each equal to its lowest external-five validation forgetting plus 1 pp. Negative values are not clipped. '
+        'Rows with no eligible configuration are fixed descriptive fallbacks.'))
+    groups=evidence['groups']
+    formal=''
+    if groups:
+        rows=[[SHORT[g['dataset']], COMPACT_NAMES[g['method']], '5']+
+            [fmt(g['metrics'][k]) for k in RETENTION_METRICS] for g in groups]
+        table('compact_results',r'Fixed-capacity candidates on development datasets at stagewise $\alpha=2\%$.',
+            ['Data','Candidate','$n$','Mean inc. BAcc','Final BAcc','Forget (pp)','ADR','MF1','FPR'],
+            rows,cols='llrrrrrrr',note=(r'Mean$\pm$sample SD over complete seeds 1/2/3/4/42. '
+            'Both UNSW and NSL were used for development; these five-seed results are not blind confirmation. '
+            'Only complete groups are displayed. No test outcome changes the fixed selection or fallback eligibility.'))
+        formal=r'\input{generated/compact_results.tex}'
+    capacity=[[SHORT[r['dataset']],COMPACT_NAMES[r['method']],str(r['training_parameters']),
+        str(r['optimizer_parameters']),str(r['inference_parameters']),str(r['extra_components'])]
+        for r in evidence['capacity']]
+    table('compact_capacity','Fixed family-model capacity of the selected per-candidate configurations.',
+        ['Data','Candidate','Training-resident','Optimizer','Inference','Extra components'],capacity,cols='llrrrr',
+        note=('F only; the common G and transient previous-task gate teacher are separate. Counts come from saved development architectures '
+        'and remain fixed across tasks. EMA training-resident count includes its slow copy; only EMA is used at inference. '
+        'DUAL uses two fixed encoders and one joint head within a single F.'))
+    progress=(f'{len(groups)} of ten five-seed candidate/dataset groups are complete. ' if groups else
+              'No compact candidate has a complete formal five-seed group at this snapshot. ')
+    progress+=('UNSW and NSL remain development datasets. CSE-CIC-IDS2018 metrics are sealed and were not read by this presentation; '
+               'no external confirmation or resolved-trade-off conclusion is available.')
+    return {'CompactSelectionText':text,'CompactResultsText':progress,
+        'CompactValidationTable':r'\input{generated/compact_selection.tex}', 'CompactFormalTables':formal,
+        'CompactCapacityAppendix':r'\section{Fixed-capacity family counts}\input{generated/compact_capacity.tex}'}
+
+
+def compact_summary_zh(evidence, aggregate_text):
+    if not evidence['selection_complete']:
+        return []
+    main=evidence['selected_main']; c=main['configuration']
+    role='合格的验证选定版本' if main['eligible'] else '未满足双数据集遗忘约束的描述性回退，不是合格主方法'
+    lines=['', '**固定容量保持协议：** '+COMPACT_NAMES[main['method']]+'为'+role+
+        f"（λG={c['lambda_g']:g}，DER α/β={c['der_alpha']:g}/{c['der_beta']:g}）。仅用UNSW/NSL seeds5/6及验证集选择；配置已冻结。"]
+    if not any(v['eligible'] for v in evidence['per_version']):
+        lines.append('五个候选均未同时满足两数据集的验证遗忘约束，不能宣称权衡已解决。')
+    if evidence['groups']:
+        lines+=['', '| 开发数据集 | 紧凑候选 | n | 增量 BAcc (%) | 最终 BAcc (%) | 遗忘 (pp) | ADR (%) |',
+            '|---|---|---:|---:|---:|---:|---:|']
+        for g in evidence['groups']:
+            lines.append('| '+' | '.join([SHORT[g['dataset']],COMPACT_NAMES[g['method']],'5']+
+                [aggregate_text(g['metrics'][k]) for k in RETENTION_METRICS[:4]])+' |')
+    else:
+        lines.append('正式五seed完整组尚未纳入；不以开发验证数字填充正式结果。')
+    lines+=['UNSW/NSL正式结果仍属开发数据集结果，不是盲确认。CSE18汇总封存、未读取；旧CBF失败与固定KD复评失败不变。', '']
+    return lines
+
+
 def kd_reassessment_evidence(path):
     if not path.exists():
         return {}
@@ -327,8 +548,7 @@ def kd_reassessment_evidence(path):
             row.get('blind_confirmation_established') is not False or
             row.get('original_section298_cbf_verdict')!='fail'):
         raise ValueError('Expected the separately scoped Section29.9 KD reassessment')
-    if read(ROOT/row['source_summary'])['completed_at']!=row['source_summary_completed_at']:
-        raise ValueError('Regenerate Section29.9 comparisons for the current stagewise snapshot')
+    require_current_comparison_inputs(row)
     return row | {'comparison_result':path.relative_to(ROOT).as_posix()}
 
 
@@ -520,7 +740,7 @@ def retention_summary_zh(evidence, aggregate_text, followup=None):
     return lines
 
 
-def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment):
+def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment, compact):
     """One-page author summary: one formal table, no duplicate old matrices."""
     def aggregate_text(value):
         if not value or value.get('mean') is None:
@@ -552,9 +772,11 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
         f"结果快照与修订时间：{macros['EvidenceCutoff']}。原始优越性协议仍为FAIL。",
         '',
         *key_findings,
-        *retention_summary_zh(retention, aggregate_text, [cil[k] for k in
-            [('CIC-IDS-2017','aacil'),('CIC-IDS-2017','aacil_kd')] if k in cil]),
+        *(retention_summary_zh(retention, aggregate_text, [cil[k] for k in
+            [('CIC-IDS-2017','aacil'),('CIC-IDS-2017','aacil_kd')] if k in cil]) if not compact['groups'] else
+          ['原验证选择保持协议和固定KD复评均未通过；历史五版本及CIC完整结果保留于论文和源数据。', '']),
         *kd_reassessment_summary_zh(kd_reassessment),
+        *compact_summary_zh(compact, aggregate_text),
         '口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，'
         '遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。',
         '',
@@ -631,7 +853,7 @@ def cic_result_text(groups, comparisons, stats):
                 +'/5$); Replay-BS is reported separately.'}
 
 
-def refresh_presentation(args, retention, kd_reassessment):
+def refresh_presentation(args, retention, kd_reassessment, compact):
     """Revise saved presentation only, without rerunning any scientific calculation."""
     macro_path=PAPER/'generated'/'macros.tex'
     macros={}
@@ -659,6 +881,7 @@ def refresh_presentation(args, retention, kd_reassessment):
     macros.update(retention_outputs(retention))
     macros.update(kd_reassessment_macros(kd_reassessment))
     macros.update(retention_narrative_macros(retention,kd_reassessment))
+    macros.update(compact_outputs(compact))
     macro_path.write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
     for name in ['registered_criteria','calibration_shift','forgetting_results','section298_comparisons']:
         path=PAPER/'generated'/f'{name}.tex'
@@ -667,9 +890,9 @@ def refresh_presentation(args, retention, kd_reassessment):
         if revised!=text:path.write_text(revised,encoding='utf-8')
     saved_path=PAPER/'generated'/'paper_results.json'
     saved=read(saved_path)
-    saved.update(cutoff=macros['EvidenceCutoff'],section298=retention,section299=kd_reassessment)
+    saved.update(cutoff=macros['EvidenceCutoff'],section298=retention,section299=kd_reassessment,section31=compact)
     saved_path.write_text(json.dumps(saved,indent=2,allow_nan=False)+'\n',encoding='utf-8')
-    write_summary_zh(None,None,None,macros,[],retention,kd_reassessment)
+    write_summary_zh(None,None,None,macros,[],retention,kd_reassessment,compact)
     print(json.dumps({'presentation_only':True,'recomputed_statistics':False,
         'evidence_label':macros['EvidenceCutoff'],'cic_kd_completed_seeds':macros['CICKDCompletedSeeds']}))
 
@@ -679,13 +902,16 @@ def main():
     ap.add_argument('--retention-selection',type=Path,default=ROOT/'ncd/results/problem_scout/section29/retention_queue_v1/selection.json')
     ap.add_argument('--retention-comparisons',type=Path,default=ROOT/'ncd/results/problem_scout/section29/retention_comparisons_v1/result.json')
     ap.add_argument('--kd-reassessment',type=Path,default=ROOT/'ncd/results/problem_scout/section29/section299_comparisons_v1/result.json')
+    ap.add_argument('--compact-selection',type=Path,default=ROOT/'ncd/results/problem_scout/section31/development_v1/selection.json')
+    ap.add_argument('--compact-comparisons',type=Path,default=ROOT/'ncd/results/problem_scout/section31/comparisons_v1/result.json')
     ap.add_argument('--presentation-only',action='store_true',
                     help='Reuse saved paper statistics and comparison JSON; revise text/tables only')
     args=ap.parse_args()
     retention=retention_evidence(args.retention_selection.resolve(),args.retention_comparisons.resolve())
     kd_reassessment=kd_reassessment_evidence(args.kd_reassessment.resolve())
+    compact=compact_evidence(args.compact_selection.resolve(),args.compact_comparisons.resolve())
     if args.presentation_only:
-        refresh_presentation(args,retention,kd_reassessment)
+        refresh_presentation(args,retention,kd_reassessment,compact)
         return
     (PAPER/'generated').mkdir(exist_ok=True);(PAPER/'figures').mkdir(exist_ok=True)
     analysis=read(ROOT/'ncd/results/problem_scout/section27/analysis_v1/result.json')
@@ -701,6 +927,9 @@ def main():
             # Only physical cell records, never the mutable matrix summary.
             raw=read(p)
             if 'identity' not in raw or 'checkpoints' not in raw:continue
+            # Compact candidates have their own frozen selection and saved
+            # comparison layer; never mix them into the older method matrix.
+            if raw['identity'].get('method') in COMPACT_NAMES:continue
             x=from_raw(p)
             if x is None:continue
             k=(x['dataset'],x['method'],x['seed'])
@@ -948,17 +1177,18 @@ def main():
     macros.update(retention_outputs(retention))
     macros.update(kd_reassessment_macros(kd_reassessment))
     macros.update(retention_narrative_macros(retention,kd_reassessment))
+    macros.update(compact_outputs(compact))
     (PAPER/'generated'/'macros.tex').write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
     derived={'cutoff':macros['EvidenceCutoff'],'registered_original_overall':'fail','registered_criteria_status':statuses,
              'comparisons':comparisons,'groups':[{'dataset':ds,'method':m,'n':n(ds,m),'points':{a:{k:stats(ds,m,k,a) for k in ['normal_fpr','attack_detection','macro_f1','balanced_accuracy','attack_guard_recall']} for a in ALPHAS}} for ds in DATASETS for m in METHODS],
              'selected_per_class_summaries':[{'dataset':ds,'method':m,'class_name':name,**values} for (ds,m,name),values in perclass.items()],
              'undefined_precision_aggregation':'Per-seed null preserved; mean/sample SD use only defined precision values with defined_n; other endpoints keep their original seed sets.',
              'selected_sources':[{'dataset':x['dataset'],'method':x['method'],'seed':x['seed'],'source_result':x['source_result'],'completed_at':x['completed_at']} for x in cells.values()],
-             'section298':retention, 'section299':kd_reassessment}
+             'section298':retention, 'section299':kd_reassessment, 'section31':compact}
     (PAPER/'generated'/'paper_results.json').write_text(json.dumps(derived,indent=2,allow_nan=False)+'\n',encoding='utf-8')
     architecture()
     print(json.dumps({'selected_logical_cells':len(cells),'new_aa_cells':macros['NumCompletedNew'],'ReplayBS':{ds:n(ds,'replay_bs') for ds in DATASETS},'criteria':statuses}))
-    write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment)
+    write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment,compact)
 
 
 if __name__=='__main__':main()
