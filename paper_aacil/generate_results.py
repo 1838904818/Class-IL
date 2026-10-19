@@ -463,14 +463,23 @@ def kd_reassessment_summary_zh(evidence):
             if evidence.get('execution',{}).get('hard_cutoff_ended') else '')
     if evidence.get('execution',{}).get('termination_cause') == 'owner_hard_deadline':
         cutoff+='该次中断为预设截止 TimeoutError，不是 OOM；部分阶段不计入完整种子指标。'
-    cutoff+='后续已授权继续CIC17 KD seeds3/4/42及原AA五个seed，不设负责人绝对截止；纳入数量以表中已完成轨迹为准。'
+    cic=next((d for d in evidence['dataset_results'] if d['dataset']=='CIC-IDS-2017'),{})
+    counts_cic=cic.get('available_group_counts',{})
+    if counts_cic.get('aacil_kd')==5 and counts_cic.get('aacil')==5:
+        decisions={'pass':'满足条款','fail':'未通过','pending':'待定'}
+        cutoff+='CIC17 KD与原AA均已完成5/5；三项检验依次为'+ '、'.join(
+            decisions.get(t['decision'],t['decision']) for t in cic.get('tests',[]))+'。'
+        if counts_cic.get('replay_bs',0)<5:
+            cutoff+='Replay-BS仅'+str(counts_cic.get('replay_bs',0))+'/5，缺seed42，最终BAcc配对检验仍待定。'
+    else:
+        cutoff+='后续已授权继续CIC17 KD seeds3/4/42及原AA五个seed，不设负责人绝对截止；纳入数量以表中已完成轨迹为准。'
     return ['**固定KD复评：** '+counts+'。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，'
             '五个均在约21:29直接授权前已可得，因此不是盲法确认，也不推测用户是否看过。'
             'NSL/CIC 两者均为要求的数据集；当前判定为 '+evidence['required_numeric_verdict']+'，原CBF失败保留。'
             +''.join(partial)+cutoff, '']
 
 
-def retention_summary_zh(evidence, aggregate_text):
+def retention_summary_zh(evidence, aggregate_text, followup=None):
     if not evidence['selection_complete']:
         return ['**验证选择尚未完成，保持协议的正式结论待齐。**']
     main=evidence['selected_main']
@@ -495,6 +504,10 @@ def retention_summary_zh(evidence, aggregate_text):
             g=gm.get((ds,m),{}); full=g.get('complete_five_seed',False)
             lines.append('| '+' | '.join([SHORT[ds],m.removeprefix('aacil_').upper(),str(g.get('n',0))]+[
                 aggregate_text(g['metrics'].get(k)) if full else '--' for k in RETENTION_METRICS[:4]])+' |')
+    for g in followup or []:
+        if g.get('n')==5:
+            lines.append('| '+' | '.join(['CIC17', '原AA' if g['method']=='aacil' else 'KD', '5']+[
+                aggregate_text(g['metrics'].get(k)) for k in RETENTION_METRICS[:4]])+' |')
     lines+=['', '正式 seeds1/2/3/4/42 齐全才显示均值±样本 SD；-- 为未齐，不以开发数字填补。']
     if evidence['assessment_available']:
         labels={'pass':'满足当前条款','fail':'FAIL（至少一项必要条件失败）','pending':'未完成'}
@@ -539,13 +552,14 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
         f"结果快照与修订时间：{macros['EvidenceCutoff']}。原始优越性协议仍为FAIL。",
         '',
         *key_findings,
-        *retention_summary_zh(retention, aggregate_text),
+        *retention_summary_zh(retention, aggregate_text, [cil[k] for k in
+            [('CIC-IDS-2017','aacil'),('CIC-IDS-2017','aacil_kd')] if k in cil]),
         *kd_reassessment_summary_zh(kd_reassessment),
         '口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，'
         '遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。',
         '',
         '边界：不显著有害不等于等效；Replay-BS匹配曝光但不匹配G+F总计算。保持协议要求UNSW/NSL，'
-        '固定KD复评要求NSL/CIC，不能互换。CIC未补完前保持描述性；解释漂移、治理及总体创新仍未闭合。',
+        '固定KD复评要求NSL/CIC，不能互换。未完整配对的CIC比较保持待定；解释漂移、治理及总体创新仍未闭合。',
         '',
         '[完整逐阶段指标与逐类结果](../ncd/results/problem_scout/section28/forgetting_v1/result.json)；其余 FPR/MF1、配对检验与成本见论文及源结果。',
     ]
@@ -560,7 +574,12 @@ def cic_result_text(groups, comparisons, stats):
     complete = lambda m: sorted(x['seed'] for x in groups[ds,m]) == sorted(SEEDS)
 
     def pvalue(value):
-        return f'{value:.5f}' if value is not None and np.isfinite(value) else 'undefined'
+        if value is None or not np.isfinite(value):
+            return 'undefined'
+        if 0 < value < .00001:
+            coefficient, exponent = f'{value:.2e}'.split('e')
+            return coefficient+r'\times10^{'+str(int(exponent))+'}'
+        return f'{value:.5f}'
 
     def contrast(value):
         return fmt(value, 1, 2) + ' pp'
