@@ -9,13 +9,13 @@ Section26.9: Normal refreshes every task; old attack training/validation pools a
 | CIC-IDS-2017 / DER++ (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
 | CIC-IDS-2017 / FARQ (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
 | CIC-IDS-2017 / FARQ-all (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
-| UNSW-NB15 / Replay (1/5) 未完成 | 22.75 | 95.14 | 42.65 | 65.96 | 77.25 | 64.71 |
-| UNSW-NB15 / WACB (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
-| UNSW-NB15 / Freq (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
-| UNSW-NB15 / Replay + LA (1/5) 未完成 | 17.14 | 89.63 | 46.42 | 57.04 | 82.86 | 54.17 |
+| UNSW-NB15 / Replay (5/5) | 23.04 ± 1.64 | 94.90 ± 1.01 | 41.60 ± 0.92 | 64.98 ± 1.54 | 76.96 ± 1.64 | 63.65 ± 1.77 |
+| UNSW-NB15 / WACB (5/5) | 14.79 ± 0.52 | 85.98 ± 0.94 | 39.87 ± 0.68 | 61.68 ± 0.91 | 85.21 ± 0.52 | 59.06 ± 1.06 |
+| UNSW-NB15 / Freq (5/5) | 14.41 ± 1.09 | 86.49 ± 0.97 | 41.27 ± 0.30 | 56.48 ± 1.08 | 85.59 ± 1.09 | 53.25 ± 1.25 |
+| UNSW-NB15 / Replay + LA (5/5) | 17.56 ± 1.87 | 89.31 ± 1.37 | 45.51 ± 1.21 | 56.27 ± 2.50 | 82.44 ± 1.87 | 53.36 ± 2.90 |
 | UNSW-NB15 / DER++ (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
-| UNSW-NB15 / FARQ (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
-| UNSW-NB15 / FARQ-all (0/5) 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 | 未完成 |
+| UNSW-NB15 / FARQ (5/5) | 16.50 ± 0.39 | 88.14 ± 0.94 | 39.52 ± 1.03 | 63.40 ± 1.62 | 83.50 ± 0.39 | 61.17 ± 1.82 |
+| UNSW-NB15 / FARQ-all (1/5) 未完成 | 25.39 | 96.75 | 32.03 | 59.26 | 74.61 | 57.55 |
 | NSL-KDD / Replay (5/5) | 7.23 ± 2.62 | 81.28 ± 4.19 | 59.02 ± 1.92 | 67.57 ± 1.69 | 92.77 ± 2.62 | 61.27 ± 2.18 |
 | NSL-KDD / WACB (5/5) | 5.25 ± 2.33 | 74.49 ± 5.42 | 57.77 ± 2.16 | 64.48 ± 2.83 | 94.75 ± 2.33 | 56.92 ± 3.47 |
 | NSL-KDD / Freq (5/5) | 5.69 ± 2.40 | 73.65 ± 3.78 | 55.72 ± 2.66 | 64.66 ± 2.40 | 94.31 ± 2.40 | 57.25 ± 3.40 |
@@ -27,12 +27,16 @@ Section26.9: Normal refreshes every task; old attack training/validation pools a
 | Dataset / FARQ task | n/5 | Requested Normal q (%) | Actual Normal / capacity (%) | Actual Normal / used (%) |
 |---|---:|---:|---:|---:|
 | CIC-IDS-2017 / all tasks | 0/5 | 未完成 | 未完成 | 未完成 |
-| UNSW-NB15 / all tasks | 0/5 | 未完成 | 未完成 | 未完成 |
+| UNSW-NB15 / 0 | 5/5 | 52.00 ± 4.47 | 52.00 ± 4.47 | 52.00 ± 4.47 |
+| UNSW-NB15 / 1 | 5/5 | 57.43 ± 4.33 | 57.43 ± 4.33 | 57.43 ± 4.33 |
+| UNSW-NB15 / 2 | 5/5 | 37.34 ± 5.95 | 37.32 ± 5.94 | 41.06 ± 5.50 |
+| UNSW-NB15 / 3 | 5/5 | 34.48 ± 4.51 | 34.44 ± 4.51 | 37.24 ± 3.10 |
+| UNSW-NB15 / 4 | 5/5 | 26.75 ± 5.48 | 26.72 ± 5.48 | 30.37 ± 4.81 |
 | NSL-KDD / 0 | 5/5 | 50.00 ± 0.00 | 50.00 ± 0.00 | 50.00 ± 0.00 |
 | NSL-KDD / 1 | 5/5 | 54.67 ± 11.93 | 54.67 ± 11.93 | 54.67 ± 11.93 |
 | NSL-KDD / 2 | 5/5 | 47.67 ± 17.14 | 47.65 ± 17.16 | 50.03 ± 13.92 |
 | NSL-KDD / 3 | 5/5 | 38.07 ± 18.06 | 38.04 ± 18.04 | 46.87 ± 13.98 |
 
-26.5: 1: pending; 2: pending; 3: pending; 4: fail; 5: pending.
+26.5: 1: pending; 2: pending; 3: fail; 4: fail; 5: pending.
 Full per-class precision/recall, all signed closure ratios, task allocations, selected/duplicate costs and source hashes are in result.json.
 No claim of full research completion or mechanism novelty follows from these thresholds.
