@@ -1,7 +1,8 @@
 """Export small, path-sanitized publication copies, never weights.
 
 Reads completed non-smoke physical cells from the four explicit experiment
-roots; --section29 additionally includes formal Section29/local_v1 cells.
+roots; --section29 additionally includes formal Section29/local_v1 and
+Section29/retention_local_v1 cells, never the development or queue roots.
 Original JSON, checkpoints, logs, matrices and score caches are immutable.
 The paper table generator can consume --input publication_v1 without weights.
 """
@@ -22,7 +23,11 @@ SECTION29 = ROOT / "ncd/results/problem_scout/section29"
 INPUT_NAMES = ("replay_bs_local_v1", "cic_local_queue_v1",
                "cic_aacil_fallback_v1", "hpc_cic_section28")
 METHODS = {"replay_bs", "aacil", "ts_mem", "aa_noattmem"}
-SECTION29_METHODS = {"aacil_kd", "aacil_nogkd", "aacil_iso"}
+SECTION29_METHODS = {"aacil_kd", "aacil_nogkd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
+RETENTION_METHODS = {"aacil_kd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
+SECTION29_ROOTS = (SECTION29 / "local_v1", SECTION29 / "retention_local_v1")
+SECTION29_CONFIG_KEYS = ("section298", "section298_schema_version", "lambda_g",
+                         "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")
 FORMAL_SEEDS = {1, 2, 3, 4, 42}
 PRIVATE_PATH = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z]:[/\\]|/(?:home|scr)/)")
 URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
@@ -132,18 +137,20 @@ def main():
     parser.add_argument("--input", choices=INPUT_NAMES, action="append",
                         help="Explicit Section28 experiment root name; defaults to all four")
     parser.add_argument("--section29", action="store_true",
-                        help="Also export completed formal KD/noGKD/ISO cells from Section29/local_v1; never tuning or smoke")
+                        help="Also export formal Section29 local_v1 and retention_local_v1 cells; never development, selection, smoke, or queue summaries")
     parser.add_argument("--output-dir", type=Path, default=SECTION / "publication_v1")
     args = parser.parse_args()
     output = args.output_dir.resolve()
     roots = [SECTION / name for name in (args.input or INPUT_NAMES)]
     if args.section29:
-        roots.append(SECTION29 / "local_v1")
+        roots.extend(SECTION29_ROOTS)
     if not output.is_relative_to(SECTION) or any(output.is_relative_to(p) or p.is_relative_to(output) for p in roots):
         parser.error("Publication output must be a separate child of Section28, never an original experiment root")
     selected = {}
     for root in roots:
-        allowed_methods = SECTION29_METHODS if root == SECTION29 / "local_v1" else METHODS
+        is_section29 = root in SECTION29_ROOTS
+        is_retention = root == SECTION29 / "retention_local_v1"
+        allowed_methods = RETENTION_METHODS if is_retention else SECTION29_METHODS if is_section29 else METHODS
         for path in sorted(root.rglob("result.json")):
             raw, source_hash = read(path)
             identity = raw.get("identity", {})
@@ -153,13 +160,21 @@ def main():
                     config.get("smoke") or identity.get("seed") not in FORMAL_SEEDS or
                     raw.get("selection_only") or config.get("selection_only")):
                 continue  # Matrices, incomplete cells, smoke and tuning are never formal publication evidence.
-            if allowed_methods is SECTION29_METHODS and (
+            if is_retention and (config.get("section298") is not True or
+                                 config.get("section298_schema_version") != 1):
+                continue
+            if is_section29 and (
                     raw.get("test_evaluation_performed") is not True or
                     len(raw["checkpoints"]) != len(raw.get("tasks", [])) or
-                    any(checkpoint.get("test_evaluation_performed") is not True
+                    any(checkpoint.get("test_evaluation_performed") is not True or
+                        "0.02" not in checkpoint.get("operating_points", {})
                         for checkpoint in raw["checkpoints"])):
                 continue  # Selection-only/partial Section29 records cannot masquerade as formal cells.
             key = tuple(identity[k] for k in ("dataset", "method", "seed"))
+            if is_section29 and key in selected:
+                previous_config = selected[key][2]["identity"]["effective_config"]
+                if any(config.get(k) != previous_config.get(k) for k in SECTION29_CONFIG_KEYS):
+                    raise ValueError("Conflicting Section29 protocols/configurations for one formal cell; preserve both sources and use separate publication namespaces")
             completed = datetime.fromisoformat(raw["completed_at"])
             if completed.tzinfo is None:
                 raise ValueError("Completed-cell timestamp must carry a timezone: " + relative(path))

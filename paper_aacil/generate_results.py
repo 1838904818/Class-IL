@@ -197,7 +197,7 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity):
         '主口径含 Normal，保留负值，攻击类补充见源结果。低遗忘不代表学得好，必须联看两项 BAcc；'
         '不足五种子仅描述，-- 为不可得。',
         '',
-        '**KD / ISO 处于开发种子调参阶段，尚无正式结果。** 新 29.4 标准尚待验证，'
+        '**KD / ISO / WA / CBF / NCM 处于开发与验证选择阶段，尚无完整正式结果。** 当前按 29.8 的遗忘硬标准判定，'
         '不得把开发结果当五种子正式结论，也不覆盖下面的原登记判定。',
         '',
         '原 27.8 注册结论保持 **FAIL**。'
@@ -216,7 +216,7 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity):
         '',
     ]
     cic_counts = '、'.join(f"{NAMES[m]} {len(groups.get(('CIC-IDS-2017', m), []))}/{len(SEEDS)}" for m in methods)
-    lines.append(f'当前原方案 CIC：{cic_counts}。下一步：先冻结开发集参数，再报告 KD/ISO 正式 Class-IL 与误报–检出结果；21:50:26 MYT 硬截止不填补未完成单元。')
+    lines.append(f'当前原方案 CIC：{cic_counts}。新方案只用 UNSW seeds5/6 的固定10%攻击验证集和永久Normal留出池选参；最终验证BAcc不低于原AA−3pp后按最低遗忘选择主版本，所有五版本都报告。正式顺序UNSW→NSL，CIC用HPC；21:50:26 MYT硬截止不填补未完成单元。')
     (PAPER / 'summary_zh.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 

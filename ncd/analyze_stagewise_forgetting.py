@@ -30,11 +30,16 @@ from ncd.run_problem_scout import save_json
 BASE = ROOT / "ncd/results/problem_scout"
 SEEDS = [1, 2, 3, 4, 42]
 METHODS = {"replay", "derpp", "wacb", "freq", "farq", "farq_all", "joint",
-           "aacil", "ts_mem", "aa_noattmem", "replay_bs", "aacil_der", "aacil_kd", "aacil_nogkd", "aacil_iso"}
+           "aacil", "ts_mem", "aa_noattmem", "replay_bs", "aacil_der", "aacil_kd", "aacil_nogkd", "aacil_iso",
+           "aacil_wa", "aacil_cbf", "aacil_ncm"}
+SECTION29_METHODS = {"aacil_kd", "aacil_nogkd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
+SECTION29_CONFIG_KEYS = ("section298", "section298_schema_version", "lambda_g",
+                         "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")
 DEFAULT_ROOTS = [BASE / p for p in (
     "section26/local_v2", "section26/local_cic_v2", "section27/local_v1",
     "section28/replay_bs_local_v1", "section28/cic_local_queue_v1",
-    "section28/cic_aacil_fallback_v1", "section28/hpc_cic_section28", "section29/local_v1")]
+    "section28/cic_aacil_fallback_v1", "section28/hpc_cic_section28", "section29/local_v1",
+    "section29/retention_local_v1")]
 PROTOCOL = {
     "section": "28.6--28.7/29.3", "version": 1, "alpha": .02,
     "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
@@ -66,7 +71,7 @@ def group_role(method):
         return "supplementary_FARQ"
     if method in {"replay_bs", "aacil_der"}:
         return "post_hoc_control"
-    if method in {"aacil_kd", "aacil_nogkd", "aacil_iso"}:
+    if method in SECTION29_METHODS:
         return "section29_candidate_or_ablation"
     return "primary_method_or_registered_comparator"
 
@@ -192,6 +197,8 @@ def get_stage(path, source, cp, target, args, data_cache):
         mode = "reused_saved_stage_alpha2_no_forward"
         costs["existing_stage_calibration_seconds_not_recharged"] = cp.get("calibration_seconds")
         costs["existing_stage_evaluation_seconds_not_recharged"] = cp.get("evaluation_seconds")
+    if cm is None and ident["method"] in SECTION29_METHODS:
+        raise ValueError("Formal Section29 stages require their saved calibrated alpha=2% CM; no checkpoint inference fallback is permitted")
     if cm is None and cp["task_index"] == len(source["tasks"])-1:
         cached = args.final_cache / ident["dataset"].lower().replace("-", "_") / f"{ident['method']}_seed{ident['seed']}" / "result.json"
         if cached.exists():
@@ -271,7 +278,9 @@ def process_cell(path, source, args, data_cache, analysis_commit):
         print(f"STAGE {dataset} {method} seed={seed} task={cp['task_index']} {mode}", flush=True)
     configuration = {k:identity["effective_config"].get(k) for k in (
         "hidden", "batch_size", "epochs_per_task", "min_steps_per_task", "learning_rate",
-        "buffer_per_class", "gate_step_policy", "calibration_policy", "normal_training_rows")}
+        "buffer_per_class", "gate_step_policy", "calibration_policy", "normal_training_rows",
+        "section29", "section29_schema_version", "section298", "section298_schema_version",
+        "selection_only", "lambda_g", "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")}
     row = {"completed": True, "completed_at": now(), "dataset": dataset, "method": method, "seed": seed,
            "group_role": group_role(method), "protocol": PROTOCOL, "source_result": label(path),
            "stage_bindings": bindings, "class_order": source["class_order"], "tasks": source["tasks"],
@@ -281,7 +290,7 @@ def process_cell(path, source, args, data_cache, analysis_commit):
            "stages": stages, "metrics": aggregate_trajectory(stages, source["tasks"], source["class_order"]),
            "cost_seconds": {"new_cell_elapsed": time.perf_counter()-started}, "stage_modes": dict(modes),
            "error_component_interpretation": "Actual G rejection versus F wrong-family alert" if method in
-               {"aacil", "ts_mem", "aa_noattmem", "aacil_der", "aacil_kd", "aacil_nogkd", "aacil_iso"} else
+               {"aacil", "ts_mem", "aa_noattmem", "aacil_der"} | SECTION29_METHODS else
                "Normal versus other-attack confusion categories only; this single classifier has no separate G and F",
            "limitations": ["Post-hoc unified stagewise analysis; original Section27.8 decision unchanged.",
                "G misses and wrong-family alerts are observable CM error components; F behavior on gate-rejected rows is not inferred.",
@@ -378,12 +387,27 @@ def main():
         for path in sorted(root.resolve().rglob("result.json")):
             source = shared_read(path)
             identity = source.get("identity", {})
+            config = identity.get("effective_config", {})
             if (not source.get("completed") or not source.get("checkpoints") or
                     identity.get("dataset") not in args.datasets or identity.get("method") not in METHODS or
                     identity.get("seed") not in SEEDS or
-                    identity.get("effective_config", {}).get("smoke")):
+                    source.get("smoke") or config.get("smoke") or
+                    source.get("selection_only") or config.get("selection_only")):
+                continue
+            if identity["method"] in SECTION29_METHODS and (
+                    source.get("test_evaluation_performed") is not True or
+                    len(source["checkpoints"]) != len(source.get("tasks", [])) or
+                    any(cp.get("test_evaluation_performed") is not True or
+                        "0.02" not in cp.get("operating_points", {}) for cp in source["checkpoints"])):
+                continue
+            if root.resolve() == (BASE / "section29/retention_local_v1").resolve() and (
+                    config.get("section298") is not True or config.get("section298_schema_version") != 1):
                 continue
             key = tuple(identity[k] for k in ("dataset", "method", "seed"))
+            if identity["method"] in SECTION29_METHODS and key in selected:
+                previous_config = selected[key][2]["identity"]["effective_config"]
+                if any(config.get(k) != previous_config.get(k) for k in SECTION29_CONFIG_KEYS):
+                    raise ValueError("Conflicting Section29 protocols/configurations for one formal cell; use explicit inputs and a separate output namespace without changing old caches")
             stamp = datetime.fromisoformat(source["completed_at"].replace("Z", "+00:00"))
             if stamp.tzinfo is None:
                 raise ValueError("Source completion timestamp has no timezone")

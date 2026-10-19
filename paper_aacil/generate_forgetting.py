@@ -11,8 +11,9 @@ METHODS = {
     "replay": "Replay", "replay_la": "Replay+LA", "derpp": "DER++",
     "wacb": "WACB", "freq": "Freq", "aacil": "AA-CIL", "ts_mem": "TS-mem",
     "aa_noattmem": "AA-noAttMem", "replay_bs": "Replay-BS (post hoc)",
-    "aacil_der": "AA-DER (post hoc)", "aacil_kd": "AA-CIL+KD",
+    "aacil_der": "AA-DER (post hoc)", "aacil_kd": "AA-CIL-KD",
     "aacil_nogkd": "AA-CIL-noGKD", "aacil_iso": "AA-CIL-ISO",
+    "aacil_wa": "AA-CIL-WA", "aacil_cbf": "AA-CIL-CBF", "aacil_ncm": "AA-CIL-NCM",
     "farq": "FARQ (supp.)", "farq_all": "FARQ-all (supp.)",
     "joint": "Joint (offline)",
 }
@@ -72,6 +73,7 @@ def render(summary):
             r"Smaller forgetting alone is not superiority: inspect final and incremental BAcc together. "
             r"Groups with $n<5$ are incomplete, descriptive only. Joint is offline; FARQ is supplementary; "
             r"Replay+LA shares Replay's calibrated total $\tau$ and incurs no separate inference. "
+            r"Section 29.8 reports all five F variants; the main variant is fixed by development seeds 5/6, not by this test table. "
             r"These post-hoc stagewise summaries do not change the registered Section 27.8 decision."))
         aa = [g for g in cells if g["method"] == "aacil"]
         if aa:
