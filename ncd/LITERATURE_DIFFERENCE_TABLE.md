@@ -1,5 +1,20 @@
 # NCD closest-work difference table
 
+## Section 27.3 AA-CIL 先行工作核实（2026-10-19）
+
+本次按第27节授权核实两阶段 CIL-NIDS 的良性数据来源与回放范围；下表区分作者全文、官方摘要与不可得项，不把论文标题中的“两阶段”直接等同于独立检测门 G 和攻击家族分类器 F。
+
+| 已发表工作与原文定位 | 良性训练是否在旧类回放 M 之外、是否连续刷新 | 回放是否排除 Normal | 对 AA-CIL 的实际边界 |
+|---|---|---|---|
+| **Wang & Cao, A Two-Stage Class Incremental Learning Approach for Network Intrusion Detection**，IEEE GLOBECOM 2024，pp.2353–2358，DOI 10.1109/GLOBECOM52923.2024.10901809。[IEEE官方摘要](https://ieeexplore.ieee.org/document/10901809/)、[作者发表记录](https://sheng-cao.github.io/)。 | **全文不可得**，无法核实训练良性量或每任务刷新。官方摘要的两阶段分别是抗遗忘学习与无偏预测。 | **不可得**，不能填“否”或推断配额。 | 不能凭 Two-Stage 题名将其归为二分类 G→家族 F；全文缺口不构成新颖性证据。 |
+| **Cerasuolo et al., Attack-Adaptive Network Intrusion Detection Systems for IoT Networks through Class Incremental Learning**，Computer Networks 263, 111228（2025），DOI 10.1016/j.comnet.2025.111228。[作者上传全文](https://www.researchgate.net/publication/389901457_Attack-Adaptive_Network_Intrusion_Detection_Systems_for_IoT_Networks_through_Class_Incremental_Learning)，§3.1–3.2（作者稿pp.4–5）、§4.1（p.7）、§4.4（pp.9–10）。 | 旧类含攻击与良性，新类为攻击；训练用新类数据加旧类 memory。未见独立 G 在每次攻击更新时使用外部良性流的实施证据。 | **否**：基类含 Normal，每类保留25个 exemplars。 | 一个扩头多类 CNN；检测分数为攻击类输出求和，不是已证实的独立 G/F 训练。 |
+| **Cerasuolo et al., Class Incremental Learning for Network-Agnostic Intrusion Detection Systems**，IEEE RTSI 2025，pp.17–22，DOI 10.1109/RTSI64020.2025.11212335。[作者上传全文](https://www.researchgate.net/publication/392626567_Class_Incremental_Learning_for_Network-Agnostic_Intrusion_Detection_Systems)，§III、§IV-C、§V-B、§VI（章节已核实；作者全文具体页码未核实）。 | **该次适配有 M 外的新良性数据**：一次将 benign 加为新类；两种良性域分别适配同一基础模型。数据经过下采样，不能称字面上的不限量流；连续多增量为后续工作。 | **该实验是**：旧类全为攻击，1,000个旧样本在旧攻击类间均分。须区别其通用方法介绍与实际实验设定。 | 已构成“新良性在旧 memory 外＋该次旧 memory 只有攻击”的相邻先例；但 binary score 仍是多类攻击输出之和，未验证独立 G 的持续刷新机制。 |
+| **Cerasuolo et al., Adaptable, Incremental, and Explainable Network Intrusion Detection Systems for Internet of Things**，Engineering Applications of Artificial Intelligence 144, 110143（2025），DOI 10.1016/j.engappai.2025.110143。[大学发表记录](https://iris.unina.it/handle/11588/1013146)、[作者上传全文](https://www.researchgate.net/publication/389474292_Adaptable_incremental_and_explainable_network_intrusion_detection_systems_for_internet_of_things)，§3.2（作者稿pp.7–8）。 | Normal 是 source/target 共同类；新目标域提供良性数据，不可说全部良性仅从旧 memory 获得。未证明每次新增攻击任务刷新独立 G。 | 未见排除旧源域 Normal 的规则；FT-Mem 保留 source classes 子集。 | 是跨域良性适配的相邻先例，非已证明的持续 attack-only F 回放。文中 P=10% 处是 BiC 校准数据，不能误作回放配额。 |
+
+**核实结论。** 窄否决条件——已有方法明确用不受 M 限制的良性流训练检测阶段，同时把回放只给攻击——目前没有获得完整同机制证据；**未确认否决条件不等于新颖性通过**。RTSI 2025 已否定“memory 外新良性＋旧攻击专属 memory 从未出现”的宽泛主张；任何差异只能围绕独立 G 的逐任务良性刷新、攻击专属 F 及其可辨识增量价值继续检验，不能把两阶段结构本身当创新。RTSI 的相关引用[12]指向上述 Computer Networks 2025，[10]才是 Wang/Cao GLOBECOM 2024，不能混同。
+
+**动机与消融限定。** 第27.1节中的“全部方法让 Normal 争同一 M”“覆盖不足已是根因”“所有配额都只产生检出/误报交换”尚不能作为已证事实：定向文献有不同数据可得性与内存设计，现有干预结果也未识别唯一因果根因；26.10曲线比较尚待完整核实。TS-mem 在本研究中是**同配额、受限良性刷新消融**，不是上述已发表两阶段方法的忠实复现。本补充仅记录证据边界，不改工作单或研究锁，不关闭 RQ1/RQ3、总体目标或实质创新要求。以下26.8核实记录及历史内容保持原文。
+
 ## Section 26.8 核实补充（2026-10-19）
 
 以下六篇均已正式发表；技术细节来自出版社全文或作者公开全文，发表信息另核对出版社/作者页面。范围包含多类 Class-IL、二元 domain-incremental 与持续新颖性检测，不能全部视为同一多类协议。“未单列”仅指所读全文的主要结果指标/表格，不是因全文不可得而猜测。
