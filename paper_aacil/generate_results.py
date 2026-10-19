@@ -250,6 +250,26 @@ def retention_outputs(evidence):
           note='Only complete seeds 1/2/3/4/42 receive means and sample SD; incomplete groups show n and dashes. All outcomes come from formal test trajectories, never development selection metrics. Signed forgetting includes old Normal; rates/accuracies are percentages. Eligibility is a development property, not formal success.')
     formal_text=('Complete formal five-seed groups in the saved assessment: '+', '.join(completed)+'. '
                  'Incomplete groups have no aggregate performance or inferential conclusion in this presentation.')
+    iso=group_map.get(('UNSW-NB15','aacil_iso'),{})
+    kd=group_map.get(('UNSW-NB15','aacil_kd'),{})
+    contrasts={c['metric']:c for c in evidence['iso_minus_kd'] if c['dataset']=='UNSW-NB15'}
+    endpoints=['forgetting_all_old_classes','average_incremental_accuracy']
+    if (iso.get('complete_five_seed') and kd.get('complete_five_seed') and
+            all(contrasts.get(k,{}).get('status')=='complete' and contrasts[k].get('n')==5 for k in endpoints)):
+        def probability_tex(value):
+            parts=f'{value:.3g}'.split('e')
+            return parts[0] if len(parts)==1 else parts[0]+r'\times10^{'+str(int(parts[1]))+'}'
+        forget,incremental=(contrasts[k] for k in endpoints)
+        formal_text+=(' On UNSW-NB15, AA-CIL-ISO recorded signed forgetting of '
+            +fmt(iso['metrics']['forgetting_all_old_classes'],100,3)+' pp alongside final balanced accuracy of '
+            +fmt(iso['metrics']['final_balanced_accuracy'])+r'\%; low forgetting alone does not establish effective class-incremental learning. '
+            +'ISO minus KD differences were '+fmt(forget['delta_pp'],1)+' pp for forgetting '
+            +r'($p_{<}='+probability_tex(forget['p_less'])+r'$) and '
+            +fmt(incremental['delta_pp'],1)+' pp for mean incremental balanced accuracy '
+            +r'($p_{<}='+probability_tex(incremental['p_less'])+r'$), using five paired seeds and unadjusted one-sided tests. ')
+        fallback=all(not v['eligible'] for v in evidence['per_version'] if v['method'] in ['aacil_iso','aacil_kd'])
+        formal_text+=('These development-ineligible fallback contrasts' if fallback else 'These descriptive contrasts')
+        formal_text+=' do not alter the validation-locked main selection.'
     verdict=evidence['verdict']
     decision=('Section 29.8 fails a necessary condition; the false-alarm--forgetting trade-off remains unresolved.' if verdict=='fail'
               else 'The selected main satisfies the three Section 29.8 conditions on both required datasets.' if verdict=='pass'
@@ -262,7 +282,14 @@ def retention_outputs(evidence):
 def retention_comparison_outputs(evidence):
     """Render useful complete comparisons already computed in Section29.8."""
     useful=lambda c: c.get('n')==5 and c.get('status') in ['complete','unavailable'] and c.get('delta_pp',{}).get('mean') is not None
-    pvalue=lambda p: '--' if p is None else f'{p:.5f}'
+    def pvalue(p):
+        if p is None:
+            return '--'
+        if 0 < p < .0001 or .99999 < p < 1:
+            value = p if p < .5 else 1-p
+            mantissa, exponent = f'{value:.3e}'.split('e')
+            return '$'+('1-' if p > .5 else '')+mantissa+r'\times10^{'+str(int(exponent))+'}$'
+        return f'{p:.5f}'
     rows=[]
     for d in evidence['dataset_results']:
         for t in d['tests']:

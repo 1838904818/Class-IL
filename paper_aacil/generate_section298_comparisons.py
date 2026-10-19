@@ -180,7 +180,7 @@ def render(result):
             rows.append([escape(NAMES[group["method"]])+marker, str(group["n"])] +
                 [value(group["metrics"][k]) if group["metrics"][k] else "--" for k in DESCRIPTIVE])
         slug = dataset.lower().replace("-", "_")
-        pieces.append(table(escape(DATA[dataset])+": all five Section 29.8 versions at $\alpha=2\%$.",
+        pieces.append(table(escape(DATA[dataset])+r": all five Section 29.8 versions at $\alpha=2\%$.",
             "section298-all-"+slug, "lrrrrrrrr", headers, rows,
             r"Mean$\pm$sample SD; accuracy/rates are percentages, signed forgetting is in percentage points. "
             r"$\star$ marks the main version selected only on UNSW training validation seeds 5/6; "
