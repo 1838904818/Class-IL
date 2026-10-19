@@ -13,7 +13,9 @@
 | **CND-IDS — Continual Novelty Detection for IDS**（[ACM/IEEE DAC 2025](https://ieeexplore.ieee.org/document/11132541/)；无监督二元新颖性检测）。[作者全文](https://arxiv.org/html/2502.14094)，§III-B/C、§IV、Figures3–5、TablesII–III。 | **无旧攻击样本回放**：旧模型潜表示正则；另保留洁净 Normal 参考集拟合 PCA，不等于完全不存数据。 | 作者全文主结果未单列。 | F1、平均经验性能、前向/后向迁移、PR-AUC、时间。 |
 | **ACIL — Anomaly-aware class-incremental learning framework for NIDS**（[IJMLC 2026，17:104](https://link.springer.com/article/10.1007/s13042-025-02840-5)；二元及多类）。[作者上传全文](https://www.researchgate.net/publication/400834463_Anomaly-aware_class-incremental_learning_ACIL_framework_for_network_intrusion_detection_systems)，§4.1/4.2、§5.2.1、Table10/12–14，pp.10–11、15–19。 | **多策略框架**：reservoir、herding、CBRS 等，非单一配额；多数实验总缓冲 K=1000，另做大小消融。 | **部分/间接**：定义 FPR/TNR；主表未单列 FPR 数值，Table10 有 Normal 类准确率，不能记为完全不报告良性表现。 | Accuracy、F1、Forgetting、BWT、效率、逐类准确率。 |
 
-**判定：原预设动机句不获支持，待负责人改写；可检验问题仍为配额与 FPR/检测率权衡。** 六篇不能支持“普遍各类均分”；CBRS-NIDS 已有良性/合并攻击二组平衡，不能将 Fixed-50 本身当作新机制。五篇未单列 FPR 只是本次定向样本观察，不是全领域比例或“无人关注误报”的结论；ACIL 的部分/间接报告必须保留。FARQ 的误差驱动配额及其增量价值仍需匹配对照检验，不由本表确立创新，亦不关闭 RQ1/RQ3。
+**26.9(2) 已确认动机（取代 26.8 原预设句）：** 本次核实的类别平衡（CBRS-NIDS 的 IACB/WACB）、频数驱动（ECBRS）和分布代表性（SSF）采用预先指定的分配/选样准则，所核实准则未把测得的良性误报反馈作为回放配额的调节量；这不等于其数值配额或内存组成不变，ECBRS 与 SSF 会随数据频数/分布变化。六篇中五篇未在主结果中单列固定工作点的良性 FPR，ACIL 保留为部分/间接报告；这是定向样本观察，不是全领域比例或“无人关注误报”的结论。FARQ 要检验的差异是以留出验证样本测得的误报反馈调节配额，以及由此产生的 FPR/攻击检出率权衡，而不是将“规则预先指定”本身当作缺陷。
+
+基线定位随 26.9 更新：原 Fixed-50 改称 **WACB**，作为 CBRS-NIDS 良性/合并攻击二组平衡思想在本多类协议中的适配，不声称完整复现其二元实验；新增 **Freq** 为按训练频数比例分配、每类至少 20 条的简化多类对照，不是 ECBRS 频数驱动替换及少数类保护阈值算法的精确复现。历史核实结论不变：“普遍各类均分”的原动机不获支持，良性/攻击二组平衡也不是本研究首次提出。FARQ 的增量价值仍需匹配对照检验，不由本表确立创新，亦不关闭 RQ1/RQ3。
 
 核实边界与纠正：Two-Stage、AdvAs-IIDS、ExBCIL 全文继续标为 **不可得**，未重新搜索，也未猜测配额/FPR；不纳入这六篇可读样本。ACIL 正式发表为 **2026-02-16**，不是 DOI 中的 2025。原 `master_list` 所列 Few-Shot NIDS 的 [DOI 10.3390/fi16100383](https://doi.org/10.3390/fi16100383) 对应其他论文的更正，不能充当该 NIDS 引用，已从本表排除；本次未改动该清单。SSF/CND-IDS 的作者版本用于技术核实，正式发表身份另有上列来源，不将纯预印本计作已发表。
 

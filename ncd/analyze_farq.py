@@ -1,6 +1,6 @@
 """Recompute Section26 operational metrics and decisions from matched integer CMs.
 
-Historical Section21/22/25 runs are not admitted to the matched main table.
+Historical Section21/22/25 and superseded pre26.9 runs are not admitted to the main table.
 No training, tuning, data preparation, or score-based duplicate selection occurs.
 """
 from __future__ import annotations
@@ -19,12 +19,14 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 DATASETS = ("CIC-IDS-2017", "UNSW-NB15", "NSL-KDD")
 SEEDS = (1, 2, 3, 4, 42)
-METHODS = ("replay", "fixed50", "replay_la", "derpp", "farq", "farq_all")
-NAMES = dict(zip(METHODS, ("Replay", "Fixed-50", "Replay + LA", "DER++", "FARQ", "FARQ-all")))
+METHODS = ("replay", "wacb", "freq", "replay_la", "derpp", "farq", "farq_all")
+NAMES = dict(zip(METHODS, ("Replay", "WACB", "Freq", "Replay + LA", "DER++", "FARQ", "FARQ-all")))
+ACCESS_POLICY = "benign_refresh_attack_memory_only"
 SCALARS = ("normal_fpr", "attack_detection", "macro_f1", "balanced_accuracy",
            "normal_recall", "attack_family_macro_recall", "attack_guard_recall")
 MATCHED_CONFIG = ("hidden", "batch_size", "learning_rate", "epochs_per_task",
-                  "min_steps_per_task", "buffer_per_class", "section26")
+                  "min_steps_per_task", "buffer_per_class", "section26", "section26_access_policy",
+                  "section26_schema_version")
 
 
 def read(path):
@@ -100,15 +102,16 @@ def validate_allocation(allocation, identity, seen):
     method = identity["method"]
     q = 1 / len(seen)
     caps = {c: 200 for c in seen}
-    if method in ("fixed50", "farq"):
-        q = .5 if method == "fixed50" else max(q, min(.6, f / (f + m) if f + m else q))
+    if method in ("wacb", "farq"):
+        q = .5 if method == "wacb" else max(q, min(.6, f / (f + m) if f + m else q))
         if not np.isclose(allocation["q_requested"], q, rtol=0, atol=1e-12):
             raise ValueError("Requested FARQ q does not follow the fixed formula")
         nc = min(math.floor(allocation["q_requested"] * total), total - 20 * len(attacks))
         rest, rem = divmod(total - nc, len(attacks))
         caps = {normal: nc, **{c: rest + int(i < rem) for i, c in enumerate(attacks)}}
-    elif method == "farq_all" and sum(error.values()):
-        raw = {c: (total - 20 * len(seen)) * error[c] / sum(error.values()) for c in seen}
+    elif method == "freq" or (method == "farq_all" and sum(error.values())):
+        weights = error if method == "farq_all" else {c: allocation["frequency_counts"][str(c)] for c in seen}
+        raw = {c: (total - 20 * len(seen)) * weights[c] / sum(weights.values()) for c in seen}
         caps = {c: 20 + math.floor(raw[c]) for c in seen}
         order = sorted(seen, key=lambda c: (-(raw[c] - math.floor(raw[c])), c))
         for c in order[:total - sum(caps.values())]:
@@ -119,12 +122,29 @@ def validate_allocation(allocation, identity, seen):
     if any(caps[c] < 20 for c in attacks):
         raise ValueError("An attack class target falls below20")
     heldout = identity["section26_holdout"]
+    if method == "freq" and allocation["frequency_counts"] != {
+            str(c): heldout[str(c)]["train_count"] + heldout[str(c)]["validation_count"] for c in seen}:
+        raise ValueError("Freq weights differ from original TRAIN frequencies")
     if allocation["heldout_pool_counts"] != {str(c): heldout[str(c)]["validation_count"] for c in seen}:
         raise ValueError("Recorded heldout-pool counts differ from identity")
+    if method == "joint":
+        if allocation.get("offline_joint_reference") is not True or allocation.get("reference_not_replay_budget") is not True:
+            raise ValueError("Joint must be explicitly identified as an offline reference exception")
+    else:
+        if allocation.get("normal_refreshed") is not True:
+            raise ValueError("Normal was not refreshed for this task")
+        if (allocation.get("old_attack_training_pool_access") is not False
+                or allocation.get("old_attack_validation_pool_access") is not False):
+            raise ValueError("Old attack training/validation pool access is not explicitly forbidden")
+        for key in ("old_training_pool_access_classes", "old_validation_pool_access_classes"):
+            if any(int(c) != normal for c in allocation[key]):
+                raise ValueError("A continual learner revisited an old attack pool")
     training, valid = allocation["actual_training_counts"], allocation["actual_validation_counts"]
     actual = sum(training.values()) + sum(valid.values())
     if actual != allocation["actual_total"]:
         raise ValueError("Retained training plus validation memory does not reconcile")
+    if method != "joint" and any(training[str(c)] + valid[str(c)] > caps[c] for c in seen):
+        raise ValueError("Actual per-class memory exceeds its target; shortfalls are allowed")
     normal_n = training[str(normal)] + valid[str(normal)]
     for key, value in (("normal_actual_fraction_of_capacity", normal_n / total),
                        ("normal_actual_fraction_of_used", normal_n / actual)):
@@ -136,8 +156,10 @@ def load_cell(path, weights):
     value = read(path)
     identity = value["identity"]
     config = identity["effective_config"]
-    if not value.get("completed") or config.get("smoke") or not config.get("section26"):
-        raise ValueError("Not a completed formal Section26 matched-holdout cell")
+    if (not value.get("completed") or config.get("smoke") or not config.get("section26")
+            or config.get("section26_access_policy") != ACCESS_POLICY
+            or config.get("section26_schema_version") != 2):
+        raise ValueError("Not a completed formal Section26.9 benign-refresh/old-attack-memory-only cell")
     if (config.get("epochs_per_task") != 8 or config.get("min_steps_per_task") != 2000
             or config.get("buffer_per_class") != 200 or config.get("batch_size") != 256):
         raise ValueError("Not the prescribed full S2000/8-epoch/200-per-class/batch256 setting")
@@ -195,16 +217,58 @@ def load_cell(path, weights):
     return out
 
 
+def superseded_costs(roots):
+    """Keep cancellation/rework accounting without admitting old efficacy metrics."""
+    rows, unfinished, executions = [], [], set()
+    for root in roots:
+        for directory in sorted(root.glob("*/*")):
+            if not directory.is_dir() or "_seed" not in directory.name:
+                continue
+            path = directory / "result.json"
+            if not path.is_file():
+                unfinished.append(label(directory))
+                continue
+            value = read(path)
+            identity = value.get("identity", {})
+            config = identity.get("effective_config", {})
+            if not config.get("section26") or config.get("smoke"):
+                continue
+            if config.get("section26_access_policy") == ACCESS_POLICY:
+                raise ValueError("A current-policy cell was incorrectly supplied as superseded")
+            if not value.get("completed"):
+                unfinished.append(label(directory))
+                continue
+            cps = value["checkpoints"]
+            execution = (value["completed_at"], identity["git_commit"], tuple(c["checkpoint_sha256"] for c in cps))
+            if execution in executions:
+                continue
+            executions.add(execution)
+            cost = {"training_seconds": float(value["training_seconds_total"]),
+                    "selection_seconds": float(sum(c["buffer_selection_seconds"] for c in cps)),
+                    "evaluation_seconds": float(sum(c["evaluation_seconds"] for c in cps))}
+            if not all(np.isfinite(v) and v >= 0 for v in cost.values()):
+                raise ValueError("Invalid superseded execution cost")
+            rows.append({"dataset": identity["dataset"], "method": identity["method"], "seed": identity["seed"],
+                         "completed_at": value["completed_at"], "source_commit": identity["git_commit"],
+                         "result": label(path), "result_sha256": digest(path), "cost": cost})
+    return {"scope": "Superseded pre26.9 completed physical runs only; excluded from every efficacy table and criterion. Unfinished/cancelled work is not counted as zero and its complete cost remains unavailable here.",
+            "completed_runs": rows, "unfinished_cell_directories": sorted(set(unfinished)),
+            "completed_cost_seconds": {k: sum(r["cost"][k] for r in rows) for k in
+                                       ("training_seconds", "selection_seconds", "evaluation_seconds")}}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, action="append", required=True)
+    parser.add_argument("--superseded-input", type=Path, action="append", default=[],
+                        help="Old Section26 output roots: collect completed execution cost only, never efficacy")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--weights", choices=("verify", "portable"), default="portable")
     args = parser.parse_args()
     selected, duplicates, copies, invalid = {}, [], [], []
     for dataset in DATASETS:
         slug = dataset.lower().replace("-", "_")
-        for method in ("replay", "fixed50", "derpp", "farq", "farq_all", "joint"):
+        for method in ("replay", "wacb", "freq", "derpp", "farq", "farq_all", "joint"):
             for seed in SEEDS:
                 candidates = []
                 paths = {r.resolve() / slug / f"{method}_seed{seed}" / "result.json" for r in args.input}
@@ -308,14 +372,20 @@ def main():
     def compare(dataset, other, threshold, strict=False):
         delta = 100 * (by[dataset, "farq"]["metrics"]["macro_f1"]["mean"] - by[dataset, other]["metrics"]["macro_f1"]["mean"])
         values = {"farq_macro_f1_delta_pp": delta, "comparison": other, "threshold_pp": threshold}
-        if dataset == unsw and by[dataset, "fixed50"]["complete"]:
-            values["fixed50_delta_vs_replay_pp"] = 100 * by[dataset, "fixed50"]["paired_changes"]["macro_f1"]["mean"]
+        if dataset == unsw and by[dataset, "wacb"]["complete"]:
+            values["wacb_delta_vs_replay_pp"] = 100 * by[dataset, "wacb"]["paired_changes"]["macro_f1"]["mean"]
         return values, delta > threshold if strict else delta >= threshold - 1e-10
+
+    def second():
+        wacb, pass_wacb = compare(cic, "wacb", 0)
+        freq, pass_freq = compare(cic, "freq", 0)
+        return {"farq_minus_wacb_mf1_pp": wacb["farq_macro_f1_delta_pp"],
+                "farq_minus_freq_mf1_pp": freq["farq_macro_f1_delta_pp"]}, pass_wacb and pass_freq
 
     verdict(1, "CIC17: MF1 gain >=3pp; mean paired FPR-gap closure >=50%; attack-family guard decline <=2pp",
             [(cic, x) for x in ("farq", "replay", "joint")], first)
-    verdict(2, "CIC17: FARQ MF1 >= Fixed-50", [(cic, x) for x in ("farq", "fixed50")], lambda: compare(cic, "fixed50", 0))
-    verdict(3, "UNSW: FARQ MF1 >= Replay minus 1pp; report Fixed-50 contrast", [(unsw, x) for x in ("farq", "replay")], lambda: compare(unsw, "replay", -1))
+    verdict(2, "CIC17: FARQ MF1 >= WACB and >= Freq", [(cic, x) for x in ("farq", "wacb", "freq")], second)
+    verdict(3, "UNSW: FARQ MF1 >= Replay minus 1pp; report WACB contrast", [(unsw, x) for x in ("farq", "replay")], lambda: compare(unsw, "replay", -1))
     verdict(4, "NSL: FARQ MF1 >= Replay minus 1pp", [(nsl, x) for x in ("farq", "replay")], lambda: compare(nsl, "replay", -1))
     verdict(5, "CIC17: FARQ MF1 strictly greater than FARQ-all", [(cic, x) for x in ("farq", "farq_all")], lambda: compare(cic, "farq_all", 0, True))
     result = {"schema_version": 1, "generated_utc": datetime.now(timezone.utc).isoformat(),
@@ -326,7 +396,8 @@ def main():
                               "attack_detection": "P(predicted any attack | true any attack), support-weighted binary detection",
                               "attack_guard": "Macro recall over attack families with test support >=20; excluded families remain in MF1/BAcc/per-class tables",
                               "closure": "Mean of all paired seed ratios (FPR_Replay-FPR_method)/(FPR_Replay-FPR_Joint); signed denominators retained; zero is undefined",
-                              "memory_scope": "M=200*seen includes retained training replay and validation; matched permanent holdout, with explicitly permitted seen training-archive access; not strict no-history streaming",
+                              "memory_scope": "M=200*seen includes retained training replay and validation; common permanent holdout. Normal refreshes from available benign pool each task; old attack training and validation pools are never revisited by continual learners. Joint remains an offline reference.",
+                              "freq": "20 slots per seen class, remainder proportional to cumulative original TRAIN frequencies, largest remainders with lower class-ID ties; a multiclass frequency-driven simplification, not exact ECBRS reproduction",
                               "scope": "Section26 matched-holdout experiments only; not an OFRA repair or overall RQ1/RQ3/innovation closure"},
               "analysis_provenance": {"git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                                       "source_sha256": digest(Path(__file__)), "command": ["python", "-I", "ncd/analyze_farq.py", *map(safe_text, sys.argv[1:])]},
@@ -336,14 +407,15 @@ def main():
                                      for scope, rows in (("selected_physical_runs_including_joint", [r for r in selected.values() if r["method"] != "replay_la"]),
                                                          ("duplicate_executions", duplicates))},
               "invalid_sources": invalid,
-              "completed_main_outputs": sum(r["method"] != "joint" for r in selected.values()), "expected_main_outputs": 90,
+              "superseded_execution_cost": superseded_costs(args.superseded_input),
+              "completed_main_outputs": sum(r["method"] != "joint" for r in selected.values()), "expected_main_outputs": 105,
               "completed_joint_references": sum(r["method"] == "joint" for r in selected.values()), "expected_joint_references": 15,
               "missing": missing, "summary": summaries, "criteria_26_5": verdicts,
               "all_criteria_evaluated": all(v["status"] != "pending" for v in verdicts),
               "registered_success": "fail" if any(v["status"] == "fail" for v in verdicts) else "pending" if any(v["status"] == "pending" for v in verdicts) else "pass"}
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "result.json").write_text(json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    text = ["Section26 matched results; incomplete groups are descriptive only. Values: mean ± sample SD (%).", "",
+    text = ["Section26.9: Normal refreshes every task; old attack training/validation pools are inaccessible. Incomplete groups are descriptive only. Values: mean ± sample SD (%).", "",
             "| Dataset / method (n/5) | Benign FPR ↓ | Attack detection ↑ | Macro-F1 | BAcc | Normal recall | Attack-family guard recall |",
             "|---|---:|---:|---:|---:|---:|---:|"]
     for row in summaries:

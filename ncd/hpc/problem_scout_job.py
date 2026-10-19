@@ -138,8 +138,8 @@ def main():
     methods = METHODS if args.method_group == "all" else (["joint"] if args.method_group == "joint" else METHODS[1:])
     if args.section26:
         if args.dataset == "cic18" or args.method_group != "all":
-            parser.error("Section26 uses NSL/UNSW/CIC17 and all six training entries")
-        methods = ["replay", "fixed50", "farq", "farq_all", "derpp", "joint"]
+            parser.error("Section26.9 uses NSL/UNSW/CIC17 and all seven training entries")
+        methods = ["replay", "wacb", "freq", "farq", "farq_all", "derpp", "joint"]
     seed = 1 if args.local_smoke else args.seed
     suffix = Path("smoke" if args.local_smoke else "formal") / args.dataset / f"seed_{seed}" / args.method_group
     output, protected = args.output_root / suffix, args.protected_root / suffix
