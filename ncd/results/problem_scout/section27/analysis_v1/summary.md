@@ -11,7 +11,7 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 | NSL-KDD | WACB | 5/5 | 1.990±0.000 | 3.623±0.871 | 66.829±3.773 | 57.029±3.910 | 46.770±6.493 |
 | NSL-KDD | Freq | 5/5 | 1.990±0.000 | 4.928±2.423 | 69.667±2.534 | 56.843±4.322 | 53.503±3.495 |
 | NSL-KDD | Replay+LA | 5/5 | 1.990±0.000 | 4.080±2.162 | 65.386±5.301 | 46.829±4.930 | 34.830±5.777 |
-| NSL-KDD | AA-CIL | 0/5 | pending | pending | pending | pending | pending |
+| NSL-KDD | AA-CIL | 5/5 | 1.990±0.000 | 6.146±1.794 | 62.838±3.460 | 55.664±3.364 | 49.364±1.981 |
 | NSL-KDD | TS-mem | 0/5 | pending | pending | pending | pending | pending |
 | NSL-KDD | AA-noAttMem | 0/5 | pending | pending | pending | pending | pending |
 | NSL-KDD | FARQ (supplementary) | 5/5 | 1.990±0.000 | 3.680±0.989 | 67.448±2.773 | 58.860±5.788 | 48.699±4.938 |
@@ -35,7 +35,7 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 | CIC-IDS-2017 | TS-mem | 0/5 | pending | pending | pending | pending | pending |
 | CIC-IDS-2017 | AA-noAttMem | 0/5 | pending | pending | pending | pending | pending |
 | CIC-IDS-2017 | FARQ (supplementary) | 5/5 | 2.000±0.000 | 1.936±0.040 | 85.395±5.483 | 55.127±2.263 | 55.925±5.533 |
-| CIC-IDS-2017 | Joint (offline) | 0/5 | pending | pending | pending | pending | pending |
+| CIC-IDS-2017 | Joint (offline) | 5/5 | 2.000±0.000 | 1.932±0.036 | 98.190±1.938 | 68.427±1.297 | 78.558±3.581 |
 
 | Section27.8 item | Status |
 |---|---|
@@ -45,6 +45,8 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 | 4. CIC AA-CIL MF1 significantly higher than TS-mem | pending |
 | 5. Calibrated Joint gaps and separate G/F/summed costs reported descriptively | pending |
 
+NSL-KDD AA-CIL (5/5): recorded G/F/sum training 175.948/159.800/335.747 s; G/F steps 44280/40000. Per-task actual memory, benign stream and separate calibration rows/bytes are in result.json; capacity is an upper limit, not actual occupancy.
+
 Strongest baselines use one fixed five-seed mean winner per dataset/metric among the seven Section27.4 controls; FARQ is supplementary only. Replay+LA shares Replay weights and calibrated total τ, so its physical cost is not charged twice.
 No detected significant harm is not proof of noninferiority/equivalence. These paired tests are unadjusted, use five seeds, and retain selection/multiplicity limitations. Joint is an offline access exception, not a guaranteed attainable upper bound. This RQ2 sub-study does not close RQ1, RQ3, or substantive innovation.
-Payload mode: verify; actual payload hashes checked: 370. No new inference or threshold fitting was performed by this analyzer.
+Payload mode: verify; actual payload hashes checked: 410. No new inference or threshold fitting was performed by this analyzer.

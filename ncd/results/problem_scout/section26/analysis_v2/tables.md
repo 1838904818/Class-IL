@@ -40,6 +40,6 @@ Section26.9: Normal refreshes every task; old attack training/validation pools a
 | NSL-KDD / 2 | 5/5 | 47.67 ± 17.14 | 47.65 ± 17.16 | 50.03 ± 13.92 |
 | NSL-KDD / 3 | 5/5 | 38.07 ± 18.06 | 38.04 ± 18.04 | 46.87 ± 13.98 |
 
-26.5: 1: pending; 2: fail; 3: fail; 4: fail; 5: pass.
+26.5: 1: fail; 2: fail; 3: fail; 4: fail; 5: pass.
 Full per-class precision/recall, all signed closure ratios, task allocations, selected/duplicate costs and source hashes are in result.json.
 No claim of full research completion or mechanism novelty follows from these thresholds.
