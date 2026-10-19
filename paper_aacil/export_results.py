@@ -138,6 +138,8 @@ def main():
                         help="Explicit Section28 experiment root name; defaults to all four")
     parser.add_argument("--section29", action="store_true",
                         help="Also export formal Section29 local_v1 and retention_local_v1 cells; never development, selection, smoke, or queue summaries")
+    parser.add_argument("--complete-retention-groups-only", action="store_true",
+                        help="Export Section29.8 records only when all five formal seeds are selected for the same dataset/method; other protocols are unchanged")
     parser.add_argument("--output-dir", type=Path, default=SECTION / "publication_v1")
     args = parser.parse_args()
     output = args.output_dir.resolve()
@@ -181,6 +183,14 @@ def main():
             candidate = (completed, relative(path))
             if key not in selected or candidate < selected[key][0]:
                 selected[key] = (candidate, path, raw, source_hash)
+    if args.complete_retention_groups_only:
+        retention_keys = {key for key, value in selected.items()
+                          if value[2]["identity"]["effective_config"].get("section298") is True}
+        retention_seeds = {}
+        for dataset, method, seed in retention_keys:
+            retention_seeds.setdefault((dataset, method), set()).add(seed)
+        selected = {key: value for key, value in selected.items()
+                    if key not in retention_keys or retention_seeds[key[:2]] == FORMAL_SEEDS}
     files, rewritten, redactions, groups = 0, 0, 0, Counter()
     for (dataset, method, seed), (_, result_path, result, result_hash) in sorted(selected.items()):
         destination = output / dataset.lower().replace("-", "_") / f"{method}_seed{seed}"
@@ -213,6 +223,7 @@ def main():
         if fields:
             curve_private.append({"path": relative(path), "fields": fields})
     print(json.dumps({"completed_cells_exported": len(selected), "small_json_files": files,
+        "complete_retention_groups_only": args.complete_retention_groups_only,
         "files_written": rewritten, "path_fields_redacted": redactions, "groups": dict(groups),
         "publication_root": relative(output), "curve_private_path_fields": curve_private,
         "weights_logs_matrices_copied": False}, ensure_ascii=False))

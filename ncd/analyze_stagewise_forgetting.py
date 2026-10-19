@@ -375,6 +375,8 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=BASE/"section28/forgetting_v1")
     parser.add_argument("--batch-size", type=int, default=2048)
     parser.add_argument("--source-commit")
+    parser.add_argument("--complete-retention-groups-only", action="store_true",
+                        help="Process Section29.8 groups only after all five formal seeds are complete")
     args = parser.parse_args()
     if args.batch_size <= 0:
         parser.error("--batch-size must be positive")
@@ -414,6 +416,14 @@ def main():
             order = stamp, label(path)
             if key not in selected or order < selected[key][0]:
                 selected[key] = (order, path, source)
+    if args.complete_retention_groups_only:
+        retention_keys = {key for key, value in selected.items()
+                          if value[2]["identity"]["effective_config"].get("section298") is True}
+        retention_seeds = {}
+        for dataset, method, seed in retention_keys:
+            retention_seeds.setdefault((dataset, method), set()).add(seed)
+        selected = {key: value for key, value in selected.items()
+                    if key not in retention_keys or retention_seeds[key[:2]] == set(SEEDS)}
     new, reused, modes, cache = 0, 0, CounterLike(), {}
     order = {dataset:i for i,dataset in enumerate(args.datasets)}
     for key, (_, path, source) in sorted(selected.items(), key=lambda pair:(order[pair[0][0]],pair[0][1],SEEDS.index(pair[0][2]))):
@@ -430,7 +440,8 @@ def main():
                "datasets": args.datasets, "analysis_git_commit": analysis_commit,
                "new_physical_cells": new, "reused_physical_cells": reused, "stage_modes": dict(modes),
                "structured_command": {"entrypoint": "ncd/analyze_stagewise_forgetting.py", "datasets": args.datasets,
-                                      "device": "cpu", "cpu_threads": 2, "batch_size": args.batch_size}}
+                                      "device": "cpu", "cpu_threads": 2, "batch_size": args.batch_size,
+                                      "complete_retention_groups_only": args.complete_retention_groups_only}}
     write_summary(args, attempt)
     print(json.dumps({"status":"complete", **attempt}), flush=True)
 
