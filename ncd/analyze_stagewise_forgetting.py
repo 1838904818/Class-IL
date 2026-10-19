@@ -299,10 +299,10 @@ class CounterLike(defaultdict):
 
 def mean_sd(values):
     values = list(values)
-    available = bool(values) and all(v is not None for v in values)
-    return {"n": len(values), "defined_n": sum(v is not None for v in values),
-            "mean": statistics.mean(values) if available else None,
-            "sample_sd": statistics.stdev(values) if available and len(values)>1 else None}
+    defined = [v for v in values if v is not None]
+    return {"n": len(values), "defined_n": len(defined),
+            "mean": statistics.mean(defined) if defined else None,
+            "sample_sd": statistics.stdev(defined) if len(defined)>1 else None}
 
 
 def write_summary(args, attempt):
@@ -340,7 +340,7 @@ def write_summary(args, attempt):
                     for c, points in sorted(stage_classes.items())]})
         summaries.append({"dataset": dataset, "method": method, "group_role": group_role(method),
             "seeds": seeds, "n": len(cells), "complete_five_seed": seeds == sorted(SEEDS),
-            "metrics": {key: mean_sd(r["metrics"][key] for r in cells if r["metrics"][key] is not None) for key in metrics},
+            "metrics": {key: mean_sd(r["metrics"][key] for r in cells) for key in metrics},
             "stages": stage_summaries, "final_per_class": stage_summaries[-1]["per_class"],
             "old_class_forgetting": [{"class_id": c, "class_name": values[0]["class_name"],
                 "forgetting": mean_sd(v["forgetting"] for v in values),
@@ -349,6 +349,7 @@ def write_summary(args, attempt):
                 for c, values in sorted(perclass.items())]})
     save_json(path, {"completed_at": now(), "protocol": PROTOCOL,
         "units": "Metrics are fractions; multiply by 100 for percentages or forgetting/error-change percentage points",
+        "undefined_value_aggregation": "Section29.7: retain null per seed; aggregate only defined seeds and disclose defined_n alongside total n",
         "groups": summaries, "completed_logical_cells": len(rows),
         "execution_attempts": previous.get("execution_attempts", [])+[attempt],
         "cost_accounting": "Each execution attempt includes cache-reading/resume time. Nested stage/cell timings are not additive to attempt elapsed. Replay+LA is an alias and adds no forward cost.",
