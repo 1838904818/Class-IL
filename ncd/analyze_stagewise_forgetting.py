@@ -39,7 +39,7 @@ DEFAULT_ROOTS = [BASE / p for p in (
     "section26/local_v2", "section26/local_cic_v2", "section27/local_v1",
     "section28/replay_bs_local_v1", "section28/cic_local_queue_v1",
     "section28/cic_aacil_fallback_v1", "section28/hpc_cic_section28", "section29/local_v1",
-    "section29/retention_local_v1")]
+    "section29/retention_local_v1", "section29/section299_cic_kd_local_v1")]
 PROTOCOL = {
     "section": "28.6--28.7/29.3", "version": 1, "alpha": .02,
     "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
@@ -402,7 +402,8 @@ def main():
                     any(cp.get("test_evaluation_performed") is not True or
                         "0.02" not in cp.get("operating_points", {}) for cp in source["checkpoints"])):
                 continue
-            if root.resolve() == (BASE / "section29/retention_local_v1").resolve() and (
+            if root.resolve() in {(BASE / "section29/retention_local_v1").resolve(),
+                                  (BASE / "section29/section299_cic_kd_local_v1").resolve()} and (
                     config.get("section298") is not True or config.get("section298_schema_version") != 1):
                 continue
             key = tuple(identity[k] for k in ("dataset", "method", "seed"))

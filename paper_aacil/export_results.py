@@ -25,7 +25,8 @@ INPUT_NAMES = ("replay_bs_local_v1", "cic_local_queue_v1",
 METHODS = {"replay_bs", "aacil", "ts_mem", "aa_noattmem"}
 SECTION29_METHODS = {"aacil_kd", "aacil_nogkd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
 RETENTION_METHODS = {"aacil_kd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
-SECTION29_ROOTS = (SECTION29 / "local_v1", SECTION29 / "retention_local_v1")
+RETENTION_ROOTS = (SECTION29 / "retention_local_v1", SECTION29 / "section299_cic_kd_local_v1")
+SECTION29_ROOTS = (SECTION29 / "local_v1", *RETENTION_ROOTS)
 SECTION29_CONFIG_KEYS = ("section298", "section298_schema_version", "lambda_g",
                          "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")
 FORMAL_SEEDS = {1, 2, 3, 4, 42}
@@ -151,7 +152,7 @@ def main():
     selected = {}
     for root in roots:
         is_section29 = root in SECTION29_ROOTS
-        is_retention = root == SECTION29 / "retention_local_v1"
+        is_retention = root in RETENTION_ROOTS
         allowed_methods = RETENTION_METHODS if is_retention else SECTION29_METHODS if is_section29 else METHODS
         for path in sorted(root.rglob("result.json")):
             raw, source_hash = read(path)

@@ -324,6 +324,44 @@ def retention_comparison_outputs(evidence):
     return (r'\section{Retention-extension paired comparisons}'+''.join(included)) if included else ''
 
 
+def kd_reassessment_evidence(path):
+    if not path.exists():
+        return {}
+    row=read(path)
+    if (row.get('section')!='29.9' or row.get('candidate')!='aacil_kd' or
+            row.get('blind_confirmation_established') is not False or
+            row.get('original_section298_cbf_verdict')!='fail'):
+        raise ValueError('Expected the separately scoped Section29.9 KD reassessment')
+    if read(ROOT/row['source_summary'])['completed_at']!=row['source_summary_completed_at']:
+        raise ValueError('Regenerate Section29.9 comparisons for the current stagewise snapshot')
+    return row | {'comparison_result':path.relative_to(ROOT).as_posix()}
+
+
+def kd_reassessment_macros(evidence):
+    if not evidence:
+        return {'KDReassessmentText':'The separately authorized KD reassessment remains pending; it cannot amend the original CBF failure.',
+                'KDReassessmentTables':''}
+    status=evidence['required_numeric_verdict']
+    conclusion=('A necessary numerical condition fails; the trade-off remains unresolved.' if status=='fail' else
+        'The specified numerical conditions pass on both required datasets, but this does not establish independent blind confirmation.' if status=='pass' else
+        'The required NSL/CIC17 numerical comparison remains incomplete; no success claim is made.')
+    text=(r'Section 29.9 reconsiders KD with fixed $\lambda_G=.5$ and DER $\alpha=\beta=1$; its UNSW outcome is exploratory. '
+        'NSL seeds 1/2 were available before the document commit at 20:47:57 MYT, and all five were available before direct authorization at approximately 21:29 MYT; '
+        'NSL is therefore not represented as blind confirmation, and availability does not imply that the user inspected the outcomes. '
+        +conclusion+' The original Section 29.8 CBF failure and Section 27.8 failure remain unchanged.')
+    return {'KDReassessmentText':text,
+            'KDReassessmentTables':r'\section{Separately scoped KD reassessment}\input{generated/section299_comparisons.tex}'}
+
+
+def kd_reassessment_summary_zh(evidence):
+    if not evidence:
+        return []
+    counts='、'.join(f"{SHORT[d['dataset']]} KD {d['n']}/5（{d['status']}）" for d in evidence['dataset_results'])
+    return ['**29.9 单独重评 KD：** '+counts+'。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，'
+            '五个均在约21:29直接授权前已可得，因此不是盲法确认，也不推测用户是否看过。'
+            'NSL/CIC 两者的三个固定条件仍须完整；当前数值判定为 '+evidence['required_numeric_verdict']+'，不改原CBF失败。', '']
+
+
 def retention_summary_zh(evidence, aggregate_text):
     if not evidence['selection_complete']:
         return ['**29.8 开发选择尚未完成，正式结论待齐。** 不使用开发数字充当正式测试结果。']
@@ -334,7 +372,7 @@ def retention_summary_zh(evidence, aggregate_text):
         config=f"λG={c['lambda_g']:g}"
         if main['method']=='aacil_cbf':
             config+=f"，CBF epochs={c['cbf_epochs']}，LR 倍率={c['cbf_lr_multiplier']:g}"
-        lines.append(f"**锁定主版本：{RETENTION_NAMES[main['method']]}（{config}）**。"
+        lines.append(f"**原29.8锁定主版本：{RETENTION_NAMES[main['method']]}（{config}）**。"
             '仅用 UNSW 训练验证 seeds5/6，先满足最终 BAcc≥原 AA−3 pp，再选最低遗忘；开发选择不是正式测试成功。')
     else:
         lines.append('没有版本通过开发资格约束，未选择主版本；回退版本的正式结果不能将开发失败改为成功。')
@@ -361,7 +399,7 @@ def retention_summary_zh(evidence, aggregate_text):
     return lines
 
 
-def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention):
+def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment):
     """One-page author summary: one formal table, no duplicate old matrices."""
     def aggregate_text(value):
         if not value or value.get('mean') is None:
@@ -382,11 +420,12 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
         f"NSL 遗忘 {original('NSL-KDD','forgetting_all_old_classes')} pp。",
         '',
         *retention_summary_zh(retention, aggregate_text),
+        *kd_reassessment_summary_zh(kd_reassessment),
         '口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，'
         '遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。',
         '',
         '边界：校准目标不保证测试 FPR；Replay-BS 匹配曝光但不匹配总计算。正式顺序 UNSW→NSL；'
-        '21:50:26 MYT 硬截止，未完成项目保留缺失，CIC 不能替代两项必需数据集。解释漂移、治理及总体创新仍未闭合。',
+        '21:50:26 MYT 硬截止，未完成项目保留缺失；29.8要求UNSW/NSL，29.9另要求NSL/CIC，不能互换。解释漂移、治理及总体创新仍未闭合。',
         '',
         '[完整逐阶段指标与逐类结果](../ncd/results/problem_scout/section28/forgetting_v1/result.json)；其余 FPR/MF1、配对检验与成本见论文及源结果。',
     ]
@@ -461,8 +500,10 @@ def main():
     ap=argparse.ArgumentParser();ap.add_argument('--input',action='append',default=[]);ap.add_argument('--cutoff',default=None)
     ap.add_argument('--retention-selection',type=Path,default=ROOT/'ncd/results/problem_scout/section29/retention_queue_v1/selection.json')
     ap.add_argument('--retention-comparisons',type=Path,default=ROOT/'ncd/results/problem_scout/section29/retention_comparisons_v1/result.json')
+    ap.add_argument('--kd-reassessment',type=Path,default=ROOT/'ncd/results/problem_scout/section29/section299_comparisons_v1/result.json')
     args=ap.parse_args()
     retention=retention_evidence(args.retention_selection.resolve(),args.retention_comparisons.resolve())
+    kd_reassessment=kd_reassessment_evidence(args.kd_reassessment.resolve())
     (PAPER/'generated').mkdir(exist_ok=True);(PAPER/'figures').mkdir(exist_ok=True)
     analysis=read(ROOT/'ncd/results/problem_scout/section27/analysis_v1/result.json')
     cells={(x['dataset'],x['method'],x['seed']):x for x in analysis['cells'] if x['points']['0.02']['status']=='available'}
@@ -722,17 +763,18 @@ def main():
         macros['BiasClosure'+suffix]=f'{100*max(ratios):.2f}'
     macros.update(cic_result_text(groups, comparisons, stats))
     macros.update(retention_outputs(retention))
+    macros.update(kd_reassessment_macros(kd_reassessment))
     (PAPER/'generated'/'macros.tex').write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
     derived={'cutoff':macros['EvidenceCutoff'],'registered_original_overall':'fail','registered_criteria_status':statuses,
              'comparisons':comparisons,'groups':[{'dataset':ds,'method':m,'n':n(ds,m),'points':{a:{k:stats(ds,m,k,a) for k in ['normal_fpr','attack_detection','macro_f1','balanced_accuracy','attack_guard_recall']} for a in ALPHAS}} for ds in DATASETS for m in METHODS],
              'selected_per_class_summaries':[{'dataset':ds,'method':m,'class_name':name,**values} for (ds,m,name),values in perclass.items()],
              'undefined_precision_aggregation':'Per-seed null preserved; mean/sample SD use only defined precision values with defined_n; other endpoints keep their original seed sets.',
              'selected_sources':[{'dataset':x['dataset'],'method':x['method'],'seed':x['seed'],'source_result':x['source_result'],'completed_at':x['completed_at']} for x in cells.values()],
-             'section298':retention}
+             'section298':retention, 'section299':kd_reassessment}
     (PAPER/'generated'/'paper_results.json').write_text(json.dumps(derived,indent=2,allow_nan=False)+'\n',encoding='utf-8')
     architecture()
     print(json.dumps({'selected_logical_cells':len(cells),'new_aa_cells':macros['NumCompletedNew'],'ReplayBS':{ds:n(ds,'replay_bs') for ds in DATASETS},'criteria':statuses}))
-    write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention)
+    write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment)
 
 
 if __name__=='__main__':main()

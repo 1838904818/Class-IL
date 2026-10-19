@@ -1,8 +1,8 @@
 # AA-CIL 中文摘要
 
-截止：2026-10-19T21:16:46.5818674+08:00。**检出收益不能替代类增量保持，原 27.8 注册结论仍为 FAIL。** 原 AA 的 UNSW 增量/最终 BAcc 为 69.65 ± 0.49/55.05 ± 1.06%，遗忘 20.04 ± 1.16 pp；NSL 遗忘 11.12 ± 2.70 pp。
+截止：2026-10-19T21:38:55.9054667+08:00。**检出收益不能替代类增量保持，原 27.8 注册结论仍为 FAIL。** 原 AA 的 UNSW 增量/最终 BAcc 为 69.65 ± 0.49/55.05 ± 1.06%，遗忘 20.04 ± 1.16 pp；NSL 遗忘 11.12 ± 2.70 pp。
 
-**锁定主版本：AA-CIL-CBF（λG=2，CBF epochs=1，LR 倍率=0.1）**。仅用 UNSW 训练验证 seeds5/6，先满足最终 BAcc≥原 AA−3 pp，再选最低遗忘；开发选择不是正式测试成功。
+**原29.8锁定主版本：AA-CIL-CBF（λG=2，CBF epochs=1，LR 倍率=0.1）**。仅用 UNSW 训练验证 seeds5/6，先满足最终 BAcc≥原 AA−3 pp，再选最低遗忘；开发选择不是正式测试成功。
 KD、ISO、NCM 未通过开发资格约束，仍报告固定回退配置的正式结果，不称为 eligible。
 
 | 数据集 | 版本 | n | 增量 BAcc (%) | 最终 BAcc (%) | 遗忘 (pp) | ADR (%) |
@@ -22,8 +22,10 @@ KD、ISO、NCM 未通过开发资格约束，仍报告固定回退配置的正�
 29.8：**FAIL（至少一项必要条件失败）**。UNSW 与 NSL 均须满足：遗忘不显著劣于最低遗忘外部基线、最终 BAcc 显著高于 Replay-BS、ADR 不显著低于原 AA；[完整配对结果](../ncd/results/problem_scout/section29/retention_comparisons_v1/result.json)。
 不显著有害不等于等效或非劣；已知必要条件失败优先于未完成。
 
+**29.9 单独重评 KD：** UNSW KD 5/5（pass）、NSL KD 5/5（fail）、CIC17 KD 0/5（pending）。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，五个均在约21:29直接授权前已可得，因此不是盲法确认，也不推测用户是否看过。NSL/CIC 两者的三个固定条件仍须完整；当前数值判定为 fail，不改原CBF失败。
+
 口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。
 
-边界：校准目标不保证测试 FPR；Replay-BS 匹配曝光但不匹配总计算。正式顺序 UNSW→NSL；21:50:26 MYT 硬截止，未完成项目保留缺失，CIC 不能替代两项必需数据集。解释漂移、治理及总体创新仍未闭合。
+边界：校准目标不保证测试 FPR；Replay-BS 匹配曝光但不匹配总计算。正式顺序 UNSW→NSL；21:50:26 MYT 硬截止，未完成项目保留缺失；29.8要求UNSW/NSL，29.9另要求NSL/CIC，不能互换。解释漂移、治理及总体创新仍未闭合。
 
 [完整逐阶段指标与逐类结果](../ncd/results/problem_scout/section28/forgetting_v1/result.json)；其余 FPR/MF1、配对检验与成本见论文及源结果。
