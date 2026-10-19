@@ -27,7 +27,7 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 | UNSW-NB15 | FARQ (supplementary) | 5/5 | 1.993±0.000 | 1.838±0.184 | 45.099±4.200 | 30.247±1.676 | 20.095±1.619 |
 | UNSW-NB15 | Joint (offline) | 5/5 | 1.993±0.000 | 1.928±0.152 | 67.109±1.453 | 37.219±1.000 | 28.417±0.759 |
 | CIC-IDS-2017 | Replay | 5/5 | 2.000±0.000 | 1.950±0.059 | 78.889±5.634 | 51.515±4.018 | 47.868±6.547 |
-| CIC-IDS-2017 | DER++ | 1/5 | pending | pending | pending | pending | pending |
+| CIC-IDS-2017 | DER++ | 5/5 | 2.000±0.000 | 1.917±0.067 | 89.290±3.012 | 48.852±3.191 | 47.683±3.626 |
 | CIC-IDS-2017 | WACB | 5/5 | 2.000±0.000 | 1.917±0.055 | 88.915±2.301 | 57.844±1.126 | 59.903±0.675 |
 | CIC-IDS-2017 | Freq | 5/5 | 2.000±0.000 | 1.930±0.024 | 88.548±2.324 | 57.972±4.333 | 61.812±5.970 |
 | CIC-IDS-2017 | Replay+LA | 5/5 | 2.000±0.000 | 1.950±0.059 | 78.889±5.634 | 51.515±4.018 | 47.868±6.547 |
@@ -47,4 +47,4 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 
 Strongest baselines use one fixed five-seed mean winner per dataset/metric among the seven Section27.4 controls; FARQ is supplementary only. Replay+LA shares Replay weights and calibrated total τ, so its physical cost is not charged twice.
 No detected significant harm is not proof of noninferiority/equivalence. These paired tests are unadjusted, use five seeds, and retain selection/multiplicity limitations. Joint is an offline access exception, not a guaranteed attainable upper bound. This RQ2 sub-study does not close RQ1, RQ3, or substantive innovation.
-Payload mode: verify; actual payload hashes checked: 354. No new inference or threshold fitting was performed by this analyzer.
+Payload mode: verify; actual payload hashes checked: 370. No new inference or threshold fitting was performed by this analyzer.
