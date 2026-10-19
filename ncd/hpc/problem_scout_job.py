@@ -7,8 +7,10 @@ datasets/weights into HOME, or launches more than one training process.
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -61,7 +63,97 @@ def copy_small(source, destination, previous):
     return copied
 
 
-def sample(pid, output):
+def visible_gpu_uuids():
+    """Resolve CUDA-visible devices only; Slurm global ordinals are not NVML IDs."""
+    import torch
+    identifiers = []
+    count = torch.cuda.device_count()
+    if not 1 <= count <= 2:
+        raise RuntimeError(f"expected one or two allocated CUDA-visible GPUs, got {count}")
+    for index in range(count):
+        value = str(getattr(torch.cuda.get_device_properties(index), "uuid", ""))
+        if not value.startswith("GPU-"):
+            value = "GPU-" + value
+        if not re.fullmatch(r"GPU-[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", value):
+            raise RuntimeError("CUDA-visible device has no supported physical GPU UUID")
+        identifiers.append(value.lower())
+    if len(set(identifiers)) != count:
+        raise RuntimeError("CUDA-visible GPU UUIDs are not unique")
+    return ["GPU-" + value[4:] for value in identifiers]
+
+
+def gpu_sample(identifiers):
+    """No unfiltered query fallback: malformed, missing, or nonnumeric rows fail."""
+    result = {"gpu_telemetry_valid": False, "gpu_query_uuids": identifiers}
+    if not identifiers:
+        result["gpu_measurement_error"] = "no allocated GPU UUIDs"
+        return result
+    command = ["nvidia-smi", "--id=" + ",".join(identifiers),
+               "--query-gpu=uuid,utilization.gpu,memory.used,memory.total",
+               "--format=csv,noheader,nounits"]
+    try:
+        run = subprocess.run(command, capture_output=True, text=True, timeout=10, check=False)
+        result.update(gpu_csv=run.stdout.strip(), gpu_query_exit=run.returncode,
+                      gpu_query_stderr=run.stderr.strip())
+        if run.returncode:
+            raise ValueError("UUID-targeted nvidia-smi failed")
+        values = {}
+        for row in csv.reader(run.stdout.strip().splitlines()):
+            if len(row) != 4:
+                raise ValueError("GPU CSV must contain UUID and three numeric fields")
+            identifier = row[0].strip().lower()
+            if identifier not in {value.lower() for value in identifiers} or identifier in values:
+                raise ValueError("GPU CSV contains unexpected or duplicate UUID")
+            utilization, used, total = [float(value.strip()) for value in row[1:]]
+            if not all(math.isfinite(value) for value in (utilization, used, total)):
+                raise ValueError("GPU CSV contains nonfinite values")
+            if not (0 <= utilization <= 100 and 0 <= used <= total and total > 0):
+                raise ValueError("GPU CSV numeric values are outside valid ranges")
+            values[identifier] = {"uuid": "GPU-" + identifier[4:],
+                                  "utilization_percent": utilization,
+                                  "memory_used_mib": used, "memory_total_mib": total}
+        if set(values) != {value.lower() for value in identifiers}:
+            raise ValueError("GPU CSV is missing an allocated GPU")
+        result.update(gpu_telemetry_valid=True,
+                      gpus=[values[value.lower()] for value in identifiers])
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        result["gpu_measurement_error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+class TelemetryGuard:
+    """Sampling-based guard; observed spans do not prove continuous utilization."""
+    def __init__(self):
+        self.failures = 0
+        self.low = {}
+
+    def observe(self, measurement, elapsed):
+        if not measurement["gpu_telemetry_valid"]:
+            self.failures += 1
+            self.low.clear()  # Never count unobserved gaps as low utilization.
+            measurement["consecutive_telemetry_failures"] = self.failures
+            return "three_consecutive_gpu_telemetry_failures" if self.failures >= 3 else None
+        self.failures = 0
+        spans = {}
+        reason = None
+        for gpu in measurement["gpus"]:
+            identifier = gpu["uuid"]
+            if gpu["utilization_percent"] < 10:
+                start, count = self.low.get(identifier, (elapsed, 0))
+                count += 1
+                self.low[identifier] = (start, count)
+                span = max(0.0, elapsed - start)
+                spans[identifier] = {"consecutive_samples": count, "observed_span_seconds": span}
+                if count >= 3 and elapsed > 0 and span >= elapsed / 3:
+                    reason = "sampled_gpu_under_10_percent_for_observed_elapsed_third"
+            else:
+                self.low.pop(identifier, None)
+        measurement.update(consecutive_telemetry_failures=0, sampled_low_utilization=spans,
+                           low_utilization_threshold_seconds=elapsed / 3)
+        return reason
+
+
+def sample(pid, output, identifiers):
     result = {"utc": utc(), "pid": pid, "disk_free_bytes": shutil.disk_usage(output).free}
     # Linux /proc reads only this task's own child and aggregate free memory.
     try:
@@ -72,25 +164,7 @@ def sample(pid, output):
         result["available_ram_bytes"] = next(int(line.split()[1]) * 1024 for line in mem if line.startswith("MemAvailable:"))
     except (OSError, ValueError, StopIteration):
         result["proc_measurements"] = "unavailable on this platform"
-    # Slurm's GPU IDs are global, unlike CUDA's potentially remapped ordinals.
-    # Never guess GPU 0 when an allocation's global IDs are unavailable.
-    visible = (os.environ.get("SLURM_STEP_GPUS") or os.environ.get("SLURM_JOB_GPUS")
-               or (os.environ.get("CUDA_VISIBLE_DEVICES", "") if not os.environ.get("SLURM_JOB_ID") else ""))
-    if re.fullmatch(r"(?:\d+|GPU-[\w-]+)(?:,(?:\d+|GPU-[\w-]+))*", visible):
-        gpu = ["nvidia-smi", f"--id={visible}", "--query-gpu=uuid,utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"]
-    elif not os.environ.get("SLURM_JOB_ID"):
-        gpu = ["nvidia-smi", "--query-gpu=uuid,utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"]
-    else:
-        gpu = None
-    if gpu:
-        try:
-            run = subprocess.run(gpu, capture_output=True, text=True, timeout=10, check=False)
-            result["gpu_csv"] = run.stdout.strip()
-            result["gpu_query_exit"] = run.returncode
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            result["gpu_measurement_error"] = type(exc).__name__
-    else:
-        result["gpu_measurements"] = "unavailable: allocation visibility not identifiable"
+    result.update(gpu_sample(identifiers))
     return result
 
 
@@ -164,6 +238,12 @@ def main():
               "command": command, "started_utc": utc(), "config_sha256": hashlib.sha256(config.read_bytes()).hexdigest(),
               "batch_entry_sha256": hashlib.sha256((args.code_root / "ncd/hpc/run_problem_scout.sbatch").read_bytes()).hexdigest(),
               "job_helper_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+              "telemetry_policy": {"device_selection": "CUDA-visible physical UUIDs only",
+                                   "sample_interval_seconds": 60, "failure_limit": 3,
+                                   "low_utilization_percent": 10, "minimum_low_samples": 3,
+                                   "low_span_threshold": "observed child elapsed / 3",
+                                   "interpretation": "sampling-based conservative guard, not proof of continuous use",
+                                   "low_utilization_enforced": not args.local_smoke},
               "stdout": "stdout.log", "stderr": "stderr.log"}
     write_json(attempt / "job_start.json", record)
     started, previous, child = time.monotonic(), {}, None
@@ -174,13 +254,46 @@ def main():
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, stop)
     try:
+        if not args.local_smoke:
+            step = os.environ.get("SLURM_STEP_ID", os.environ.get("SLURM_STEPID", ""))
+            if not step.isdigit() or not os.environ.get("CUDA_VISIBLE_DEVICES", "").strip():
+                raise RuntimeError("GPU preflight requires an actual srun step with explicit CUDA visibility")
+            record["slurm_step_id"] = step
+        requested_wall = os.environ.get("NCD_WALLTIME_SECONDS", "")
+        if requested_wall and (not requested_wall.isdigit() or int(requested_wall) <= 0):
+            raise ValueError("NCD_WALLTIME_SECONDS must be a positive integer when supplied")
+        record["requested_walltime_seconds"] = int(requested_wall) if requested_wall else None
+        identifiers = visible_gpu_uuids()
+        record["allocated_gpu_uuids"] = identifiers
+        preflight = {"event": "gpu_preflight", "utc": utc(), **gpu_sample(identifiers)}
+        with (attempt / "resources.jsonl").open("a", encoding="utf-8") as telemetry:
+            telemetry.write(json.dumps(preflight, allow_nan=False) + "\n")
+        if not preflight["gpu_telemetry_valid"]:
+            raise RuntimeError("GPU telemetry preflight failed before training: " + preflight["gpu_measurement_error"])
+        record["gpu_preflight_passed"] = True
+        write_json(attempt / "job_start.json", record)
+        copy_small(output, protected, previous)
+        guard = TelemetryGuard()
         with (attempt / "stdout.log").open("wb") as out, (attempt / "stderr.log").open("wb") as err:
             child = subprocess.Popen(command, cwd=args.code_root, stdout=out, stderr=err)
+            child_started = time.monotonic()
             print(json.dumps({"event": "runner_started", "pid": child.pid, **record}), flush=True)
             while True:
+                measurement = sample(child.pid, output, identifiers)
+                elapsed = time.monotonic() - child_started
+                measurement["child_elapsed_seconds"] = elapsed
+                reason = guard.observe(measurement, elapsed)
+                measurement["guard_trigger"] = reason
                 with (attempt / "resources.jsonl").open("a", encoding="utf-8") as telemetry:
-                    telemetry.write(json.dumps(sample(child.pid, output)) + "\n")
+                    telemetry.write(json.dumps(measurement, allow_nan=False) + "\n")
                 copy_small(output, protected, previous)
+                if child.poll() is not None:
+                    exit_code = child.returncode
+                    break
+                if reason and (not args.local_smoke or reason == "three_consecutive_gpu_telemetry_failures"):
+                    record["guard_stop_reason"] = reason
+                    record["guard_stop_child_elapsed_seconds"] = elapsed
+                    raise RuntimeError("stopping this wrapper's child: " + reason)
                 try:
                     exit_code = child.wait(timeout=60)
                     break
@@ -202,6 +315,8 @@ def main():
             except subprocess.TimeoutExpired:
                 child.kill()
                 child.wait()
+        if child is not None:
+            record["child_returncode"] = child.poll()
         raise
     finally:
         record.update(exit_code=exit_code, finished_utc=utc(), elapsed_seconds_this_attempt=time.monotonic() - started)
