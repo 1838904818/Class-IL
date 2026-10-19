@@ -3,7 +3,8 @@
 Reads completed non-smoke physical cells from the four Section28 experiment
 roots and the retrieved Section29.11 original-AA root by default. --section29
 also includes formal Section29 cells and resumed KD cells, never development
-or queue roots.
+or queue roots. --section31 explicitly includes only compact-candidate formal
+UNSW/NSL cells. It never opens Section31 development or CSE18 result roots.
 Original JSON, checkpoints, logs, matrices and score caches are immutable.
 The paper table generator can consume --input publication_v1 without weights.
 """
@@ -29,6 +30,11 @@ RETENTION_METHODS = {"aacil_kd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_nc
 RETENTION_ROOTS = (SECTION29 / "retention_local_v1", SECTION29 / "section299_cic_kd_local_v1",
                    SECTION29 / "section2911_cic_kd_resume_v1")
 SECTION29_ROOTS = (SECTION29 / "local_v1", *RETENTION_ROOTS)
+SECTION31_ROOT = ROOT / "ncd/results/problem_scout/section31/formal_local_v1"
+SECTION31_METHODS = {"aacil_kd_weak", "aacil_kd_wa", "aacil_kd_cbf", "aacil_ema_kd", "aacil_dual"}
+SECTION31_CONFIG_KEYS = ("section31", "section31_schema_version", "lambda_g",
+    "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier", "ema_decay", "ema_consistency",
+    "family_parameter_constraint", "future_output_policy", "gate_step_policy", "calibration_policy")
 HPC_SECTION2911_ROOT = ROOT / "ncd/results/problem_scout/section27/hpc_cic_section2911"
 SECTION29_CONFIG_KEYS = ("section298", "section298_schema_version", "lambda_g",
                          "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")
@@ -142,8 +148,14 @@ def main():
                         help="Explicit Section28 experiment root name; default includes all four plus retrieved Section29.11 original-AA cells")
     parser.add_argument("--section29", action="store_true",
                         help="Also export formal Section29 local_v1 and retention_local_v1 cells; never development, selection, smoke, or queue summaries")
+    parser.add_argument("--section31", action="store_true",
+                        help="Also export compact formal UNSW/NSL cells only; no development, smoke, queue, or CSE18 roots")
+    parser.add_argument("--methods", nargs="+", choices=sorted(METHODS | SECTION29_METHODS | SECTION31_METHODS),
+                        help="Optional method filter for one-version publication; does not delete existing exports")
     parser.add_argument("--complete-retention-groups-only", action="store_true",
                         help="Export Section29.8 records only when all five formal seeds are selected for the same dataset/method; other protocols are unchanged")
+    parser.add_argument("--complete-compact-groups-only", action="store_true",
+                        help="Export Section31 records only when all five formal seeds are complete for the same dataset/method")
     parser.add_argument("--output-dir", type=Path, default=SECTION / "publication_v1")
     args = parser.parse_args()
     output = args.output_dir.resolve()
@@ -152,26 +164,35 @@ def main():
         roots.append(HPC_SECTION2911_ROOT)
     if args.section29:
         roots.extend(SECTION29_ROOTS)
+    if args.section31:
+        roots.append(SECTION31_ROOT)
     if not output.is_relative_to(SECTION) or any(output.is_relative_to(p) or p.is_relative_to(output) for p in roots):
         parser.error("Publication output must be a separate child of Section28, never an original experiment root")
     selected = {}
     for root in roots:
         is_section29 = root in SECTION29_ROOTS
         is_retention = root in RETENTION_ROOTS
-        allowed_methods = RETENTION_METHODS if is_retention else SECTION29_METHODS if is_section29 else METHODS
+        is_section31 = root == SECTION31_ROOT
+        allowed_methods = SECTION31_METHODS if is_section31 else RETENTION_METHODS if is_retention else SECTION29_METHODS if is_section29 else METHODS
         for path in sorted(root.rglob("result.json")):
+            if is_section31 and any("cse" in part.lower() for part in path.relative_to(root).parts):
+                continue  # CSE18 disclosure is controlled separately; never open those result files here.
             raw, source_hash = read(path)
             identity = raw.get("identity", {})
             config = identity.get("effective_config", {})
             if (not raw.get("completed") or not raw.get("checkpoints") or
                     identity.get("method") not in allowed_methods or raw.get("smoke") or
                     config.get("smoke") or identity.get("seed") not in FORMAL_SEEDS or
-                    raw.get("selection_only") or config.get("selection_only")):
+                    raw.get("selection_only") or config.get("selection_only") or
+                    (args.methods and identity.get("method") not in args.methods)):
                 continue  # Matrices, incomplete cells, smoke and tuning are never formal publication evidence.
             if is_retention and (config.get("section298") is not True or
                                  config.get("section298_schema_version") != 1):
                 continue
-            if is_section29 and (
+            if is_section31 and (identity.get("dataset") not in {"UNSW-NB15", "NSL-KDD"} or
+                    config.get("section31") is not True or config.get("section31_schema_version") != 1):
+                continue
+            if (is_section29 or is_section31) and (
                     raw.get("test_evaluation_performed") is not True or
                     len(raw["checkpoints"]) != len(raw.get("tasks", [])) or
                     any(checkpoint.get("test_evaluation_performed") is not True or
@@ -183,6 +204,12 @@ def main():
                 previous_config = selected[key][2]["identity"]["effective_config"]
                 if any(config.get(k) != previous_config.get(k) for k in SECTION29_CONFIG_KEYS):
                     raise ValueError("Conflicting Section29 protocols/configurations for one formal cell; preserve both sources and use separate publication namespaces")
+            if is_section31 and key in selected:
+                previous_identity = selected[key][2]["identity"]
+                previous_config = previous_identity["effective_config"]
+                if (any(config.get(k) != previous_config.get(k) for k in SECTION31_CONFIG_KEYS)
+                        or identity.get("source_hashes") != previous_identity.get("source_hashes")):
+                    raise ValueError("Conflicting compact source/configurations for one formal cell; preserve sources in separate publication namespaces")
             completed = datetime.fromisoformat(raw["completed_at"])
             if completed.tzinfo is None:
                 raise ValueError("Completed-cell timestamp must carry a timezone: " + relative(path))
@@ -197,6 +224,14 @@ def main():
             retention_seeds.setdefault((dataset, method), set()).add(seed)
         selected = {key: value for key, value in selected.items()
                     if key not in retention_keys or retention_seeds[key[:2]] == FORMAL_SEEDS}
+    if args.complete_compact_groups_only:
+        compact_keys = {key for key, value in selected.items()
+                        if value[2]["identity"]["effective_config"].get("section31") is True}
+        compact_seeds = {}
+        for dataset, method, seed in compact_keys:
+            compact_seeds.setdefault((dataset, method), set()).add(seed)
+        selected = {key: value for key, value in selected.items()
+                    if key not in compact_keys or compact_seeds[key[:2]] == FORMAL_SEEDS}
     files, rewritten, redactions, groups = 0, 0, 0, Counter()
     for (dataset, method, seed), (_, result_path, result, result_hash) in sorted(selected.items()):
         destination = output / dataset.lower().replace("-", "_") / f"{method}_seed{seed}"
@@ -230,6 +265,7 @@ def main():
             curve_private.append({"path": relative(path), "fields": fields})
     print(json.dumps({"completed_cells_exported": len(selected), "small_json_files": files,
         "complete_retention_groups_only": args.complete_retention_groups_only,
+        "complete_compact_groups_only": args.complete_compact_groups_only,
         "files_written": rewritten, "path_fields_redacted": redactions, "groups": dict(groups),
         "publication_root": relative(output), "curve_private_path_fields": curve_private,
         "weights_logs_matrices_copied": False}, ensure_ascii=False))

@@ -7,6 +7,7 @@ test-selected threshold. Mean incremental accuracy means seen-class BAcc.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -32,6 +33,12 @@ SEEDS = [1, 2, 3, 4, 42]
 METHODS = {"replay", "derpp", "wacb", "freq", "farq", "farq_all", "joint",
            "aacil", "ts_mem", "aa_noattmem", "replay_bs", "aacil_der", "aacil_kd", "aacil_nogkd", "aacil_iso",
            "aacil_wa", "aacil_cbf", "aacil_ncm"}
+SECTION31_METHODS = {"aacil_kd_weak", "aacil_kd_wa", "aacil_kd_cbf", "aacil_ema_kd", "aacil_dual"}
+METHODS |= SECTION31_METHODS
+SECTION31_ROOT = BASE / "section31/formal_local_v1"
+SECTION31_CONFIG_KEYS = ("section31", "section31_schema_version", "lambda_g",
+    "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier", "ema_decay", "ema_consistency",
+    "family_parameter_constraint", "future_output_policy", "gate_step_policy", "calibration_policy")
 SECTION29_METHODS = {"aacil_kd", "aacil_nogkd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
 SECTION29_CONFIG_KEYS = ("section298", "section298_schema_version", "lambda_g",
                          "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")
@@ -74,6 +81,8 @@ def group_role(method):
         return "post_hoc_control"
     if method in SECTION29_METHODS:
         return "section29_candidate_or_ablation"
+    if method in SECTION31_METHODS:
+        return "compact_candidate_formal_results_on_development_datasets"
     return "primary_method_or_registered_comparator"
 
 
@@ -169,11 +178,21 @@ def logits(model, x, rows, seen, batch):
 
 def stage_binding(path, source, checkpoint):
     identity = source["identity"]
-    return {"source_result": label(path), "source_completed_at": source["completed_at"],
+    binding = {"source_result": label(path), "source_completed_at": source["completed_at"],
             "training_source_commit": identity["git_commit"], "config_sha256": identity["config_sha256"],
             "identity_hash": checkpoint.get("identity_hash"),
             "checkpoint_file": checkpoint["checkpoint_file"], "checkpoint_sha256_recorded": checkpoint["checkpoint_sha256"],
             "task_index": checkpoint["task_index"], "seen_classes": checkpoint["seen_classes"], "protocol": PROTOCOL}
+    if identity["method"] in SECTION31_METHODS:
+        # Bind the saved evaluation and effective CLI configuration explicitly;
+        # no compact model checkpoint is loaded or forwarded by this analyzer.
+        canonical = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        binding.update(compact_saved_alpha2_sha256=canonical(checkpoint["operating_points"]["0.02"]),
+            compact_effective_config_sha256=canonical(identity["effective_config"]),
+            compact_source_hashes=identity["source_hashes"],
+            compact_source_record_sha256=canonical(source))
+    return binding
 
 
 def get_stage(path, source, cp, target, args, data_cache):
@@ -198,8 +217,8 @@ def get_stage(path, source, cp, target, args, data_cache):
         mode = "reused_saved_stage_alpha2_no_forward"
         costs["existing_stage_calibration_seconds_not_recharged"] = cp.get("calibration_seconds")
         costs["existing_stage_evaluation_seconds_not_recharged"] = cp.get("evaluation_seconds")
-    if cm is None and ident["method"] in SECTION29_METHODS:
-        raise ValueError("Formal Section29 stages require their saved calibrated alpha=2% CM; no checkpoint inference fallback is permitted")
+    if cm is None and ident["method"] in SECTION29_METHODS | SECTION31_METHODS:
+        raise ValueError("Formal retention/compact stages require their saved calibrated alpha=2% CM; no checkpoint inference fallback is permitted")
     if cm is None and cp["task_index"] == len(source["tasks"])-1:
         cached = args.final_cache / ident["dataset"].lower().replace("-", "_") / f"{ident['method']}_seed{ident['seed']}" / "result.json"
         if cached.exists():
@@ -282,6 +301,8 @@ def process_cell(path, source, args, data_cache, analysis_commit):
         "buffer_per_class", "gate_step_policy", "calibration_policy", "normal_training_rows",
         "section29", "section29_schema_version", "section298", "section298_schema_version",
         "selection_only", "lambda_g", "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")}
+    if method in SECTION31_METHODS:
+        configuration.update({k: identity["effective_config"].get(k) for k in SECTION31_CONFIG_KEYS})
     row = {"completed": True, "completed_at": now(), "dataset": dataset, "method": method, "seed": seed,
            "group_role": group_role(method), "protocol": PROTOCOL, "source_result": label(path),
            "stage_bindings": bindings, "class_order": source["class_order"], "tasks": source["tasks"],
@@ -291,13 +312,31 @@ def process_cell(path, source, args, data_cache, analysis_commit):
            "stages": stages, "metrics": aggregate_trajectory(stages, source["tasks"], source["class_order"]),
            "cost_seconds": {"new_cell_elapsed": time.perf_counter()-started}, "stage_modes": dict(modes),
            "error_component_interpretation": "Actual G rejection versus F wrong-family alert" if method in
-               {"aacil", "ts_mem", "aa_noattmem", "aacil_der"} | SECTION29_METHODS else
+               {"aacil", "ts_mem", "aa_noattmem", "aacil_der"} | SECTION29_METHODS | SECTION31_METHODS else
                "Normal versus other-attack confusion categories only; this single classifier has no separate G and F",
            "limitations": ["Post-hoc unified stagewise analysis; original Section27.8 decision unchanged.",
                "G misses and wrong-family alerts are observable CM error components; F behavior on gate-rejected rows is not inferred.",
                "Signed forgetting can be negative; no class or seed is dropped due to its sign.",
                "Saved stage/final calibration results retain their original evaluation hardware; newly needed stages use CPU float32.",
                "Joint uses offline historical training data and is a separate reference; FARQ is supplementary."]}
+    if method in SECTION31_METHODS:
+        row["architecture_capacity"] = source["architecture_capacity"]
+        row["original_execution_cost_seconds"] = {k: v for k, v in source.items() if k.endswith("_seconds_total")}
+        row["original_cost_scope"] = source["cost_scope"]
+        row["stage_resource_accounting"] = [{
+            "task_index": cp["task_index"], "family_metadata": cp["family_metadata"],
+            "allocation": {k: v for k, v in cp["allocation"].items()
+                           if k not in {"training_row_ids", "validation_row_ids"}},
+            **{key: cp[key] for key in (
+                "calibration_pool_storage", "calibration_pool_rows", "calibration_pool_budget",
+                "calibration_additional_unique_rows_outside_M", "selection_attack_holdout_storage",
+                "ephemeral_normal_training_feature_and_id_bytes", "gate_training_schedule",
+                "family_training_schedule", "family_postprocess", "peak_cuda_allocated_bytes",
+                "peak_cuda_reserved_bytes") if key in cp},
+            "recorded_stage_seconds": {k: v for k, v in cp.items() if k.endswith("_seconds")},
+        } for cp in source["checkpoints"]]
+        row["resource_accounting_scope"] = "Copied from immutable source records; original successful execution costs are not added again to new analysis time. Training=G+F; base-family/CBF nested within F; peak CUDA is not host or exclusive GPU usage."
+        row["limitations"].append("Compact candidate selection used UNSW/NSL validation seeds5/6; formal seeds1/2/3/4/42 are results on development datasets, not blind confirmation.")
     save_json(target, row)
     return row, False, modes
 
@@ -371,6 +410,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--datasets", nargs="+", choices=["UNSW-NB15", "NSL-KDD", "CIC-IDS-2017"], default=["UNSW-NB15", "NSL-KDD", "CIC-IDS-2017"])
     parser.add_argument("--input", type=Path, action="append")
+    parser.add_argument("--section31", action="store_true",
+                        help="Append compact formal UNSW/NSL root; never development, queue, or CSE18 roots")
+    parser.add_argument("--methods", nargs="+", choices=sorted(METHODS),
+                        help="Optional one-version processing filter; existing summary caches remain included")
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--final-cache", type=Path, default=BASE/"section27/baseline_calibration_v2")
     parser.add_argument("--output-dir", type=Path, default=BASE/"section28/forgetting_v1")
@@ -378,6 +421,8 @@ def main():
     parser.add_argument("--source-commit")
     parser.add_argument("--complete-retention-groups-only", action="store_true",
                         help="Process Section29.8 groups only after all five formal seeds are complete")
+    parser.add_argument("--complete-compact-groups-only", action="store_true",
+                        help="Process Section31 groups only after all five formal seeds are complete")
     args = parser.parse_args()
     if args.batch_size <= 0:
         parser.error("--batch-size must be positive")
@@ -386,8 +431,13 @@ def main():
     started, began = time.perf_counter(), now()
     analysis_commit = args.source_commit or subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     selected = {}
-    for root in args.input or DEFAULT_ROOTS:
+    roots = list(args.input or DEFAULT_ROOTS)
+    if args.section31 and SECTION31_ROOT not in roots:
+        roots.append(SECTION31_ROOT)
+    for root in roots:
         for path in sorted(root.resolve().rglob("result.json")):
+            if root.resolve() == SECTION31_ROOT.resolve() and any("cse" in part.lower() for part in path.relative_to(root.resolve()).parts):
+                continue  # CSE18 blindness/release is managed separately; never open its result files here.
             source = shared_read(path)
             identity = source.get("identity", {})
             config = identity.get("effective_config", {})
@@ -395,9 +445,15 @@ def main():
                     identity.get("dataset") not in args.datasets or identity.get("method") not in METHODS or
                     identity.get("seed") not in SEEDS or
                     source.get("smoke") or config.get("smoke") or
-                    source.get("selection_only") or config.get("selection_only")):
+                    source.get("selection_only") or config.get("selection_only") or
+                    (args.methods and identity.get("method") not in args.methods)):
                 continue
-            if identity["method"] in SECTION29_METHODS and (
+            if identity["method"] in SECTION31_METHODS and (
+                    identity["dataset"] not in {"UNSW-NB15", "NSL-KDD"} or
+                    config.get("section31") is not True or config.get("section31_schema_version") != 1 or
+                    not source.get("architecture_capacity")):
+                continue
+            if identity["method"] in SECTION29_METHODS | SECTION31_METHODS and (
                     source.get("test_evaluation_performed") is not True or
                     len(source["checkpoints"]) != len(source.get("tasks", [])) or
                     any(cp.get("test_evaluation_performed") is not True or
@@ -413,6 +469,12 @@ def main():
                 previous_config = selected[key][2]["identity"]["effective_config"]
                 if any(config.get(k) != previous_config.get(k) for k in SECTION29_CONFIG_KEYS):
                     raise ValueError("Conflicting Section29 protocols/configurations for one formal cell; use explicit inputs and a separate output namespace without changing old caches")
+            if identity["method"] in SECTION31_METHODS and key in selected:
+                previous_identity = selected[key][2]["identity"]
+                previous_config = previous_identity["effective_config"]
+                if (any(config.get(k) != previous_config.get(k) for k in SECTION31_CONFIG_KEYS)
+                        or identity.get("source_hashes") != previous_identity.get("source_hashes")):
+                    raise ValueError("Conflicting compact source/configurations for one formal cell; use separate namespaces and preserve old caches")
             stamp = datetime.fromisoformat(source["completed_at"].replace("Z", "+00:00"))
             if stamp.tzinfo is None:
                 raise ValueError("Source completion timestamp has no timezone")
@@ -427,6 +489,14 @@ def main():
             retention_seeds.setdefault((dataset, method), set()).add(seed)
         selected = {key: value for key, value in selected.items()
                     if key not in retention_keys or retention_seeds[key[:2]] == set(SEEDS)}
+    if args.complete_compact_groups_only:
+        compact_keys = {key for key, value in selected.items()
+                        if value[2]["identity"]["effective_config"].get("section31") is True}
+        compact_seeds = {}
+        for dataset, method, seed in compact_keys:
+            compact_seeds.setdefault((dataset, method), set()).add(seed)
+        selected = {key: value for key, value in selected.items()
+                    if key not in compact_keys or compact_seeds[key[:2]] == set(SEEDS)}
     new, reused, modes, cache = 0, 0, CounterLike(), {}
     order = {dataset:i for i,dataset in enumerate(args.datasets)}
     for key, (_, path, source) in sorted(selected.items(), key=lambda pair:(order[pair[0][0]],pair[0][1],SEEDS.index(pair[0][2]))):
@@ -444,7 +514,9 @@ def main():
                "new_physical_cells": new, "reused_physical_cells": reused, "stage_modes": dict(modes),
                "structured_command": {"entrypoint": "ncd/analyze_stagewise_forgetting.py", "datasets": args.datasets,
                                       "device": "cpu", "cpu_threads": 2, "batch_size": args.batch_size,
-                                      "complete_retention_groups_only": args.complete_retention_groups_only}}
+                                      "complete_retention_groups_only": args.complete_retention_groups_only,
+                                      "complete_compact_groups_only": args.complete_compact_groups_only,
+                                      "include_section31": args.section31, "methods": args.methods}}
     write_summary(args, attempt)
     print(json.dumps({"status":"complete", **attempt}), flush=True)
 
