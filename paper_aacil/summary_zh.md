@@ -1,6 +1,6 @@
 # AA-CIL 中文摘要
 
-结果快照与修订时间：2026-10-19 21:52 MYT results; manuscript revised 2026-10-20。原始优越性协议仍为FAIL。
+结果快照与修订时间：2026-10-20 00:47 MYT。原始优越性协议仍为FAIL。
 
 **核心结果（UNSW / NSL）：** 原AA-CIL遗忘 20.04 / 11.12 pp；验证选定的CBF在UNSW仍有 15.32 pp遗忘，未通过保持标准。KD将遗忘降到 2.31 / 0.98 pp，ADR为 70.53 / 71.67%。
 KD在NSL相对Replay-BS的最终BAcc优势不显著（p=0.1329），测试FPR为 7.94%，并非校准目标2%。**误报–遗忘–准确率权衡尚未完全解决。** KD不是验证选定的主版本；UNSW为探索性，NSL不是盲确认。
@@ -25,7 +25,7 @@ KD、ISO、NCM 未通过开发资格约束，仍报告固定回退配置的正�
 验证选择保持协议：**FAIL（至少一项必要条件失败）**。UNSW 与 NSL 均须满足：遗忘不显著劣于最低遗忘外部基线、最终 BAcc 显著高于 Replay-BS、ADR 不显著低于原 AA；[完整配对结果](../ncd/results/problem_scout/section29/retention_comparisons_v1/result.json)。
 不显著有害不等于等效或非劣；已知必要条件失败优先于未完成。
 
-**固定KD复评：** UNSW KD 5/5（pass）、NSL KD 5/5（fail）、CIC17 KD 2/5（pending）。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，五个均在约21:29直接授权前已可得，因此不是盲法确认，也不推测用户是否看过。NSL/CIC 两者均为要求的数据集；当前判定为 fail，原CBF失败保留。CIC17 已完成种子的增量/最终BAcc/遗忘均值为 87.51/79.56/-15.39（前两项%，遗忘pp），仅描述；缺seed 3,4,42。历史初稿窗口于2026-10-19 21:50:26 MYT结束；该次保存状态为 failed。该次中断为预设截止 TimeoutError，不是 OOM；部分阶段不计入完整种子指标。后续已授权继续CIC17 KD seeds3/4/42及原AA五个seed，不设负责人绝对截止；纳入数量以表中已完成轨迹为准。
+**固定KD复评：** UNSW KD 5/5（pass）、NSL KD 5/5（fail）、CIC17 KD 5/5（pending）。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，五个均在约21:29直接授权前已可得，因此不是盲法确认，也不推测用户是否看过。NSL/CIC 两者均为要求的数据集；当前判定为 fail，原CBF失败保留。后续已授权继续CIC17 KD seeds3/4/42及原AA五个seed，不设负责人绝对截止；纳入数量以表中已完成轨迹为准。
 
 口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。
 

@@ -335,7 +335,8 @@ def kd_reassessment_evidence(path):
 def kd_reassessment_macros(evidence):
     if not evidence:
         return {'KDReassessmentText':'The separately authorized KD reassessment remains pending; it cannot amend the original CBF failure.',
-                'KDReassessmentTables':'', 'CICKDCompletedSeeds':'0'}
+                'KDReassessmentTables':'', 'CICKDCompletedSeeds':'0',
+                'CICKDGroupStatusText':'The CIC-IDS-2017 KD group and its paired comparisons remain pending.'}
     status=evidence['required_numeric_verdict']
     conclusion=('A necessary numerical condition fails; the trade-off remains unresolved.' if status=='fail' else
         'The specified numerical conditions pass on both required datasets, but this does not establish independent blind confirmation.' if status=='pass' else
@@ -355,9 +356,30 @@ def kd_reassessment_macros(evidence):
                 +fmt(d['metrics']['final_balanced_accuracy'])+r'\%, and signed forgetting '
                 +fmt(d['metrics']['forgetting_all_old_classes'])+' pp, descriptive only; missing seeds are '
                 +', '.join(map(str,d.get('missing_seeds',[s for s in SEEDS if s not in d['seeds']])))+'.')
+    cic=next((d for d in evidence['dataset_results'] if d['dataset']=='CIC-IDS-2017'),{})
+    cic_n=cic.get('n',0)
+    if cic.get('kd_complete_five_seed'):
+        measures=cic['metrics']
+        text+=(' Across all five CIC17 KD seeds, mean incremental BAcc is '
+            +fmt(measures['average_incremental_accuracy'])+r'\%, final BAcc is '
+            +fmt(measures['final_balanced_accuracy'])+r'\%, and signed forgetting is '
+            +fmt(measures['forgetting_all_old_classes'])+r' pp. At the nominal 2\% calibration target, test FPR, ADR, and Macro-F1 are '
+            +fmt(measures['final_normal_fpr'])+r'\%, '
+            +fmt(measures['final_attack_detection'])+r'\%, and '
+            +fmt(measures['final_macro_f1'])+r'\%, respectively.')
+        cic_status='The CIC-IDS-2017 KD group is complete (5/5 seeds).'
+    else:
+        cic_status=f'The CIC-IDS-2017 KD group contains {cic_n}/5 completed seeds; available group estimates are descriptive only.'
+    counts=cic.get('available_group_counts',{})
+    missing_references=[name+f" ({counts.get(method,0)}/5 seeds)" for method,name in
+        [('aacil','original AA-CIL'),('replay_bs','Replay-BS')] if counts.get(method,0)!=5]
+    if missing_references:
+        cic_status+=' Paired comparisons requiring '+ ' and '.join(missing_references)+' remain pending.'
+    elif not cic.get('complete'):
+        cic_status+=' Any paired comparison lacking a complete candidate or reference group remains pending.'
     return {'KDReassessmentText':text,
             'KDReassessmentTables':r'\section{Fixed-KD reassessment}\input{generated/section299_comparisons.tex}',
-            'CICKDCompletedSeeds':str(next((d['n'] for d in evidence['dataset_results'] if d['dataset']=='CIC-IDS-2017'),0))}
+            'CICKDCompletedSeeds':str(cic_n), 'CICKDGroupStatusText':cic_status}
 
 
 def retention_narrative_evidence(retention, kd_reassessment):
