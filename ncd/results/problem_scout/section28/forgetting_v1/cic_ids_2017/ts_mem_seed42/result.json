@@ -1,0 +1,1150 @@
+{
+  "analysis": {
+    "batch_size": 2048,
+    "cpu_threads": 2,
+    "device": "cpu",
+    "entrypoint": "ncd/analyze_stagewise_forgetting.py",
+    "git_commit": "8f9c4cfd202904117771023babe39cdd94c8857c"
+  },
+  "class_order": [
+    "Normal",
+    "DoS",
+    "DDoS",
+    "Bruteforce",
+    "PortScan",
+    "WebAttack",
+    "Botnet",
+    "Infiltration"
+  ],
+  "completed": true,
+  "completed_at": "2026-10-19T18:43:07.373346+08:00",
+  "cost_seconds": {
+    "new_cell_elapsed": 0.009425600001122802
+  },
+  "dataset": "CIC-IDS-2017",
+  "error_component_interpretation": "Actual G rejection versus F wrong-family alert",
+  "group_role": "primary_method_or_registered_comparator",
+  "limitations": [
+    "Post-hoc unified stagewise analysis; original Section27.8 decision unchanged.",
+    "G misses and wrong-family alerts are observable CM error components; F behavior on gate-rejected rows is not inferred.",
+    "Signed forgetting can be negative; no class or seed is dropped due to its sign.",
+    "Saved stage/final calibration results retain their original evaluation hardware; newly needed stages use CPU float32.",
+    "Joint uses offline historical training data and is a separate reference; FARQ is supplementary."
+  ],
+  "method": "ts_mem",
+  "metrics": {
+    "attack_decomposition_mean": {
+      "gate_normal_miss_increase": 0.2587897092976585,
+      "other_attack_family_error_increase": 0.004106612400442439
+    },
+    "average_incremental_accuracy": 0.650446936805742,
+    "final_attack_detection": 0.547587857768898,
+    "final_balanced_accuracy": 0.40492465326725,
+    "final_macro_f1": 0.35783217385464255,
+    "final_normal_fpr": 0.017842999016459027,
+    "forgetting_all_old_classes": 0.21890328874191273,
+    "forgetting_old_attack_classes": 0.26289632169810095,
+    "old_attack_class_count": 5,
+    "old_class_count_including_normal": 6,
+    "per_old_class": [
+      {
+        "best_pre_final_recall": 0.7212554578244638,
+        "best_pre_final_task": 2,
+        "class_id": 4,
+        "class_name": "PortScan",
+        "final_recall": 0.06679111561095995,
+        "forgetting": 0.6544643422135038,
+        "gate_normal_miss_increase": 0.6533569575397076,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.0011073846737961147
+      },
+      {
+        "best_pre_final_recall": 0.5797396257119609,
+        "best_pre_final_task": 1,
+        "class_id": 3,
+        "class_name": "Bruteforce",
+        "final_recall": 0.0008136696501220504,
+        "forgetting": 0.5789259560618388,
+        "gate_normal_miss_increase": 0.5789259560618389,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.0
+      },
+      {
+        "best_pre_final_recall": 0.8215727575917149,
+        "best_pre_final_task": 0,
+        "class_id": 1,
+        "class_name": "DoS",
+        "final_recall": 0.7372301211163771,
+        "forgetting": 0.0843426364753378,
+        "gate_normal_miss_increase": 0.07247235387045814,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.011870282604879762
+      },
+      {
+        "best_pre_final_recall": 0.8535548535548536,
+        "best_pre_final_task": 1,
+        "class_id": 2,
+        "class_name": "DDoS",
+        "final_recall": 0.8435318435318435,
+        "forgetting": 0.010023010023010093,
+        "gate_normal_miss_increase": 0.004680004680004679,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.005343005343005343
+      },
+      {
+        "best_pre_final_recall": 0.9810951249445127,
+        "best_pre_final_task": 2,
+        "class_id": 0,
+        "class_name": "Normal",
+        "final_recall": 0.982157000983541,
+        "forgetting": -0.0010618760390282977,
+        "included_attack_only": false,
+        "included_primary": true,
+        "normal_false_alarm_increase": -0.0010618760390282977
+      },
+      {
+        "best_pre_final_recall": 0.04424778761061947,
+        "best_pre_final_task": 2,
+        "class_id": 5,
+        "class_name": "WebAttack",
+        "final_recall": 0.05752212389380531,
+        "forgetting": -0.01327433628318584,
+        "gate_normal_miss_increase": -0.015486725663716894,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.0022123893805309734
+      }
+    ]
+  },
+  "protocol": {
+    "alpha": 0.02,
+    "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+    "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+    "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+    "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+    "no_counterfactual_family_inference": true,
+    "primary_old_class_scope": "All old classes, including Normal",
+    "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+    "registered_section27_8_unchanged": true,
+    "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+    "section": "28.6--28.7/29.3",
+    "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+    "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+    "version": 1
+  },
+  "seed": 42,
+  "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+  "stage_bindings": [
+    {
+      "checkpoint_file": "checkpoints/checkpoint_000.pt",
+      "checkpoint_sha256_recorded": "2d34de7063918c174d346dfbf8576be11d7725b9dfb47857167c40f7197fc2db",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1
+      ],
+      "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+      "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+      "task_index": 0,
+      "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+    },
+    {
+      "checkpoint_file": "checkpoints/checkpoint_001.pt",
+      "checkpoint_sha256_recorded": "4984683c6cdaf9d615abbc13d4ceb911d5d36d8f493da0cb78c2a7f1b57559f4",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+      "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+      "task_index": 1,
+      "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+    },
+    {
+      "checkpoint_file": "checkpoints/checkpoint_002.pt",
+      "checkpoint_sha256_recorded": "741d7b61a0c4e15bd72ed447871debeb8d31338093c5e56ea6cf335a09202e4a",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+      "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+      "task_index": 2,
+      "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+    },
+    {
+      "checkpoint_file": "checkpoints/checkpoint_003.pt",
+      "checkpoint_sha256_recorded": "19e3b8ec581faf9660a88ef4e159457375f3e18888dbfd81f1d96c5604310fbc",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+      "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+      "task_index": 3,
+      "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+    }
+  ],
+  "stage_modes": {
+    "reused_saved_stage_alpha2_no_forward": 4
+  },
+  "stages": [
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_000.pt",
+        "checkpoint_sha256_recorded": "2d34de7063918c174d346dfbf8576be11d7725b9dfb47857167c40f7197fc2db",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1
+        ],
+        "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+        "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+        "task_index": 0,
+        "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+      },
+      "calibration": {
+        "actual_false_alarms": 3623,
+        "actual_fpr": 0.01999712986267497,
+        "allowed_false_alarms": 3623,
+        "calibration_rows": 181176,
+        "decision": "attack iff gate_attack_logit - gate_normal_logit > threshold",
+        "order_statistic_zero_based": 177552,
+        "row_ids_sha256": "848dd5794c003685df58cb278ff0604e3342f42929519b9346fb33850c203848",
+        "target_fpr": 0.02,
+        "threshold": 4.416301727294922,
+        "threshold_source": "permanent Normal TRAIN holdout only; no test labels",
+        "ties": "strict greater-than; no randomized tie breaking"
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:43:07.366273+08:00",
+      "cost_seconds": {
+        "existing_stage_calibration_seconds_not_recharged": 0.0923283000010997,
+        "existing_stage_evaluation_seconds_not_recharged": 0.35928729999795905,
+        "new_stage_elapsed": 0.0003298999981780071
+      },
+      "metrics": {
+        "attack_detection": 0.8215727575917149,
+        "balanced_accuracy": 0.8954163759235698,
+        "confusion_matrix": [
+          [
+            445437,
+            14127,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            8132,
+            37444,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_test_rows": 505140,
+        "macro_f1": 0.8732482460918968,
+        "normal_fpr": 0.03074000574457525,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.9756234852973226,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.9820710851050226,
+            "recall": 0.9692599942554248,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.770873006886471,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.17842724240828506,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.7260669756258362,
+            "recall": 0.8215727575917149,
+            "support": 45576
+          }
+        ],
+        "seen_classes": [
+          0,
+          1
+        ]
+      },
+      "mode": "reused_saved_stage_alpha2_no_forward",
+      "task_index": 0
+    },
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_001.pt",
+        "checkpoint_sha256_recorded": "4984683c6cdaf9d615abbc13d4ceb911d5d36d8f493da0cb78c2a7f1b57559f4",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+        "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+        "task_index": 1,
+        "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+      },
+      "calibration": {
+        "actual_false_alarms": 3623,
+        "actual_fpr": 0.01999712986267497,
+        "allowed_false_alarms": 3623,
+        "calibration_rows": 181176,
+        "decision": "attack iff gate_attack_logit - gate_normal_logit > threshold",
+        "order_statistic_zero_based": 177552,
+        "row_ids_sha256": "848dd5794c003685df58cb278ff0604e3342f42929519b9346fb33850c203848",
+        "target_fpr": 0.02,
+        "threshold": 5.563589096069336,
+        "threshold_source": "permanent Normal TRAIN holdout only; no test labels",
+        "ties": "strict greater-than; no randomized tie breaking"
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:43:07.367273+08:00",
+      "cost_seconds": {
+        "existing_stage_calibration_seconds_not_recharged": 0.0695914999996603,
+        "existing_stage_evaluation_seconds_not_recharged": 0.37200970000048983,
+        "new_stage_elapsed": 0.00040380000064033084
+      },
+      "metrics": {
+        "attack_detection": 0.7717678995588735,
+        "balanced_accuracy": 0.7856416160360201,
+        "confusion_matrix": [
+          [
+            450769,
+            3804,
+            831,
+            4160,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            12027,
+            33198,
+            261,
+            90,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            3755,
+            0,
+            21886,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            1033,
+            0,
+            0,
+            1425,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_test_rows": 533239,
+        "macro_f1": 0.7567870340593476,
+        "normal_fpr": 0.019137704432897307,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.9723776570730887,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.964038547084588,
+            "recall": 0.9808622955671027,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.8040398169003851,
+            "family_error_given_attack_alert": 0.010462308861665028,
+            "gate_normal_miss_rate": 0.2638888888888889,
+            "other_attack_family_rate": 0.007701421800947867,
+            "precision": 0.8971947462299336,
+            "recall": 0.7284096893101633,
+            "support": 45576
+          },
+          {
+            "class_id": 2,
+            "class_name": "DDoS",
+            "f1": 0.9003064645508957,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.14644514644514645,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.952476281660719,
+            "recall": 0.8535548535548536,
+            "support": 25641
+          },
+          {
+            "class_id": 3,
+            "class_name": "Bruteforce",
+            "f1": 0.350424197713021,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.42026037428803903,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.2511013215859031,
+            "recall": 0.5797396257119609,
+            "support": 2458
+          }
+        ],
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      "mode": "reused_saved_stage_alpha2_no_forward",
+      "task_index": 1
+    },
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_002.pt",
+        "checkpoint_sha256_recorded": "741d7b61a0c4e15bd72ed447871debeb8d31338093c5e56ea6cf335a09202e4a",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+        "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+        "task_index": 2,
+        "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+      },
+      "calibration": {
+        "actual_false_alarms": 3623,
+        "actual_fpr": 0.01999712986267497,
+        "allowed_false_alarms": 3623,
+        "calibration_rows": 181176,
+        "decision": "attack iff gate_attack_logit - gate_normal_logit > threshold",
+        "order_statistic_zero_based": 177552,
+        "row_ids_sha256": "848dd5794c003685df58cb278ff0604e3342f42929519b9346fb33850c203848",
+        "target_fpr": 0.02,
+        "threshold": 4.281746864318848,
+        "threshold_source": "permanent Normal TRAIN holdout only; no test labels",
+        "ties": "strict greater-than; no randomized tie breaking"
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:43:07.370340+08:00",
+      "cost_seconds": {
+        "existing_stage_calibration_seconds_not_recharged": 0.07125559999985853,
+        "existing_stage_evaluation_seconds_not_recharged": 0.39373199999681674,
+        "new_stage_elapsed": 0.0006246999982977286
+      },
+      "metrics": {
+        "attack_detection": 0.6834763035192419,
+        "balanced_accuracy": 0.5158051019961277,
+        "confusion_matrix": [
+          [
+            450876,
+            2082,
+            42,
+            129,
+            6288,
+            147,
+            0,
+            0
+          ],
+          [
+            12335,
+            33148,
+            25,
+            2,
+            62,
+            4,
+            0,
+            0
+          ],
+          [
+            9432,
+            287,
+            15921,
+            0,
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            2458,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            8810,
+            0,
+            0,
+            0,
+            22796,
+            0,
+            0,
+            0
+          ],
+          [
+            432,
+            0,
+            0,
+            0,
+            0,
+            20,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_test_rows": 565297,
+        "macro_f1": 0.5587373056119445,
+        "normal_fpr": 0.018904875055487325,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.9553398798822341,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.9309022738018305,
+            "recall": 0.9810951249445127,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.817530489684683,
+            "family_error_given_attack_alert": 0.002797749766854186,
+            "gate_normal_miss_rate": 0.270646831665789,
+            "other_attack_family_rate": 0.002040547656661401,
+            "precision": 0.9332995466959484,
+            "recall": 0.7273126206775495,
+            "support": 45576
+          },
+          {
+            "class_id": 2,
+            "class_name": "DDoS",
+            "f1": 0.7648994691200846,
+            "family_error_given_attack_alert": 0.01776790671848973,
+            "gate_normal_miss_rate": 0.36784836784836783,
+            "other_attack_family_rate": 0.011232011232011231,
+            "precision": 0.9958093570177633,
+            "recall": 0.6209196209196209,
+            "support": 25641
+          },
+          {
+            "class_id": 3,
+            "class_name": "Bruteforce",
+            "f1": 0.0,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": 1.0,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "support": 2458
+          },
+          {
+            "class_id": 4,
+            "class_name": "PortScan",
+            "f1": 0.7504485375207809,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.2787445421755363,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.7821045047517755,
+            "recall": 0.7212554578244638,
+            "support": 31606
+          },
+          {
+            "class_id": 5,
+            "class_name": "WebAttack",
+            "f1": 0.06420545746388442,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.9557522123893806,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.11695906432748537,
+            "recall": 0.04424778761061947,
+            "support": 452
+          }
+        ],
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "mode": "reused_saved_stage_alpha2_no_forward",
+      "task_index": 2
+    },
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_003.pt",
+        "checkpoint_sha256_recorded": "19e3b8ec581faf9660a88ef4e159457375f3e18888dbfd81f1d96c5604310fbc",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "afaa6760bbdc313cdd42253b386430ea1576e5536721a7647c4c2451c3e29fae",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "source_completed_at": "2026-10-19T18:24:34.006646+08:00",
+        "source_result": "ncd/results/problem_scout/section28/cic_local_queue_v1/ts_mem_seed42/cic_ids_2017/ts_mem_seed42/result.json",
+        "task_index": 3,
+        "training_source_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+      },
+      "calibration": {
+        "actual_false_alarms": 3623,
+        "actual_fpr": 0.01999712986267497,
+        "allowed_false_alarms": 3623,
+        "calibration_rows": 181176,
+        "decision": "attack iff gate_attack_logit - gate_normal_logit > threshold",
+        "order_statistic_zero_based": 177552,
+        "row_ids_sha256": "848dd5794c003685df58cb278ff0604e3342f42929519b9346fb33850c203848",
+        "target_fpr": 0.02,
+        "threshold": 11.834700584411621,
+        "threshold_source": "permanent Normal TRAIN holdout only; no test labels",
+        "ties": "strict greater-than; no randomized tie breaking"
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:43:07.372345+08:00",
+      "cost_seconds": {
+        "existing_stage_calibration_seconds_not_recharged": 0.07399639999857754,
+        "existing_stage_evaluation_seconds_not_recharged": 0.40686490000007325,
+        "new_stage_elapsed": 0.0004005999981018249
+      },
+      "metrics": {
+        "attack_detection": 0.547587857768898,
+        "balanced_accuracy": 0.40492465326725,
+        "confusion_matrix": [
+          [
+            451364,
+            2054,
+            636,
+            297,
+            399,
+            449,
+            3511,
+            854
+          ],
+          [
+            11435,
+            33600,
+            216,
+            52,
+            0,
+            0,
+            162,
+            111
+          ],
+          [
+            3875,
+            137,
+            21629,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            2456,
+            0,
+            0,
+            2,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            29460,
+            18,
+            6,
+            0,
+            2111,
+            0,
+            11,
+            0
+          ],
+          [
+            425,
+            1,
+            0,
+            0,
+            0,
+            26,
+            0,
+            0
+          ],
+          [
+            351,
+            0,
+            0,
+            0,
+            0,
+            0,
+            19,
+            0
+          ],
+          [
+            3,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            3
+          ]
+        ],
+        "evaluated_test_rows": 565673,
+        "macro_f1": 0.35783217385464255,
+        "normal_fpr": 0.017842999016459027,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.94138798018214,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.9038686822770337,
+            "recall": 0.982157000983541,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.8256948369498439,
+            "family_error_given_attack_alert": 0.01584605020356756,
+            "gate_normal_miss_rate": 0.2508995962787432,
+            "other_attack_family_rate": 0.011870282604879762,
+            "precision": 0.938285395141022,
+            "recall": 0.7372301211163771,
+            "support": 45576
+          },
+          {
+            "class_id": 2,
+            "class_name": "DDoS",
+            "f1": 0.8988115026595744,
+            "family_error_given_attack_alert": 0.006294220343655242,
+            "gate_normal_miss_rate": 0.15112515112515112,
+            "other_attack_family_rate": 0.005343005343005343,
+            "precision": 0.9618446213367724,
+            "recall": 0.8435318435318435,
+            "support": 25641
+          },
+          {
+            "class_id": 3,
+            "class_name": "Bruteforce",
+            "f1": 0.001423994304022784,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.9991863303498779,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.005698005698005698,
+            "recall": 0.0008136696501220504,
+            "support": 2458
+          },
+          {
+            "class_id": 4,
+            "class_name": "PortScan",
+            "f1": 0.12375425020518233,
+            "family_error_given_attack_alert": 0.016309412861136997,
+            "gate_normal_miss_rate": 0.9321014997152439,
+            "other_attack_family_rate": 0.0011073846737961147,
+            "precision": 0.8410358565737052,
+            "recall": 0.06679111561095995,
+            "support": 31606
+          },
+          {
+            "class_id": 5,
+            "class_name": "WebAttack",
+            "f1": 0.05609492988133765,
+            "family_error_given_attack_alert": 0.037037037037037035,
+            "gate_normal_miss_rate": 0.9402654867256637,
+            "other_attack_family_rate": 0.0022123893805309734,
+            "precision": 0.05473684210526316,
+            "recall": 0.05752212389380531,
+            "support": 452
+          },
+          {
+            "class_id": 6,
+            "class_name": "Botnet",
+            "f1": 0.009329732383992144,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.9486486486486486,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.005130974885228194,
+            "recall": 0.051351351351351354,
+            "support": 370
+          },
+          {
+            "class_id": 7,
+            "class_name": "Infiltration",
+            "f1": 0.006160164271047228,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.5,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.0030991735537190084,
+            "recall": 0.5,
+            "support": 6
+          }
+        ],
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      "mode": "reused_saved_stage_alpha2_no_forward",
+      "task_index": 3
+    }
+  ],
+  "tasks": [
+    [
+      0,
+      1
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      6,
+      7
+    ]
+  ],
+  "training_configuration": {
+    "batch_size": 256,
+    "buffer_per_class": 200,
+    "calibration_policy": "permanent_normal_holdout_outside_m",
+    "epochs_per_task": 8,
+    "gate_step_policy": "matched_s2000",
+    "hidden": 128,
+    "learning_rate": 0.001,
+    "min_steps_per_task": 2000,
+    "normal_training_rows": 50000
+  },
+  "training_git_commit": "414136b418cbb5f682875309b00e4f8151240bfe"
+}

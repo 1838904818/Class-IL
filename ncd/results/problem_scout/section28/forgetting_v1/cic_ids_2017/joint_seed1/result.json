@@ -1,0 +1,5602 @@
+{
+  "analysis": {
+    "batch_size": 2048,
+    "cpu_threads": 2,
+    "device": "cpu",
+    "entrypoint": "ncd/analyze_stagewise_forgetting.py",
+    "git_commit": "8f9c4cfd202904117771023babe39cdd94c8857c"
+  },
+  "class_order": [
+    "Normal",
+    "DoS",
+    "DDoS",
+    "Bruteforce",
+    "PortScan",
+    "WebAttack",
+    "Botnet",
+    "Infiltration"
+  ],
+  "completed": true,
+  "completed_at": "2026-10-19T18:42:16.787376+08:00",
+  "cost_seconds": {
+    "new_cell_elapsed": 5.465276000002632
+  },
+  "dataset": "CIC-IDS-2017",
+  "error_component_interpretation": "Normal versus other-attack confusion categories only; this single classifier has no separate G and F",
+  "group_role": "offline_reference_not_deployment_matched",
+  "limitations": [
+    "Post-hoc unified stagewise analysis; original Section27.8 decision unchanged.",
+    "G misses and wrong-family alerts are observable CM error components; F behavior on gate-rejected rows is not inferred.",
+    "Signed forgetting can be negative; no class or seed is dropped due to its sign.",
+    "Saved stage/final calibration results retain their original evaluation hardware; newly needed stages use CPU float32.",
+    "Joint uses offline historical training data and is a separate reference; FARQ is supplementary."
+  ],
+  "method": "joint",
+  "metrics": {
+    "attack_decomposition_mean": {
+      "gate_normal_miss_increase": 0.17827229130798888,
+      "other_attack_family_error_increase": 0.0036347905530594886
+    },
+    "average_incremental_accuracy": 0.9284988046749119,
+    "final_attack_detection": 0.9901893336097787,
+    "final_balanced_accuracy": 0.7446500975432425,
+    "final_macro_f1": 0.685558684527924,
+    "final_normal_fpr": 0.01928131881522488,
+    "forgetting_all_old_classes": 0.15176802753695318,
+    "forgetting_old_attack_classes": 0.18190708186104834,
+    "old_attack_class_count": 5,
+    "old_class_count_including_normal": 6,
+    "per_old_class": [
+      {
+        "best_pre_final_recall": 0.9469026548672567,
+        "best_pre_final_task": 2,
+        "class_id": 5,
+        "class_name": "WebAttack",
+        "final_recall": 0.06637168141592921,
+        "forgetting": 0.8805309734513275,
+        "gate_normal_miss_increase": 0.8716814159292036,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.008849557522123894
+      },
+      {
+        "best_pre_final_recall": 0.9987794955248169,
+        "best_pre_final_task": 1,
+        "class_id": 3,
+        "class_name": "Bruteforce",
+        "final_recall": 0.9865744507729862,
+        "forgetting": 0.012205044751830707,
+        "gate_normal_miss_increase": 0.00935720097640358,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.0028478437754271765
+      },
+      {
+        "best_pre_final_recall": 0.9995392311743022,
+        "best_pre_final_task": 0,
+        "class_id": 1,
+        "class_name": "DoS",
+        "final_recall": 0.9906310338774794,
+        "forgetting": 0.008908197296822795,
+        "gate_normal_miss_increase": 0.00884237317886607,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 6.582411795681937e-05
+      },
+      {
+        "best_pre_final_recall": 0.9997659997659998,
+        "best_pre_final_task": 1,
+        "class_id": 2,
+        "class_name": "DDoS",
+        "final_recall": 0.9928239928239928,
+        "forgetting": 0.006942006942006973,
+        "gate_normal_miss_increase": 0.000468000468000468,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": 0.006474006474006474
+      },
+      {
+        "best_pre_final_recall": 0.9817914371012525,
+        "best_pre_final_task": 1,
+        "class_id": 0,
+        "class_name": "Normal",
+        "final_recall": 0.9807186811847751,
+        "forgetting": 0.0010727559164773748,
+        "included_attack_only": false,
+        "included_primary": true,
+        "normal_false_alarm_increase": 0.0010727559164773748
+      },
+      {
+        "best_pre_final_recall": 0.99958868569259,
+        "best_pre_final_task": 2,
+        "class_id": 4,
+        "class_name": "PortScan",
+        "final_recall": 0.9986394988293362,
+        "forgetting": 0.000949186863253737,
+        "gate_normal_miss_increase": 0.0010124659874707334,
+        "included_attack_only": true,
+        "included_primary": true,
+        "other_attack_family_error_increase": -6.327912421692084e-05
+      }
+    ]
+  },
+  "protocol": {
+    "alpha": 0.02,
+    "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+    "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+    "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+    "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+    "no_counterfactual_family_inference": true,
+    "primary_old_class_scope": "All old classes, including Normal",
+    "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+    "registered_section27_8_unchanged": true,
+    "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+    "section": "28.6--28.7/29.3",
+    "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+    "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+    "version": 1
+  },
+  "seed": 1,
+  "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+  "stage_bindings": [
+    {
+      "checkpoint_file": "checkpoints/checkpoint_000.pt",
+      "checkpoint_sha256_recorded": "9a5d8646352a3588998050a5ce0184a52060887e35621f0f10ef21adae5e8e20",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1
+      ],
+      "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+      "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+      "task_index": 0,
+      "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+    },
+    {
+      "checkpoint_file": "checkpoints/checkpoint_001.pt",
+      "checkpoint_sha256_recorded": "184141f0fdfaf9f2f61e1e9f027a70b8e8b17cdadca298bbb5b62775503aec13",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+      "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+      "task_index": 1,
+      "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+    },
+    {
+      "checkpoint_file": "checkpoints/checkpoint_002.pt",
+      "checkpoint_sha256_recorded": "baf0716aa327d42473046f2999ceb3ad477a639346a087986f3e7fe337f856ce",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+      "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+      "task_index": 2,
+      "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+    },
+    {
+      "checkpoint_file": "checkpoints/checkpoint_003.pt",
+      "checkpoint_sha256_recorded": "246459ebb563072a1238fdeef6b4bdd4ad26dde3ab35129ad4f8870fb4568327",
+      "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+      "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+      "protocol": {
+        "alpha": 0.02,
+        "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+        "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+        "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+        "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+        "no_counterfactual_family_inference": true,
+        "primary_old_class_scope": "All old classes, including Normal",
+        "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+        "registered_section27_8_unchanged": true,
+        "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+        "section": "28.6--28.7/29.3",
+        "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+        "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+        "version": 1
+      },
+      "seen_classes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+      "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+      "task_index": 3,
+      "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+    }
+  ],
+  "stage_modes": {
+    "new_CPU_stage_calibration": 3,
+    "reused_valid_final_calibration_no_forward": 1
+  },
+  "stages": [
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_000.pt",
+        "checkpoint_sha256_recorded": "9a5d8646352a3588998050a5ce0184a52060887e35621f0f10ef21adae5e8e20",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1
+        ],
+        "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+        "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+        "task_index": 0,
+        "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+      },
+      "calibration": {
+        "calibration_rows": 181176,
+        "grid": [
+          {
+            "false_positives": 3333,
+            "normal_count": 181176,
+            "normal_fpr": 0.018396476354484038,
+            "tau": -1.0
+          },
+          {
+            "false_positives": 3269,
+            "normal_count": 181176,
+            "normal_fpr": 0.018043228683710867,
+            "tau": -0.9
+          },
+          {
+            "false_positives": 3174,
+            "normal_count": 181176,
+            "normal_fpr": 0.017518876672406942,
+            "tau": -0.8
+          },
+          {
+            "false_positives": 3052,
+            "normal_count": 181176,
+            "normal_fpr": 0.016845498299995584,
+            "tau": -0.7
+          },
+          {
+            "false_positives": 2962,
+            "normal_count": 181176,
+            "normal_fpr": 0.016348743762970814,
+            "tau": -0.6
+          },
+          {
+            "false_positives": 2878,
+            "normal_count": 181176,
+            "normal_fpr": 0.015885106195081027,
+            "tau": -0.5
+          },
+          {
+            "false_positives": 2778,
+            "normal_count": 181176,
+            "normal_fpr": 0.015333156709497947,
+            "tau": -0.3999999999999999
+          },
+          {
+            "false_positives": 2690,
+            "normal_count": 181176,
+            "normal_fpr": 0.014847441162184836,
+            "tau": -0.29999999999999993
+          },
+          {
+            "false_positives": 2586,
+            "normal_count": 181176,
+            "normal_fpr": 0.014273413697178433,
+            "tau": -0.19999999999999996
+          },
+          {
+            "false_positives": 2474,
+            "normal_count": 181176,
+            "normal_fpr": 0.013655230273325386,
+            "tau": -0.09999999999999998
+          },
+          {
+            "false_positives": 2388,
+            "normal_count": 181176,
+            "normal_fpr": 0.013180553715723936,
+            "tau": 0.0
+          },
+          {
+            "false_positives": 2302,
+            "normal_count": 181176,
+            "normal_fpr": 0.012705877158122488,
+            "tau": 0.10000000000000009
+          },
+          {
+            "false_positives": 2222,
+            "normal_count": 181176,
+            "normal_fpr": 0.012264317569656026,
+            "tau": 0.20000000000000018
+          },
+          {
+            "false_positives": 2059,
+            "normal_count": 181176,
+            "normal_fpr": 0.011364639908155606,
+            "tau": 0.30000000000000004
+          },
+          {
+            "false_positives": 1907,
+            "normal_count": 181176,
+            "normal_fpr": 0.010525676690069324,
+            "tau": 0.40000000000000013
+          },
+          {
+            "false_positives": 1799,
+            "normal_count": 181176,
+            "normal_fpr": 0.009929571245639599,
+            "tau": 0.5
+          },
+          {
+            "false_positives": 1649,
+            "normal_count": 181176,
+            "normal_fpr": 0.00910164701726498,
+            "tau": 0.6000000000000001
+          },
+          {
+            "false_positives": 1467,
+            "normal_count": 181176,
+            "normal_fpr": 0.008097098953503775,
+            "tau": 0.7000000000000002
+          },
+          {
+            "false_positives": 1362,
+            "normal_count": 181176,
+            "normal_fpr": 0.007517551993641542,
+            "tau": 0.8
+          },
+          {
+            "false_positives": 1269,
+            "normal_count": 181176,
+            "normal_fpr": 0.007004238972049278,
+            "tau": 0.9000000000000001
+          },
+          {
+            "false_positives": 1145,
+            "normal_count": 181176,
+            "normal_fpr": 0.0063198216099262594,
+            "tau": 1.0
+          },
+          {
+            "false_positives": 1030,
+            "normal_count": 181176,
+            "normal_fpr": 0.005685079701505718,
+            "tau": 1.1
+          },
+          {
+            "false_positives": 725,
+            "normal_count": 181176,
+            "normal_fpr": 0.004001633770477326,
+            "tau": 1.2000000000000002
+          },
+          {
+            "false_positives": 420,
+            "normal_count": 181176,
+            "normal_fpr": 0.0023181878394489337,
+            "tau": 1.3000000000000003
+          },
+          {
+            "false_positives": 215,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011866913940036209,
+            "tau": 1.4000000000000004
+          },
+          {
+            "false_positives": 202,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011149379608778205,
+            "tau": 1.5
+          },
+          {
+            "false_positives": 196,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010818209917428357,
+            "tau": 1.6
+          },
+          {
+            "false_positives": 193,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010652625071753434,
+            "tau": 1.7000000000000002
+          },
+          {
+            "false_positives": 185,
+            "normal_count": 181176,
+            "normal_fpr": 0.001021106548328697,
+            "tau": 1.8000000000000003
+          },
+          {
+            "false_positives": 179,
+            "normal_count": 181176,
+            "normal_fpr": 0.0009879895791937122,
+            "tau": 1.9000000000000004
+          },
+          {
+            "false_positives": 171,
+            "normal_count": 181176,
+            "normal_fpr": 0.0009438336203470659,
+            "tau": 2.0
+          },
+          {
+            "false_positives": 151,
+            "normal_count": 181176,
+            "normal_fpr": 0.0008334437232304499,
+            "tau": 2.1
+          },
+          {
+            "false_positives": 121,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006678588775555261,
+            "tau": 2.2
+          },
+          {
+            "false_positives": 106,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005850664547180642,
+            "tau": 2.3000000000000003
+          },
+          {
+            "false_positives": 105,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005795469598622334,
+            "tau": 2.4000000000000004
+          },
+          {
+            "false_positives": 103,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005685079701505719,
+            "tau": 2.5
+          },
+          {
+            "false_positives": 99,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005464299907272487,
+            "tau": 2.6
+          },
+          {
+            "false_positives": 95,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005243520113039254,
+            "tau": 2.7
+          },
+          {
+            "false_positives": 92,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005077935267364331,
+            "tau": 2.8000000000000003
+          },
+          {
+            "false_positives": 88,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004857155473131099,
+            "tau": 2.9000000000000004
+          },
+          {
+            "false_positives": 86,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004746765576014483,
+            "tau": 3.0
+          }
+        ],
+        "helper_scope": "Existing helper also searches 1% and 5%; only 2% test CM is evaluated and reported here",
+        "minimum_normal_log_prior_gap": 2.173462390899658,
+        "operating_point": {
+          "bisection_iterations": 50,
+          "bracket_before_bisection": [
+            -5.0,
+            -1.0
+          ],
+          "calibration_count": 181176,
+          "calibration_false_positives": 3623,
+          "calibration_fpr": 0.01999712986267497,
+          "calibration_lower_false_positives": 3624,
+          "expansion_direction": "negative",
+          "expansion_steps": [
+            {
+              "false_positives": 10832,
+              "tau": -5.0
+            }
+          ],
+          "final_bisection_interval": [
+            -1.4593704342842138,
+            -1.4593704342842102
+          ],
+          "initial_grid_bracket": null,
+          "maximum_false_positives": 3623,
+          "starting_interval": [
+            -1.0,
+            3.0
+          ],
+          "status": "available",
+          "target_fpr": 0.02,
+          "total_tau": -1.4593704342842102
+        },
+        "original_train_counts": [
+          1811756,
+          206147,
+          102384,
+          11374,
+          127198,
+          1728,
+          1586,
+          30
+        ],
+        "protocol": {
+          "bisection_iterations": 50,
+          "expansion_multiplier": 2.0,
+          "finite_sample_limit": "FP <= floor(alpha * calibration_count); strict Normal prior maximum and nonincreasing observed FP required",
+          "initial_expansion_step": 4.0,
+          "initial_tau_range": [
+            -1.0,
+            3.0
+          ],
+          "limitation": "The permanent pool was available to allocation validation; it is not a fresh independent calibration sample",
+          "maximum_expansion_steps": 32,
+          "pool": "Same seed-specific permanent Normal TRAIN holdout for every method; never optimized",
+          "replay_la": "Same Replay weights and total tau; baseline tau=1 plus delta, no extra training or inference",
+          "rule": "First adjacent initial-grid bracket when present; otherwise expand toward the missing infeasible lower or feasible upper endpoint; retain feasible upper endpoint after 50 bisections",
+          "section": "27.9",
+          "section26_10_unchanged": true,
+          "targets": [
+            0.01,
+            0.02,
+            0.05
+          ],
+          "tau_range_policy": "normal_holdout_only_bidirectional_bracket_expansion",
+          "test_role": "Evaluate selected total tau only; test metrics never select tau or the expansion range",
+          "version": 2
+        },
+        "search_evaluations": [
+          {
+            "false_positives": 10832,
+            "normal_count": 181176,
+            "normal_fpr": 0.059787168278359164,
+            "tau": -5.0
+          },
+          {
+            "false_positives": 9201,
+            "normal_count": 181176,
+            "normal_fpr": 0.05078487216849914,
+            "tau": -4.5
+          },
+          {
+            "false_positives": 9082,
+            "normal_count": 181176,
+            "normal_fpr": 0.050128052280655276,
+            "tau": -4.4375
+          },
+          {
+            "false_positives": 9071,
+            "normal_count": 181176,
+            "normal_fpr": 0.050067337837241134,
+            "tau": -4.4296875
+          },
+          {
+            "false_positives": 9064,
+            "normal_count": 181176,
+            "normal_fpr": 0.05002870137325032,
+            "tau": -4.42578125
+          },
+          {
+            "false_positives": 9061,
+            "normal_count": 181176,
+            "normal_fpr": 0.05001214288868283,
+            "tau": -4.423828125
+          },
+          {
+            "false_positives": 9060,
+            "normal_count": 181176,
+            "normal_fpr": 0.050006623393827,
+            "tau": -4.423583984375
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423553466796875
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.4235382080078125
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537731170654
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537611961365
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.42353755235672
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537522554398
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537507653236
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537500202656
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.4235374964773655
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.42353749461472
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537493683398
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.4235374932177365
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492984906
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.4235374928684905
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492810283
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492781179
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492766627
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492759351
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492755713
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492753894
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752985
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.42353749275253
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752303
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752189
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752132
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752104
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752089
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752082
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -4.423537492752079
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -4.423537492752075
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -4.423537254333496
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -4.42353630065918
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -4.423534393310547
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -4.423530578613281
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -4.42352294921875
+          },
+          {
+            "false_positives": 9057,
+            "normal_count": 181176,
+            "normal_fpr": 0.0499900649092595,
+            "tau": -4.4234619140625
+          },
+          {
+            "false_positives": 9057,
+            "normal_count": 181176,
+            "normal_fpr": 0.0499900649092595,
+            "tau": -4.42333984375
+          },
+          {
+            "false_positives": 9055,
+            "normal_count": 181176,
+            "normal_fpr": 0.049979025919547844,
+            "tau": -4.4228515625
+          },
+          {
+            "false_positives": 9052,
+            "normal_count": 181176,
+            "normal_fpr": 0.049962467434980354,
+            "tau": -4.421875
+          },
+          {
+            "false_positives": 9028,
+            "normal_count": 181176,
+            "normal_fpr": 0.04982999955844041,
+            "tau": -4.40625
+          },
+          {
+            "false_positives": 8984,
+            "normal_count": 181176,
+            "normal_fpr": 0.04958714178478386,
+            "tau": -4.375
+          },
+          {
+            "false_positives": 8711,
+            "normal_count": 181176,
+            "normal_fpr": 0.04808031968914205,
+            "tau": -4.25
+          },
+          {
+            "false_positives": 8088,
+            "normal_count": 181176,
+            "normal_fpr": 0.04464167439395946,
+            "tau": -4.0
+          },
+          {
+            "false_positives": 5507,
+            "normal_count": 181176,
+            "normal_fpr": 0.030395858171060185,
+            "tau": -3.0
+          },
+          {
+            "false_positives": 4405,
+            "normal_count": 181176,
+            "normal_fpr": 0.02431337483993465,
+            "tau": -2.0
+          },
+          {
+            "false_positives": 3711,
+            "normal_count": 181176,
+            "normal_fpr": 0.020482845409988078,
+            "tau": -1.5
+          },
+          {
+            "false_positives": 3658,
+            "normal_count": 181176,
+            "normal_fpr": 0.020190312182629046,
+            "tau": -1.46875
+          },
+          {
+            "false_positives": 3629,
+            "normal_count": 181176,
+            "normal_fpr": 0.020030246831809952,
+            "tau": -1.4609375
+          },
+          {
+            "false_positives": 3626,
+            "normal_count": 181176,
+            "normal_fpr": 0.02001368834724246,
+            "tau": -1.4599609375
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.45947265625
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.45941162109375
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.459381103515625
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593734741210938
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.459371566772461
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593706130981445
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.459370493888855
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704640865326
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704491853714
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704417347908
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704380095005
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704361468554
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704352155328
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704347498715
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704345170408
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704344006255
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704343424179
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.459370434313314
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342987621
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342914862
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342878482
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342860292
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342851197
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.459370434284665
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342844376
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.459370434284324
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.459370434284267
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342842386
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342842244
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342842173
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -1.4593704342842138
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.4593704342842102
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.4593703746795654
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.4593701362609863
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.4593696594238281
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.4593658447265625
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.4593505859375
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.459228515625
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -1.458984375
+          },
+          {
+            "false_positives": 3619,
+            "normal_count": 181176,
+            "normal_fpr": 0.019975051883251646,
+            "tau": -1.45703125
+          },
+          {
+            "false_positives": 3608,
+            "normal_count": 181176,
+            "normal_fpr": 0.019914337439837507,
+            "tau": -1.453125
+          },
+          {
+            "false_positives": 3584,
+            "normal_count": 181176,
+            "normal_fpr": 0.019781869563297565,
+            "tau": -1.4375
+          },
+          {
+            "false_positives": 3493,
+            "normal_count": 181176,
+            "normal_fpr": 0.019279595531416966,
+            "tau": -1.375
+          },
+          {
+            "false_positives": 3444,
+            "normal_count": 181176,
+            "normal_fpr": 0.019009140283481257,
+            "tau": -1.25
+          },
+          {
+            "false_positives": 3333,
+            "normal_count": 181176,
+            "normal_fpr": 0.018396476354484038,
+            "tau": -1.0
+          },
+          {
+            "false_positives": 3269,
+            "normal_count": 181176,
+            "normal_fpr": 0.018043228683710867,
+            "tau": -0.9
+          },
+          {
+            "false_positives": 3174,
+            "normal_count": 181176,
+            "normal_fpr": 0.017518876672406942,
+            "tau": -0.8
+          },
+          {
+            "false_positives": 3052,
+            "normal_count": 181176,
+            "normal_fpr": 0.016845498299995584,
+            "tau": -0.7
+          },
+          {
+            "false_positives": 2962,
+            "normal_count": 181176,
+            "normal_fpr": 0.016348743762970814,
+            "tau": -0.6
+          },
+          {
+            "false_positives": 2878,
+            "normal_count": 181176,
+            "normal_fpr": 0.015885106195081027,
+            "tau": -0.5
+          },
+          {
+            "false_positives": 2778,
+            "normal_count": 181176,
+            "normal_fpr": 0.015333156709497947,
+            "tau": -0.3999999999999999
+          },
+          {
+            "false_positives": 2690,
+            "normal_count": 181176,
+            "normal_fpr": 0.014847441162184836,
+            "tau": -0.29999999999999993
+          },
+          {
+            "false_positives": 2586,
+            "normal_count": 181176,
+            "normal_fpr": 0.014273413697178433,
+            "tau": -0.19999999999999996
+          },
+          {
+            "false_positives": 2474,
+            "normal_count": 181176,
+            "normal_fpr": 0.013655230273325386,
+            "tau": -0.09999999999999998
+          },
+          {
+            "false_positives": 2388,
+            "normal_count": 181176,
+            "normal_fpr": 0.013180553715723936,
+            "tau": 0.0
+          },
+          {
+            "false_positives": 2302,
+            "normal_count": 181176,
+            "normal_fpr": 0.012705877158122488,
+            "tau": 0.10000000000000009
+          },
+          {
+            "false_positives": 2222,
+            "normal_count": 181176,
+            "normal_fpr": 0.012264317569656026,
+            "tau": 0.20000000000000018
+          },
+          {
+            "false_positives": 2059,
+            "normal_count": 181176,
+            "normal_fpr": 0.011364639908155606,
+            "tau": 0.30000000000000004
+          },
+          {
+            "false_positives": 1907,
+            "normal_count": 181176,
+            "normal_fpr": 0.010525676690069324,
+            "tau": 0.40000000000000013
+          },
+          {
+            "false_positives": 1846,
+            "normal_count": 181176,
+            "normal_fpr": 0.010188987503863647,
+            "tau": 0.45000000000000007
+          },
+          {
+            "false_positives": 1815,
+            "normal_count": 181176,
+            "normal_fpr": 0.010017883163332892,
+            "tau": 0.47500000000000003
+          },
+          {
+            "false_positives": 1813,
+            "normal_count": 181176,
+            "normal_fpr": 0.01000684417362123,
+            "tau": 0.48125000000000007
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828125000000001
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247070312501
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247547149659
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475620508203
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475695014004
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475732266905
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247575089336
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576020659
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.482824757648632
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.482824757671915
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576835566
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576893774
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576922877
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576937429
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475769447053
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475769483435
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576950162
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475769510713
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475769515265
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576951754
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475769518673
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576951924
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576951953
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576951967
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576951974
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.4828247576951977
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475769519795
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.48282475769519806
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.4828247576951981
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.48282476067543034
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.48282476663589485
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.4828247785568238
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.48282480239868175
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.48282489776611337
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.4828250885009766
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.4828254699707032
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.48282623291015636
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.4828277587890626
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.48283081054687504
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.48283691406250007
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.4828613281250001
+          },
+          {
+            "false_positives": 1810,
+            "normal_count": 181176,
+            "normal_fpr": 0.009990285689053737,
+            "tau": 0.4829101562500001
+          },
+          {
+            "false_positives": 1810,
+            "normal_count": 181176,
+            "normal_fpr": 0.009990285689053737,
+            "tau": 0.4830078125000001
+          },
+          {
+            "false_positives": 1810,
+            "normal_count": 181176,
+            "normal_fpr": 0.009990285689053737,
+            "tau": 0.48320312500000007
+          },
+          {
+            "false_positives": 1809,
+            "normal_count": 181176,
+            "normal_fpr": 0.009984766194197907,
+            "tau": 0.48359375000000004
+          },
+          {
+            "false_positives": 1809,
+            "normal_count": 181176,
+            "normal_fpr": 0.009984766194197907,
+            "tau": 0.48437500000000006
+          },
+          {
+            "false_positives": 1809,
+            "normal_count": 181176,
+            "normal_fpr": 0.009984766194197907,
+            "tau": 0.48750000000000004
+          },
+          {
+            "false_positives": 1799,
+            "normal_count": 181176,
+            "normal_fpr": 0.009929571245639599,
+            "tau": 0.5
+          },
+          {
+            "false_positives": 1649,
+            "normal_count": 181176,
+            "normal_fpr": 0.00910164701726498,
+            "tau": 0.6000000000000001
+          },
+          {
+            "false_positives": 1467,
+            "normal_count": 181176,
+            "normal_fpr": 0.008097098953503775,
+            "tau": 0.7000000000000002
+          },
+          {
+            "false_positives": 1362,
+            "normal_count": 181176,
+            "normal_fpr": 0.007517551993641542,
+            "tau": 0.8
+          },
+          {
+            "false_positives": 1269,
+            "normal_count": 181176,
+            "normal_fpr": 0.007004238972049278,
+            "tau": 0.9000000000000001
+          },
+          {
+            "false_positives": 1145,
+            "normal_count": 181176,
+            "normal_fpr": 0.0063198216099262594,
+            "tau": 1.0
+          },
+          {
+            "false_positives": 1030,
+            "normal_count": 181176,
+            "normal_fpr": 0.005685079701505718,
+            "tau": 1.1
+          },
+          {
+            "false_positives": 725,
+            "normal_count": 181176,
+            "normal_fpr": 0.004001633770477326,
+            "tau": 1.2000000000000002
+          },
+          {
+            "false_positives": 420,
+            "normal_count": 181176,
+            "normal_fpr": 0.0023181878394489337,
+            "tau": 1.3000000000000003
+          },
+          {
+            "false_positives": 215,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011866913940036209,
+            "tau": 1.4000000000000004
+          },
+          {
+            "false_positives": 202,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011149379608778205,
+            "tau": 1.5
+          },
+          {
+            "false_positives": 196,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010818209917428357,
+            "tau": 1.6
+          },
+          {
+            "false_positives": 193,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010652625071753434,
+            "tau": 1.7000000000000002
+          },
+          {
+            "false_positives": 185,
+            "normal_count": 181176,
+            "normal_fpr": 0.001021106548328697,
+            "tau": 1.8000000000000003
+          },
+          {
+            "false_positives": 179,
+            "normal_count": 181176,
+            "normal_fpr": 0.0009879895791937122,
+            "tau": 1.9000000000000004
+          },
+          {
+            "false_positives": 171,
+            "normal_count": 181176,
+            "normal_fpr": 0.0009438336203470659,
+            "tau": 2.0
+          },
+          {
+            "false_positives": 151,
+            "normal_count": 181176,
+            "normal_fpr": 0.0008334437232304499,
+            "tau": 2.1
+          },
+          {
+            "false_positives": 121,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006678588775555261,
+            "tau": 2.2
+          },
+          {
+            "false_positives": 106,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005850664547180642,
+            "tau": 2.3000000000000003
+          },
+          {
+            "false_positives": 105,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005795469598622334,
+            "tau": 2.4000000000000004
+          },
+          {
+            "false_positives": 103,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005685079701505719,
+            "tau": 2.5
+          },
+          {
+            "false_positives": 99,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005464299907272487,
+            "tau": 2.6
+          },
+          {
+            "false_positives": 95,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005243520113039254,
+            "tau": 2.7
+          },
+          {
+            "false_positives": 92,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005077935267364331,
+            "tau": 2.8000000000000003
+          },
+          {
+            "false_positives": 88,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004857155473131099,
+            "tau": 2.9000000000000004
+          },
+          {
+            "false_positives": 86,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004746765576014483,
+            "tau": 3.0
+          }
+        ],
+        "seen_class_columns": [
+          0,
+          1
+        ]
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:42:12.590800+08:00",
+      "cost_seconds": {
+        "new_normal_holdout_forward_seconds": 0.11492449999786913,
+        "new_normal_only_search_seconds": 0.7835125000019616,
+        "new_stage_elapsed": 1.2674230000011448,
+        "new_test_forward_and_selected_evaluation_seconds": 0.3204808000009507
+      },
+      "metrics": {
+        "attack_detection": 0.9995392311743022,
+        "balanced_accuracy": 0.9902083792849168,
+        "confusion_matrix": [
+          [
+            450776,
+            8788,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            21,
+            45555,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_test_rows": 505140,
+        "macro_f1": 0.9510811040646862,
+        "normal_fpr": 0.019122472604468532,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.9903236188720739,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.9999534158390584,
+            "recall": 0.9808775273955315,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.9118385892572984,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.0004607688256977356,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.8382864398358574,
+            "recall": 0.9995392311743022,
+            "support": 45576
+          }
+        ],
+        "seen_classes": [
+          0,
+          1
+        ]
+      },
+      "mode": "new_CPU_stage_calibration",
+      "task_index": 0
+    },
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_001.pt",
+        "checkpoint_sha256_recorded": "184141f0fdfaf9f2f61e1e9f027a70b8e8b17cdadca298bbb5b62775503aec13",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+        "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+        "task_index": 1,
+        "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+      },
+      "calibration": {
+        "calibration_rows": 181176,
+        "grid": [
+          {
+            "false_positives": 7648,
+            "normal_count": 181176,
+            "normal_fpr": 0.042213096657393916,
+            "tau": -1.0
+          },
+          {
+            "false_positives": 6908,
+            "normal_count": 181176,
+            "normal_fpr": 0.038128670464079126,
+            "tau": -0.9
+          },
+          {
+            "false_positives": 5668,
+            "normal_count": 181176,
+            "normal_fpr": 0.031284496842848945,
+            "tau": -0.8
+          },
+          {
+            "false_positives": 5088,
+            "normal_count": 181176,
+            "normal_fpr": 0.02808318982646708,
+            "tau": -0.7
+          },
+          {
+            "false_positives": 4740,
+            "normal_count": 181176,
+            "normal_fpr": 0.026162405616637966,
+            "tau": -0.6
+          },
+          {
+            "false_positives": 4450,
+            "normal_count": 181176,
+            "normal_fpr": 0.024561752108447035,
+            "tau": -0.5
+          },
+          {
+            "false_positives": 4110,
+            "normal_count": 181176,
+            "normal_fpr": 0.022685123857464566,
+            "tau": -0.3999999999999999
+          },
+          {
+            "false_positives": 3119,
+            "normal_count": 181176,
+            "normal_fpr": 0.01721530445533625,
+            "tau": -0.29999999999999993
+          },
+          {
+            "false_positives": 2915,
+            "normal_count": 181176,
+            "normal_fpr": 0.016089327504746766,
+            "tau": -0.19999999999999996
+          },
+          {
+            "false_positives": 2558,
+            "normal_count": 181176,
+            "normal_fpr": 0.014118867841215172,
+            "tau": -0.09999999999999998
+          },
+          {
+            "false_positives": 2392,
+            "normal_count": 181176,
+            "normal_fpr": 0.01320263169514726,
+            "tau": 0.0
+          },
+          {
+            "false_positives": 2218,
+            "normal_count": 181176,
+            "normal_fpr": 0.012242239590232702,
+            "tau": 0.10000000000000009
+          },
+          {
+            "false_positives": 1917,
+            "normal_count": 181176,
+            "normal_fpr": 0.010580871638627632,
+            "tau": 0.20000000000000018
+          },
+          {
+            "false_positives": 1673,
+            "normal_count": 181176,
+            "normal_fpr": 0.009234114893804919,
+            "tau": 0.30000000000000004
+          },
+          {
+            "false_positives": 1524,
+            "normal_count": 181176,
+            "normal_fpr": 0.008411710160286131,
+            "tau": 0.40000000000000013
+          },
+          {
+            "false_positives": 1443,
+            "normal_count": 181176,
+            "normal_fpr": 0.007964631076963836,
+            "tau": 0.5
+          },
+          {
+            "false_positives": 1371,
+            "normal_count": 181176,
+            "normal_fpr": 0.007567227447344019,
+            "tau": 0.6000000000000001
+          },
+          {
+            "false_positives": 1259,
+            "normal_count": 181176,
+            "normal_fpr": 0.00694904402349097,
+            "tau": 0.7000000000000002
+          },
+          {
+            "false_positives": 1185,
+            "normal_count": 181176,
+            "normal_fpr": 0.0065406014041594915,
+            "tau": 0.8
+          },
+          {
+            "false_positives": 1079,
+            "normal_count": 181176,
+            "normal_fpr": 0.005955534949441427,
+            "tau": 0.9000000000000001
+          },
+          {
+            "false_positives": 981,
+            "normal_count": 181176,
+            "normal_fpr": 0.0054146244535700095,
+            "tau": 1.0
+          },
+          {
+            "false_positives": 841,
+            "normal_count": 181176,
+            "normal_fpr": 0.004641895173753698,
+            "tau": 1.1
+          },
+          {
+            "false_positives": 660,
+            "normal_count": 181176,
+            "normal_fpr": 0.0036428666048483245,
+            "tau": 1.2000000000000002
+          },
+          {
+            "false_positives": 429,
+            "normal_count": 181176,
+            "normal_fpr": 0.0023678632931514107,
+            "tau": 1.3000000000000003
+          },
+          {
+            "false_positives": 260,
+            "normal_count": 181176,
+            "normal_fpr": 0.0014350686625160065,
+            "tau": 1.4000000000000004
+          },
+          {
+            "false_positives": 223,
+            "normal_count": 181176,
+            "normal_fpr": 0.0012308473528502672,
+            "tau": 1.5
+          },
+          {
+            "false_positives": 207,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011425354351569743,
+            "tau": 1.6
+          },
+          {
+            "false_positives": 194,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010707820020311742,
+            "tau": 1.7000000000000002
+          },
+          {
+            "false_positives": 152,
+            "normal_count": 181176,
+            "normal_fpr": 0.0008389632180862808,
+            "tau": 1.8000000000000003
+          },
+          {
+            "false_positives": 136,
+            "normal_count": 181176,
+            "normal_fpr": 0.000750651300392988,
+            "tau": 1.9000000000000004
+          },
+          {
+            "false_positives": 127,
+            "normal_count": 181176,
+            "normal_fpr": 0.0007009758466905108,
+            "tau": 2.0
+          },
+          {
+            "false_positives": 124,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006844173621230185,
+            "tau": 2.1
+          },
+          {
+            "false_positives": 117,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006457808981322029,
+            "tau": 2.2
+          },
+          {
+            "false_positives": 110,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006071444341413873,
+            "tau": 2.3000000000000003
+          },
+          {
+            "false_positives": 107,
+            "normal_count": 181176,
+            "normal_fpr": 0.000590585949573895,
+            "tau": 2.4000000000000004
+          },
+          {
+            "false_positives": 104,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005740274650064026,
+            "tau": 2.5
+          },
+          {
+            "false_positives": 98,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005409104958714178,
+            "tau": 2.6
+          },
+          {
+            "false_positives": 94,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005188325164480947,
+            "tau": 2.7
+          },
+          {
+            "false_positives": 90,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004967545370247715,
+            "tau": 2.8000000000000003
+          },
+          {
+            "false_positives": 88,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004857155473131099,
+            "tau": 2.9000000000000004
+          },
+          {
+            "false_positives": 86,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004746765576014483,
+            "tau": 3.0
+          }
+        ],
+        "helper_scope": "Existing helper also searches 1% and 5%; only 2% test CM is evaluated and reported here",
+        "minimum_normal_log_prior_gap": 2.173462390899658,
+        "operating_point": {
+          "bisection_iterations": 50,
+          "bracket_before_bisection": [
+            -0.3999999999999999,
+            -0.29999999999999993
+          ],
+          "calibration_count": 181176,
+          "calibration_false_positives": 3623,
+          "calibration_fpr": 0.01999712986267497,
+          "calibration_lower_false_positives": 3624,
+          "expansion_direction": "none",
+          "expansion_steps": [],
+          "final_bisection_interval": [
+            -0.34852226078510296,
+            -0.34852226078510284
+          ],
+          "initial_grid_bracket": [
+            -0.3999999999999999,
+            -0.29999999999999993
+          ],
+          "maximum_false_positives": 3623,
+          "starting_interval": [
+            -1.0,
+            3.0
+          ],
+          "status": "available",
+          "target_fpr": 0.02,
+          "total_tau": -0.34852226078510284
+        },
+        "original_train_counts": [
+          1811756,
+          206147,
+          102384,
+          11374,
+          127198,
+          1728,
+          1586,
+          30
+        ],
+        "protocol": {
+          "bisection_iterations": 50,
+          "expansion_multiplier": 2.0,
+          "finite_sample_limit": "FP <= floor(alpha * calibration_count); strict Normal prior maximum and nonincreasing observed FP required",
+          "initial_expansion_step": 4.0,
+          "initial_tau_range": [
+            -1.0,
+            3.0
+          ],
+          "limitation": "The permanent pool was available to allocation validation; it is not a fresh independent calibration sample",
+          "maximum_expansion_steps": 32,
+          "pool": "Same seed-specific permanent Normal TRAIN holdout for every method; never optimized",
+          "replay_la": "Same Replay weights and total tau; baseline tau=1 plus delta, no extra training or inference",
+          "rule": "First adjacent initial-grid bracket when present; otherwise expand toward the missing infeasible lower or feasible upper endpoint; retain feasible upper endpoint after 50 bisections",
+          "section": "27.9",
+          "section26_10_unchanged": true,
+          "targets": [
+            0.01,
+            0.02,
+            0.05
+          ],
+          "tau_range_policy": "normal_holdout_only_bidirectional_bracket_expansion",
+          "test_role": "Evaluate selected total tau only; test metrics never select tau or the expansion range",
+          "version": 2
+        },
+        "search_evaluations": [
+          {
+            "false_positives": 34509,
+            "normal_count": 181176,
+            "normal_fpr": 0.1904722479798649,
+            "tau": -5.0
+          },
+          {
+            "false_positives": 19267,
+            "normal_count": 181176,
+            "normal_fpr": 0.10634410738729191,
+            "tau": -3.0
+          },
+          {
+            "false_positives": 12511,
+            "normal_count": 181176,
+            "normal_fpr": 0.06905440014129907,
+            "tau": -2.0
+          },
+          {
+            "false_positives": 10282,
+            "normal_count": 181176,
+            "normal_fpr": 0.056751446107652224,
+            "tau": -1.5
+          },
+          {
+            "false_positives": 9192,
+            "normal_count": 181176,
+            "normal_fpr": 0.05073519671479666,
+            "tau": -1.25
+          },
+          {
+            "false_positives": 9164,
+            "normal_count": 181176,
+            "normal_fpr": 0.0505806508588334,
+            "tau": -1.2421875
+          },
+          {
+            "false_positives": 9133,
+            "normal_count": 181176,
+            "normal_fpr": 0.05040954651830264,
+            "tau": -1.23828125
+          },
+          {
+            "false_positives": 9121,
+            "normal_count": 181176,
+            "normal_fpr": 0.050343312580032676,
+            "tau": -1.236328125
+          },
+          {
+            "false_positives": 9119,
+            "normal_count": 181176,
+            "normal_fpr": 0.05033227359032101,
+            "tau": -1.2353515625
+          },
+          {
+            "false_positives": 9119,
+            "normal_count": 181176,
+            "normal_fpr": 0.05033227359032101,
+            "tau": -1.23529052734375
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.2352752685546875
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.2352747917175293
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.2352747321128845
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235274732112881
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321128774
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321128703
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235274732112856
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321128277
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321127708
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321126571
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321124298
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235274732111975
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321110655
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321092465
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747321056086
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747320983326
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747320837807
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747320546769
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747319964692
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747318800539
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747316472232
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235274731181562
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747302502394
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747283875942
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235274724662304
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747172117233
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352747023105621
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352746725082397
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352745532989502
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235274314880371
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352733612060547
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352714538574219
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352676391601562
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235260009765625
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.2352294921875
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.235107421875
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.23486328125
+          },
+          {
+            "false_positives": 9055,
+            "normal_count": 181176,
+            "normal_fpr": 0.049979025919547844,
+            "tau": -1.234375
+          },
+          {
+            "false_positives": 9003,
+            "normal_count": 181176,
+            "normal_fpr": 0.049692012187044644,
+            "tau": -1.21875
+          },
+          {
+            "false_positives": 8889,
+            "normal_count": 181176,
+            "normal_fpr": 0.04906278977347993,
+            "tau": -1.1875
+          },
+          {
+            "false_positives": 8605,
+            "normal_count": 181176,
+            "normal_fpr": 0.04749525323442399,
+            "tau": -1.125
+          },
+          {
+            "false_positives": 7648,
+            "normal_count": 181176,
+            "normal_fpr": 0.042213096657393916,
+            "tau": -1.0
+          },
+          {
+            "false_positives": 6908,
+            "normal_count": 181176,
+            "normal_fpr": 0.038128670464079126,
+            "tau": -0.9
+          },
+          {
+            "false_positives": 5668,
+            "normal_count": 181176,
+            "normal_fpr": 0.031284496842848945,
+            "tau": -0.8
+          },
+          {
+            "false_positives": 5088,
+            "normal_count": 181176,
+            "normal_fpr": 0.02808318982646708,
+            "tau": -0.7
+          },
+          {
+            "false_positives": 4740,
+            "normal_count": 181176,
+            "normal_fpr": 0.026162405616637966,
+            "tau": -0.6
+          },
+          {
+            "false_positives": 4450,
+            "normal_count": 181176,
+            "normal_fpr": 0.024561752108447035,
+            "tau": -0.5
+          },
+          {
+            "false_positives": 4110,
+            "normal_count": 181176,
+            "normal_fpr": 0.022685123857464566,
+            "tau": -0.3999999999999999
+          },
+          {
+            "false_positives": 3791,
+            "normal_count": 181176,
+            "normal_fpr": 0.020924404998454542,
+            "tau": -0.3499999999999999
+          },
+          {
+            "false_positives": 3732,
+            "normal_count": 181176,
+            "normal_fpr": 0.020598754801960526,
+            "tau": -0.3492187499999999
+          },
+          {
+            "false_positives": 3674,
+            "normal_count": 181176,
+            "normal_fpr": 0.02027862410032234,
+            "tau": -0.34882812499999993
+          },
+          {
+            "false_positives": 3644,
+            "normal_count": 181176,
+            "normal_fpr": 0.020113039254647413,
+            "tau": -0.34863281249999994
+          },
+          {
+            "false_positives": 3627,
+            "normal_count": 181176,
+            "normal_fpr": 0.02001920784209829,
+            "tau": -0.34853515625
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852294921875
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852256774902346
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852237701416017
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222816467285
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222697257995
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.348522263765335
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222622752189
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226153016086
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226115763185
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222609713673
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.348522260878235
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226083166893
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222608083859
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607967443
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607909235
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607880132
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.348522260786558
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607858304
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226078546655
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607852847
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226078519377
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226078514825
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607851255
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226078511417
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607851085
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607851056
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607851042
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607851035
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.3485222607851032
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.34852226078510296
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.34852226078510284
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.3485222607851028
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.34852225780487056
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.3485222339630127
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.3485221862792969
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.3485214233398437
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.3485198974609375
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.348516845703125
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.3485107421875
+          },
+          {
+            "false_positives": 3621,
+            "normal_count": 181176,
+            "normal_fpr": 0.019986090872963307,
+            "tau": -0.34848632812499997
+          },
+          {
+            "false_positives": 3614,
+            "normal_count": 181176,
+            "normal_fpr": 0.01994745440897249,
+            "tau": -0.34843749999999996
+          },
+          {
+            "false_positives": 3396,
+            "normal_count": 181176,
+            "normal_fpr": 0.018744204530401376,
+            "tau": -0.34687499999999993
+          },
+          {
+            "false_positives": 3310,
+            "normal_count": 181176,
+            "normal_fpr": 0.018269527972799928,
+            "tau": -0.3437499999999999
+          },
+          {
+            "false_positives": 3224,
+            "normal_count": 181176,
+            "normal_fpr": 0.01779485141519848,
+            "tau": -0.3374999999999999
+          },
+          {
+            "false_positives": 3199,
+            "normal_count": 181176,
+            "normal_fpr": 0.017656864043802713,
+            "tau": -0.32499999999999996
+          },
+          {
+            "false_positives": 3119,
+            "normal_count": 181176,
+            "normal_fpr": 0.01721530445533625,
+            "tau": -0.29999999999999993
+          },
+          {
+            "false_positives": 2915,
+            "normal_count": 181176,
+            "normal_fpr": 0.016089327504746766,
+            "tau": -0.19999999999999996
+          },
+          {
+            "false_positives": 2558,
+            "normal_count": 181176,
+            "normal_fpr": 0.014118867841215172,
+            "tau": -0.09999999999999998
+          },
+          {
+            "false_positives": 2392,
+            "normal_count": 181176,
+            "normal_fpr": 0.01320263169514726,
+            "tau": 0.0
+          },
+          {
+            "false_positives": 2218,
+            "normal_count": 181176,
+            "normal_fpr": 0.012242239590232702,
+            "tau": 0.10000000000000009
+          },
+          {
+            "false_positives": 1917,
+            "normal_count": 181176,
+            "normal_fpr": 0.010580871638627632,
+            "tau": 0.20000000000000018
+          },
+          {
+            "false_positives": 1847,
+            "normal_count": 181176,
+            "normal_fpr": 0.010194506998719478,
+            "tau": 0.22500000000000014
+          },
+          {
+            "false_positives": 1829,
+            "normal_count": 181176,
+            "normal_fpr": 0.010095156091314523,
+            "tau": 0.23125000000000012
+          },
+          {
+            "false_positives": 1819,
+            "normal_count": 181176,
+            "normal_fpr": 0.010039961142756215,
+            "tau": 0.2343750000000001
+          },
+          {
+            "false_positives": 1817,
+            "normal_count": 181176,
+            "normal_fpr": 0.010028922153044554,
+            "tau": 0.23515625000000012
+          },
+          {
+            "false_positives": 1814,
+            "normal_count": 181176,
+            "normal_fpr": 0.010012363668477062,
+            "tau": 0.23554687500000013
+          },
+          {
+            "false_positives": 1814,
+            "normal_count": 181176,
+            "normal_fpr": 0.010012363668477062,
+            "tau": 0.2355957031250001
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562011718750012
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2356262207031251
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562927246093762
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562965393066418
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562974929809583
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2356297552585603
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975823879256
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975898385063
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975935637964
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975954264415
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975963577643
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975968234257
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2356297597056256
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975971726713
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972308792
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2356297597259983
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972745348
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972818107
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972854489
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2356297597287268
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972881772
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2356297597288632
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972888595
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972889733
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.235629759728903
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972890582
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972890726
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972890798
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972890832
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.23562975972890848
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.2356297597289086
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23562975972890868
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.2356297612190248
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23562977313995373
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23562979698181163
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23562984466552744
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23563003540039074
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23563079833984388
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23563232421875013
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.23564453125000012
+          },
+          {
+            "false_positives": 1810,
+            "normal_count": 181176,
+            "normal_fpr": 0.009990285689053737,
+            "tau": 0.23574218750000014
+          },
+          {
+            "false_positives": 1802,
+            "normal_count": 181176,
+            "normal_fpr": 0.00994612973020709,
+            "tau": 0.23593750000000013
+          },
+          {
+            "false_positives": 1800,
+            "normal_count": 181176,
+            "normal_fpr": 0.00993509074049543,
+            "tau": 0.23750000000000013
+          },
+          {
+            "false_positives": 1764,
+            "normal_count": 181176,
+            "normal_fpr": 0.009736388925685522,
+            "tau": 0.2500000000000001
+          },
+          {
+            "false_positives": 1673,
+            "normal_count": 181176,
+            "normal_fpr": 0.009234114893804919,
+            "tau": 0.30000000000000004
+          },
+          {
+            "false_positives": 1524,
+            "normal_count": 181176,
+            "normal_fpr": 0.008411710160286131,
+            "tau": 0.40000000000000013
+          },
+          {
+            "false_positives": 1443,
+            "normal_count": 181176,
+            "normal_fpr": 0.007964631076963836,
+            "tau": 0.5
+          },
+          {
+            "false_positives": 1371,
+            "normal_count": 181176,
+            "normal_fpr": 0.007567227447344019,
+            "tau": 0.6000000000000001
+          },
+          {
+            "false_positives": 1259,
+            "normal_count": 181176,
+            "normal_fpr": 0.00694904402349097,
+            "tau": 0.7000000000000002
+          },
+          {
+            "false_positives": 1185,
+            "normal_count": 181176,
+            "normal_fpr": 0.0065406014041594915,
+            "tau": 0.8
+          },
+          {
+            "false_positives": 1079,
+            "normal_count": 181176,
+            "normal_fpr": 0.005955534949441427,
+            "tau": 0.9000000000000001
+          },
+          {
+            "false_positives": 981,
+            "normal_count": 181176,
+            "normal_fpr": 0.0054146244535700095,
+            "tau": 1.0
+          },
+          {
+            "false_positives": 841,
+            "normal_count": 181176,
+            "normal_fpr": 0.004641895173753698,
+            "tau": 1.1
+          },
+          {
+            "false_positives": 660,
+            "normal_count": 181176,
+            "normal_fpr": 0.0036428666048483245,
+            "tau": 1.2000000000000002
+          },
+          {
+            "false_positives": 429,
+            "normal_count": 181176,
+            "normal_fpr": 0.0023678632931514107,
+            "tau": 1.3000000000000003
+          },
+          {
+            "false_positives": 260,
+            "normal_count": 181176,
+            "normal_fpr": 0.0014350686625160065,
+            "tau": 1.4000000000000004
+          },
+          {
+            "false_positives": 223,
+            "normal_count": 181176,
+            "normal_fpr": 0.0012308473528502672,
+            "tau": 1.5
+          },
+          {
+            "false_positives": 207,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011425354351569743,
+            "tau": 1.6
+          },
+          {
+            "false_positives": 194,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010707820020311742,
+            "tau": 1.7000000000000002
+          },
+          {
+            "false_positives": 152,
+            "normal_count": 181176,
+            "normal_fpr": 0.0008389632180862808,
+            "tau": 1.8000000000000003
+          },
+          {
+            "false_positives": 136,
+            "normal_count": 181176,
+            "normal_fpr": 0.000750651300392988,
+            "tau": 1.9000000000000004
+          },
+          {
+            "false_positives": 127,
+            "normal_count": 181176,
+            "normal_fpr": 0.0007009758466905108,
+            "tau": 2.0
+          },
+          {
+            "false_positives": 124,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006844173621230185,
+            "tau": 2.1
+          },
+          {
+            "false_positives": 117,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006457808981322029,
+            "tau": 2.2
+          },
+          {
+            "false_positives": 110,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006071444341413873,
+            "tau": 2.3000000000000003
+          },
+          {
+            "false_positives": 107,
+            "normal_count": 181176,
+            "normal_fpr": 0.000590585949573895,
+            "tau": 2.4000000000000004
+          },
+          {
+            "false_positives": 104,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005740274650064026,
+            "tau": 2.5
+          },
+          {
+            "false_positives": 98,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005409104958714178,
+            "tau": 2.6
+          },
+          {
+            "false_positives": 94,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005188325164480947,
+            "tau": 2.7
+          },
+          {
+            "false_positives": 90,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004967545370247715,
+            "tau": 2.8000000000000003
+          },
+          {
+            "false_positives": 88,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004857155473131099,
+            "tau": 2.9000000000000004
+          },
+          {
+            "false_positives": 86,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004746765576014483,
+            "tau": 3.0
+          }
+        ],
+        "seen_class_columns": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:42:14.447767+08:00",
+      "cost_seconds": {
+        "new_normal_holdout_forward_seconds": 0.13492340000084369,
+        "new_normal_only_search_seconds": 1.2901197999999567,
+        "new_stage_elapsed": 1.849912800000311,
+        "new_test_forward_and_selected_evaluation_seconds": 0.3743858999987424
+      },
+      "metrics": {
+        "attack_detection": 0.9998235493722429,
+        "balanced_accuracy": 0.9941901221624372,
+        "confusion_matrix": [
+          [
+            451196,
+            5233,
+            982,
+            2153,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            10,
+            45413,
+            0,
+            153,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            3,
+            3,
+            25635,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            3,
+            0,
+            2455,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_test_rows": 533239,
+        "macro_f1": 0.8989759572174041,
+        "normal_fpr": 0.018208562898747505,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.9907979265964186,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.9999711885179595,
+            "recall": 0.9817914371012525,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.9438624932452093,
+            "family_error_given_attack_alert": 0.0033577667559144975,
+            "gate_normal_miss_rate": 0.00021941372652273125,
+            "other_attack_family_rate": 0.0033570300157977884,
+            "precision": 0.896568743583669,
+            "recall": 0.9964235562576795,
+            "support": 45576
+          },
+          {
+            "class_id": 2,
+            "class_name": "DDoS",
+            "f1": 0.9810938038195108,
+            "family_error_given_attack_alert": 0.00011701380762930026,
+            "gate_normal_miss_rate": 0.000117000117000117,
+            "other_attack_family_rate": 0.000117000117000117,
+            "precision": 0.963106285456663,
+            "recall": 0.9997659997659998,
+            "support": 25641
+          },
+          {
+            "class_id": 3,
+            "class_name": "Bruteforce",
+            "f1": 0.6801496052084777,
+            "family_error_given_attack_alert": 0.0012205044751830757,
+            "gate_normal_miss_rate": 0.0,
+            "other_attack_family_rate": 0.0012205044751830757,
+            "precision": 0.5156479731148919,
+            "recall": 0.9987794955248169,
+            "support": 2458
+          }
+        ],
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
+      "mode": "new_CPU_stage_calibration",
+      "task_index": 1
+    },
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_002.pt",
+        "checkpoint_sha256_recorded": "baf0716aa327d42473046f2999ceb3ad477a639346a087986f3e7fe337f856ce",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+        "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+        "task_index": 2,
+        "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+      },
+      "calibration": {
+        "calibration_rows": 181176,
+        "grid": [
+          {
+            "false_positives": 9028,
+            "normal_count": 181176,
+            "normal_fpr": 0.04982999955844041,
+            "tau": -1.0
+          },
+          {
+            "false_positives": 8463,
+            "normal_count": 181176,
+            "normal_fpr": 0.046711484964896015,
+            "tau": -0.9
+          },
+          {
+            "false_positives": 8021,
+            "normal_count": 181176,
+            "normal_fpr": 0.044271868238618804,
+            "tau": -0.8
+          },
+          {
+            "false_positives": 7637,
+            "normal_count": 181176,
+            "normal_fpr": 0.042152382213979774,
+            "tau": -0.7
+          },
+          {
+            "false_positives": 6738,
+            "normal_count": 181176,
+            "normal_fpr": 0.037190356338587895,
+            "tau": -0.6
+          },
+          {
+            "false_positives": 6033,
+            "normal_count": 181176,
+            "normal_fpr": 0.03329911246522718,
+            "tau": -0.5
+          },
+          {
+            "false_positives": 5380,
+            "normal_count": 181176,
+            "normal_fpr": 0.029694882324369672,
+            "tau": -0.3999999999999999
+          },
+          {
+            "false_positives": 4929,
+            "normal_count": 181176,
+            "normal_fpr": 0.027205590144389984,
+            "tau": -0.29999999999999993
+          },
+          {
+            "false_positives": 4014,
+            "normal_count": 181176,
+            "normal_fpr": 0.02215525235130481,
+            "tau": -0.19999999999999996
+          },
+          {
+            "false_positives": 3507,
+            "normal_count": 181176,
+            "normal_fpr": 0.019356868459398595,
+            "tau": -0.09999999999999998
+          },
+          {
+            "false_positives": 2990,
+            "normal_count": 181176,
+            "normal_fpr": 0.016503289618934075,
+            "tau": 0.0
+          },
+          {
+            "false_positives": 2281,
+            "normal_count": 181176,
+            "normal_fpr": 0.012589967766150041,
+            "tau": 0.10000000000000009
+          },
+          {
+            "false_positives": 1889,
+            "normal_count": 181176,
+            "normal_fpr": 0.010426325782664371,
+            "tau": 0.20000000000000018
+          },
+          {
+            "false_positives": 1444,
+            "normal_count": 181176,
+            "normal_fpr": 0.007970150571819667,
+            "tau": 0.30000000000000004
+          },
+          {
+            "false_positives": 836,
+            "normal_count": 181176,
+            "normal_fpr": 0.004614297699474544,
+            "tau": 0.40000000000000013
+          },
+          {
+            "false_positives": 677,
+            "normal_count": 181176,
+            "normal_fpr": 0.0037366980173974477,
+            "tau": 0.5
+          },
+          {
+            "false_positives": 578,
+            "normal_count": 181176,
+            "normal_fpr": 0.003190268026670199,
+            "tau": 0.6000000000000001
+          },
+          {
+            "false_positives": 437,
+            "normal_count": 181176,
+            "normal_fpr": 0.002412019251998057,
+            "tau": 0.7000000000000002
+          },
+          {
+            "false_positives": 323,
+            "normal_count": 181176,
+            "normal_fpr": 0.0017827968384333465,
+            "tau": 0.8
+          },
+          {
+            "false_positives": 243,
+            "normal_count": 181176,
+            "normal_fpr": 0.001341237249966883,
+            "tau": 0.9000000000000001
+          },
+          {
+            "false_positives": 226,
+            "normal_count": 181176,
+            "normal_fpr": 0.0012474058374177595,
+            "tau": 1.0
+          },
+          {
+            "false_positives": 203,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011204574557336512,
+            "tau": 1.1
+          },
+          {
+            "false_positives": 189,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010431845277520202,
+            "tau": 1.2000000000000002
+          },
+          {
+            "false_positives": 175,
+            "normal_count": 181176,
+            "normal_fpr": 0.000965911599770389,
+            "tau": 1.3000000000000003
+          },
+          {
+            "false_positives": 170,
+            "normal_count": 181176,
+            "normal_fpr": 0.000938314125491235,
+            "tau": 1.4000000000000004
+          },
+          {
+            "false_positives": 151,
+            "normal_count": 181176,
+            "normal_fpr": 0.0008334437232304499,
+            "tau": 1.5
+          },
+          {
+            "false_positives": 146,
+            "normal_count": 181176,
+            "normal_fpr": 0.000805846248951296,
+            "tau": 1.6
+          },
+          {
+            "false_positives": 142,
+            "normal_count": 181176,
+            "normal_fpr": 0.0007837682695279728,
+            "tau": 1.7000000000000002
+          },
+          {
+            "false_positives": 135,
+            "normal_count": 181176,
+            "normal_fpr": 0.0007451318055371573,
+            "tau": 1.8000000000000003
+          },
+          {
+            "false_positives": 126,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006954563518346801,
+            "tau": 1.9000000000000004
+          },
+          {
+            "false_positives": 119,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006568198878438645,
+            "tau": 2.0
+          },
+          {
+            "false_positives": 109,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006016249392855566,
+            "tau": 2.1
+          },
+          {
+            "false_positives": 100,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005519494855830794,
+            "tau": 2.2
+          },
+          {
+            "false_positives": 83,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004581180730339559,
+            "tau": 2.3000000000000003
+          },
+          {
+            "false_positives": 79,
+            "normal_count": 181176,
+            "normal_fpr": 0.00043604009361063276,
+            "tau": 2.4000000000000004
+          },
+          {
+            "false_positives": 76,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004194816090431404,
+            "tau": 2.5
+          },
+          {
+            "false_positives": 74,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004084426193314788,
+            "tau": 2.6
+          },
+          {
+            "false_positives": 60,
+            "normal_count": 181176,
+            "normal_fpr": 0.0003311696913498477,
+            "tau": 2.7
+          },
+          {
+            "false_positives": 38,
+            "normal_count": 181176,
+            "normal_fpr": 0.0002097408045215702,
+            "tau": 2.8000000000000003
+          },
+          {
+            "false_positives": 25,
+            "normal_count": 181176,
+            "normal_fpr": 0.00013798737139576986,
+            "tau": 2.9000000000000004
+          },
+          {
+            "false_positives": 21,
+            "normal_count": 181176,
+            "normal_fpr": 0.00011590939197244668,
+            "tau": 3.0
+          }
+        ],
+        "helper_scope": "Existing helper also searches 1% and 5%; only 2% test CM is evaluated and reported here",
+        "minimum_normal_log_prior_gap": 2.173462390899658,
+        "operating_point": {
+          "bisection_iterations": 50,
+          "bracket_before_bisection": [
+            -0.19999999999999996,
+            -0.09999999999999998
+          ],
+          "calibration_count": 181176,
+          "calibration_false_positives": 3623,
+          "calibration_fpr": 0.01999712986267497,
+          "calibration_lower_false_positives": 3624,
+          "expansion_direction": "none",
+          "expansion_steps": [],
+          "final_bisection_interval": [
+            -0.1281868293881417,
+            -0.1281868293881416
+          ],
+          "initial_grid_bracket": [
+            -0.19999999999999996,
+            -0.09999999999999998
+          ],
+          "maximum_false_positives": 3623,
+          "starting_interval": [
+            -1.0,
+            3.0
+          ],
+          "status": "available",
+          "target_fpr": 0.02,
+          "total_tau": -0.1281868293881416
+        },
+        "original_train_counts": [
+          1811756,
+          206147,
+          102384,
+          11374,
+          127198,
+          1728,
+          1586,
+          30
+        ],
+        "protocol": {
+          "bisection_iterations": 50,
+          "expansion_multiplier": 2.0,
+          "finite_sample_limit": "FP <= floor(alpha * calibration_count); strict Normal prior maximum and nonincreasing observed FP required",
+          "initial_expansion_step": 4.0,
+          "initial_tau_range": [
+            -1.0,
+            3.0
+          ],
+          "limitation": "The permanent pool was available to allocation validation; it is not a fresh independent calibration sample",
+          "maximum_expansion_steps": 32,
+          "pool": "Same seed-specific permanent Normal TRAIN holdout for every method; never optimized",
+          "replay_la": "Same Replay weights and total tau; baseline tau=1 plus delta, no extra training or inference",
+          "rule": "First adjacent initial-grid bracket when present; otherwise expand toward the missing infeasible lower or feasible upper endpoint; retain feasible upper endpoint after 50 bisections",
+          "section": "27.9",
+          "section26_10_unchanged": true,
+          "targets": [
+            0.01,
+            0.02,
+            0.05
+          ],
+          "tau_range_policy": "normal_holdout_only_bidirectional_bracket_expansion",
+          "test_role": "Evaluate selected total tau only; test metrics never select tau or the expansion range",
+          "version": 2
+        },
+        "search_evaluations": [
+          {
+            "false_positives": 63616,
+            "normal_count": 181176,
+            "normal_fpr": 0.3511281847485318,
+            "tau": -5.0
+          },
+          {
+            "false_positives": 34941,
+            "normal_count": 181176,
+            "normal_fpr": 0.19285666975758378,
+            "tau": -3.0
+          },
+          {
+            "false_positives": 19953,
+            "normal_count": 181176,
+            "normal_fpr": 0.11013048085839185,
+            "tau": -2.0
+          },
+          {
+            "false_positives": 14642,
+            "normal_count": 181176,
+            "normal_fpr": 0.08081644367907449,
+            "tau": -1.5
+          },
+          {
+            "false_positives": 11313,
+            "normal_count": 181176,
+            "normal_fpr": 0.062442045304013774,
+            "tau": -1.25
+          },
+          {
+            "false_positives": 9846,
+            "normal_count": 181176,
+            "normal_fpr": 0.05434494635051,
+            "tau": -1.125
+          },
+          {
+            "false_positives": 9509,
+            "normal_count": 181176,
+            "normal_fpr": 0.05248487658409502,
+            "tau": -1.0625
+          },
+          {
+            "false_positives": 9273,
+            "normal_count": 181176,
+            "normal_fpr": 0.05118227579811896,
+            "tau": -1.03125
+          },
+          {
+            "false_positives": 9145,
+            "normal_count": 181176,
+            "normal_fpr": 0.05047578045657262,
+            "tau": -1.015625
+          },
+          {
+            "false_positives": 9086,
+            "normal_count": 181176,
+            "normal_fpr": 0.0501501302600786,
+            "tau": -1.0078125
+          },
+          {
+            "false_positives": 9062,
+            "normal_count": 181176,
+            "normal_fpr": 0.05001766238353866,
+            "tau": -1.005859375
+          },
+          {
+            "false_positives": 9060,
+            "normal_count": 181176,
+            "normal_fpr": 0.050006623393827,
+            "tau": -1.00537109375
+          },
+          {
+            "false_positives": 9060,
+            "normal_count": 181176,
+            "normal_fpr": 0.050006623393827,
+            "tau": -1.005340576171875
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053253173828125
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053215026855469
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.005319595336914
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053186416625977
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053181648254395
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.00531804561615
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053180158138275
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053180009126663
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179934620857
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179897367954
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179878741503
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179869428277
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179864771664
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179862443358
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179861279204
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860697128
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.005317986040609
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.005317986026057
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.005317986018781
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.005317986015143
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860133241
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860124146
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860119599
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860117325
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860116188
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.005317986011562
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860115335
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860115193
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860115122
+          },
+          {
+            "false_positives": 9059,
+            "normal_count": 181176,
+            "normal_fpr": 0.050001103898971166,
+            "tau": -1.0053179860115087
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.0053179860115051
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.0053179264068604
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.0053176879882812
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.00531005859375
+          },
+          {
+            "false_positives": 9058,
+            "normal_count": 181176,
+            "normal_fpr": 0.049995584404115334,
+            "tau": -1.0052490234375
+          },
+          {
+            "false_positives": 9057,
+            "normal_count": 181176,
+            "normal_fpr": 0.0499900649092595,
+            "tau": -1.005126953125
+          },
+          {
+            "false_positives": 9056,
+            "normal_count": 181176,
+            "normal_fpr": 0.049984545414403676,
+            "tau": -1.0048828125
+          },
+          {
+            "false_positives": 9050,
+            "normal_count": 181176,
+            "normal_fpr": 0.04995142844526869,
+            "tau": -1.00390625
+          },
+          {
+            "false_positives": 9028,
+            "normal_count": 181176,
+            "normal_fpr": 0.04982999955844041,
+            "tau": -1.0
+          },
+          {
+            "false_positives": 8463,
+            "normal_count": 181176,
+            "normal_fpr": 0.046711484964896015,
+            "tau": -0.9
+          },
+          {
+            "false_positives": 8021,
+            "normal_count": 181176,
+            "normal_fpr": 0.044271868238618804,
+            "tau": -0.8
+          },
+          {
+            "false_positives": 7637,
+            "normal_count": 181176,
+            "normal_fpr": 0.042152382213979774,
+            "tau": -0.7
+          },
+          {
+            "false_positives": 6738,
+            "normal_count": 181176,
+            "normal_fpr": 0.037190356338587895,
+            "tau": -0.6
+          },
+          {
+            "false_positives": 6033,
+            "normal_count": 181176,
+            "normal_fpr": 0.03329911246522718,
+            "tau": -0.5
+          },
+          {
+            "false_positives": 5380,
+            "normal_count": 181176,
+            "normal_fpr": 0.029694882324369672,
+            "tau": -0.3999999999999999
+          },
+          {
+            "false_positives": 4929,
+            "normal_count": 181176,
+            "normal_fpr": 0.027205590144389984,
+            "tau": -0.29999999999999993
+          },
+          {
+            "false_positives": 4014,
+            "normal_count": 181176,
+            "normal_fpr": 0.02215525235130481,
+            "tau": -0.19999999999999996
+          },
+          {
+            "false_positives": 3726,
+            "normal_count": 181176,
+            "normal_fpr": 0.02056563783282554,
+            "tau": -0.14999999999999997
+          },
+          {
+            "false_positives": 3663,
+            "normal_count": 181176,
+            "normal_fpr": 0.0202179096569082,
+            "tau": -0.13749999999999996
+          },
+          {
+            "false_positives": 3636,
+            "normal_count": 181176,
+            "normal_fpr": 0.02006888329580077,
+            "tau": -0.13124999999999998
+          },
+          {
+            "false_positives": 3631,
+            "normal_count": 181176,
+            "normal_fpr": 0.020041285821521614,
+            "tau": -0.12968749999999998
+          },
+          {
+            "false_positives": 3627,
+            "normal_count": 181176,
+            "normal_fpr": 0.02001920784209829,
+            "tau": -0.12890625
+          },
+          {
+            "false_positives": 3625,
+            "normal_count": 181176,
+            "normal_fpr": 0.02000816885238663,
+            "tau": -0.128515625
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12832031249999998
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12822265624999998
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12819824218749998
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12819213867187498
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281890869140625
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818756103515624
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281871795654297
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281869888305664
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818689346313475
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868457794189
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818683385848995
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818683087825772
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818683013319965
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682976067064
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682957440614
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682948127386
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682943470772
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682941142467
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682939978315
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682939396236
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682939105197
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293895968
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682938886922
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293885054
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293883235
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682938823256
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293881871
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682938816434
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682938815296
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293881473
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682938814446
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682938814302
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293881423
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.12818682938814197
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293881418
+          },
+          {
+            "false_positives": 3624,
+            "normal_count": 181176,
+            "normal_fpr": 0.020002649357530797,
+            "tau": -0.1281868293881417
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.1281868293881416
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.1281868278980255
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.128186821937561
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.1281867980957031
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.12818603515625
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.128173828125
+          },
+          {
+            "false_positives": 3623,
+            "normal_count": 181176,
+            "normal_fpr": 0.01999712986267497,
+            "tau": -0.128125
+          },
+          {
+            "false_positives": 3608,
+            "normal_count": 181176,
+            "normal_fpr": 0.019914337439837507,
+            "tau": -0.12499999999999997
+          },
+          {
+            "false_positives": 3507,
+            "normal_count": 181176,
+            "normal_fpr": 0.019356868459398595,
+            "tau": -0.09999999999999998
+          },
+          {
+            "false_positives": 2990,
+            "normal_count": 181176,
+            "normal_fpr": 0.016503289618934075,
+            "tau": 0.0
+          },
+          {
+            "false_positives": 2281,
+            "normal_count": 181176,
+            "normal_fpr": 0.012589967766150041,
+            "tau": 0.10000000000000009
+          },
+          {
+            "false_positives": 1889,
+            "normal_count": 181176,
+            "normal_fpr": 0.010426325782664371,
+            "tau": 0.20000000000000018
+          },
+          {
+            "false_positives": 1827,
+            "normal_count": 181176,
+            "normal_fpr": 0.010084117101602862,
+            "tau": 0.21250000000000016
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21406250000000016
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416015625000015
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416625976562514
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416645050048844
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416649818420425
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416652202606215
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665339469911
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416653990745557
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654288768783
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665436327459
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665440052749
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665441915394
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665442846717
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654433123783
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654435452087
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665443661624
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437198318
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437489357
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437634874
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437707633
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437744015
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437762206
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.214166544377713
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437775845
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665443777812
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.2141665443777926
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437779825
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437780108
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437780253
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437780325
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437780358
+          },
+          {
+            "false_positives": 1812,
+            "normal_count": 181176,
+            "normal_fpr": 0.010001324678765399,
+            "tau": 0.21416654437780375
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21416654437780386
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21416654437780394
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21416654586792006
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.2141666412353517
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21416702270507826
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.2141677856445314
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21416931152343766
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21417236328125017
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21418457031250016
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21420898437500013
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21425781250000014
+          },
+          {
+            "false_positives": 1811,
+            "normal_count": 181176,
+            "normal_fpr": 0.009995805183909568,
+            "tau": 0.21445312500000016
+          },
+          {
+            "false_positives": 1809,
+            "normal_count": 181176,
+            "normal_fpr": 0.009984766194197907,
+            "tau": 0.21484375000000017
+          },
+          {
+            "false_positives": 1806,
+            "normal_count": 181176,
+            "normal_fpr": 0.009968207709630415,
+            "tau": 0.21562500000000018
+          },
+          {
+            "false_positives": 1795,
+            "normal_count": 181176,
+            "normal_fpr": 0.009907493266216276,
+            "tau": 0.21875000000000017
+          },
+          {
+            "false_positives": 1754,
+            "normal_count": 181176,
+            "normal_fpr": 0.009681193977127214,
+            "tau": 0.22500000000000014
+          },
+          {
+            "false_positives": 1598,
+            "normal_count": 181176,
+            "normal_fpr": 0.00882015277961761,
+            "tau": 0.2500000000000001
+          },
+          {
+            "false_positives": 1444,
+            "normal_count": 181176,
+            "normal_fpr": 0.007970150571819667,
+            "tau": 0.30000000000000004
+          },
+          {
+            "false_positives": 836,
+            "normal_count": 181176,
+            "normal_fpr": 0.004614297699474544,
+            "tau": 0.40000000000000013
+          },
+          {
+            "false_positives": 677,
+            "normal_count": 181176,
+            "normal_fpr": 0.0037366980173974477,
+            "tau": 0.5
+          },
+          {
+            "false_positives": 578,
+            "normal_count": 181176,
+            "normal_fpr": 0.003190268026670199,
+            "tau": 0.6000000000000001
+          },
+          {
+            "false_positives": 437,
+            "normal_count": 181176,
+            "normal_fpr": 0.002412019251998057,
+            "tau": 0.7000000000000002
+          },
+          {
+            "false_positives": 323,
+            "normal_count": 181176,
+            "normal_fpr": 0.0017827968384333465,
+            "tau": 0.8
+          },
+          {
+            "false_positives": 243,
+            "normal_count": 181176,
+            "normal_fpr": 0.001341237249966883,
+            "tau": 0.9000000000000001
+          },
+          {
+            "false_positives": 226,
+            "normal_count": 181176,
+            "normal_fpr": 0.0012474058374177595,
+            "tau": 1.0
+          },
+          {
+            "false_positives": 203,
+            "normal_count": 181176,
+            "normal_fpr": 0.0011204574557336512,
+            "tau": 1.1
+          },
+          {
+            "false_positives": 189,
+            "normal_count": 181176,
+            "normal_fpr": 0.0010431845277520202,
+            "tau": 1.2000000000000002
+          },
+          {
+            "false_positives": 175,
+            "normal_count": 181176,
+            "normal_fpr": 0.000965911599770389,
+            "tau": 1.3000000000000003
+          },
+          {
+            "false_positives": 170,
+            "normal_count": 181176,
+            "normal_fpr": 0.000938314125491235,
+            "tau": 1.4000000000000004
+          },
+          {
+            "false_positives": 151,
+            "normal_count": 181176,
+            "normal_fpr": 0.0008334437232304499,
+            "tau": 1.5
+          },
+          {
+            "false_positives": 146,
+            "normal_count": 181176,
+            "normal_fpr": 0.000805846248951296,
+            "tau": 1.6
+          },
+          {
+            "false_positives": 142,
+            "normal_count": 181176,
+            "normal_fpr": 0.0007837682695279728,
+            "tau": 1.7000000000000002
+          },
+          {
+            "false_positives": 135,
+            "normal_count": 181176,
+            "normal_fpr": 0.0007451318055371573,
+            "tau": 1.8000000000000003
+          },
+          {
+            "false_positives": 126,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006954563518346801,
+            "tau": 1.9000000000000004
+          },
+          {
+            "false_positives": 119,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006568198878438645,
+            "tau": 2.0
+          },
+          {
+            "false_positives": 109,
+            "normal_count": 181176,
+            "normal_fpr": 0.0006016249392855566,
+            "tau": 2.1
+          },
+          {
+            "false_positives": 100,
+            "normal_count": 181176,
+            "normal_fpr": 0.0005519494855830794,
+            "tau": 2.2
+          },
+          {
+            "false_positives": 83,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004581180730339559,
+            "tau": 2.3000000000000003
+          },
+          {
+            "false_positives": 79,
+            "normal_count": 181176,
+            "normal_fpr": 0.00043604009361063276,
+            "tau": 2.4000000000000004
+          },
+          {
+            "false_positives": 76,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004194816090431404,
+            "tau": 2.5
+          },
+          {
+            "false_positives": 74,
+            "normal_count": 181176,
+            "normal_fpr": 0.0004084426193314788,
+            "tau": 2.6
+          },
+          {
+            "false_positives": 60,
+            "normal_count": 181176,
+            "normal_fpr": 0.0003311696913498477,
+            "tau": 2.7
+          },
+          {
+            "false_positives": 38,
+            "normal_count": 181176,
+            "normal_fpr": 0.0002097408045215702,
+            "tau": 2.8000000000000003
+          },
+          {
+            "false_positives": 25,
+            "normal_count": 181176,
+            "normal_fpr": 0.00013798737139576986,
+            "tau": 2.9000000000000004
+          },
+          {
+            "false_positives": 21,
+            "normal_count": 181176,
+            "normal_fpr": 0.00011590939197244668,
+            "tau": 3.0
+          }
+        ],
+        "seen_class_columns": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:42:16.777371+08:00",
+      "cost_seconds": {
+        "new_normal_holdout_forward_seconds": 0.12850559999787947,
+        "new_normal_only_search_seconds": 1.7505299000004015,
+        "new_stage_elapsed": 2.323545600000216,
+        "new_test_forward_and_selected_evaluation_seconds": 0.3947980999982974
+      },
+      "metrics": {
+        "attack_detection": 0.9957534544560355,
+        "balanced_accuracy": 0.9849466197090507,
+        "confusion_matrix": [
+          [
+            450593,
+            2826,
+            89,
+            448,
+            3556,
+            2052,
+            0,
+            0
+          ],
+          [
+            420,
+            45046,
+            0,
+            80,
+            0,
+            30,
+            0,
+            0
+          ],
+          [
+            17,
+            3,
+            25621,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            8,
+            3,
+            0,
+            2446,
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            11,
+            0,
+            0,
+            31593,
+            2,
+            0,
+            0
+          ],
+          [
+            4,
+            0,
+            0,
+            20,
+            0,
+            428,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        ],
+        "evaluated_test_rows": 565297,
+        "macro_f1": 0.8473417000585841,
+        "normal_fpr": 0.01952067611910424,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.9896552405760559,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.9990045272945757,
+            "recall": 0.9804793238808958,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.9639116246723373,
+            "family_error_given_attack_alert": 0.002435999645672779,
+            "gate_normal_miss_rate": 0.009215376513954713,
+            "other_attack_family_rate": 0.002413550991750044,
+            "precision": 0.9406335484140408,
+            "recall": 0.9883710724942952,
+            "support": 45576
+          },
+          {
+            "class_id": 2,
+            "class_name": "DDoS",
+            "f1": 0.9978773538976846,
+            "family_error_given_attack_alert": 0.0001170777396191071,
+            "gate_normal_miss_rate": 0.000663000663000663,
+            "other_attack_family_rate": 0.000117000117000117,
+            "precision": 0.996538311940879,
+            "recall": 0.9992199992199993,
+            "support": 25641
+          },
+          {
+            "class_id": 3,
+            "class_name": "Bruteforce",
+            "f1": 0.8972853998532648,
+            "family_error_given_attack_alert": 0.0016326530612244899,
+            "gate_normal_miss_rate": 0.0032546786004882017,
+            "other_attack_family_rate": 0.0016273393002441008,
+            "precision": 0.8169672678690715,
+            "recall": 0.9951179820992677,
+            "support": 2458
+          },
+          {
+            "class_id": 4,
+            "class_name": "PortScan",
+            "f1": 0.9465216609742945,
+            "family_error_given_attack_alert": 0.00041131430740998546,
+            "gate_normal_miss_rate": 0.0,
+            "other_attack_family_rate": 0.00041131430740998546,
+            "precision": 0.8988051209103841,
+            "recall": 0.99958868569259,
+            "support": 31606
+          },
+          {
+            "class_id": 5,
+            "class_name": "WebAttack",
+            "f1": 0.28879892037786775,
+            "family_error_given_attack_alert": 0.044642857142857144,
+            "gate_normal_miss_rate": 0.008849557522123894,
+            "other_attack_family_rate": 0.04424778761061947,
+            "precision": 0.17038216560509553,
+            "recall": 0.9469026548672567,
+            "support": 452
+          }
+        ],
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "mode": "new_CPU_stage_calibration",
+      "task_index": 2
+    },
+    {
+      "binding": {
+        "checkpoint_file": "checkpoints/checkpoint_003.pt",
+        "checkpoint_sha256_recorded": "246459ebb563072a1238fdeef6b4bdd4ad26dde3ab35129ad4f8870fb4568327",
+        "config_sha256": "fd631316de03fa6723d6a585f23b827c8646a738e1119d9fe4b0caa29e87c3bb",
+        "identity_hash": "39be55b7b6d13f9a8d65a76031816f60c29035cc59427438d0fcd7eaa55c8832",
+        "protocol": {
+          "alpha": 0.02,
+          "average_incremental_accuracy": "Unweighted mean of stage seen-class balanced accuracies",
+          "calibration": "Common permanent TRAIN Normal holdout at each stage; Section27.9 Normal-only tau extension for multiclass models; stored strict gate threshold for AA variants",
+          "decomposition": "For an attack class at its earliest maximum-recall preceding stage: change in unconditional Normal-miss rate plus change in other-attack-family rate equals signed recall loss",
+          "forgetting": "For each class introduced before the final task: maximum recall over preceding stages minus final recall; unweighted class mean; signed values retained",
+          "no_counterfactual_family_inference": true,
+          "primary_old_class_scope": "All old classes, including Normal",
+          "prior": "Original prepared TRAIN class frequencies, including permanently heldout rows; no TEST prior",
+          "registered_section27_8_unchanged": true,
+          "secondary_old_class_scope": "Old attack classes only, excluding Normal",
+          "section": "28.6--28.7/29.3",
+          "seen_labels": "Mask model outputs and TEST rows to the current seen classes",
+          "selection": "Earliest completed physical source per dataset/method/seed, never by metric",
+          "version": 1
+        },
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "source_completed_at": "2026-10-19T15:45:52.282342+08:00",
+        "source_result": "ncd/results/problem_scout/section26/local_cic_v2/cic_ids_2017/joint_seed1/result.json",
+        "task_index": 3,
+        "training_source_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+      },
+      "calibration": {
+        "operating_point": {
+          "bisection_iterations": 50,
+          "bracket_before_bisection": [
+            0.6000000000000001,
+            0.7000000000000002
+          ],
+          "calibration_count": 181176,
+          "calibration_false_positives": 3623,
+          "calibration_fpr": 0.01999712986267497,
+          "calibration_lower_false_positives": 3624,
+          "expansion_direction": "none",
+          "expansion_steps": [],
+          "final_bisection_interval": [
+            0.6028680503368377,
+            0.6028680503368378
+          ],
+          "initial_grid_bracket": [
+            0.6000000000000001,
+            0.7000000000000002
+          ],
+          "maximum_false_positives": 3623,
+          "starting_interval": [
+            -1.0,
+            3.0
+          ],
+          "status": "available",
+          "target_fpr": 0.02,
+          "total_tau": 0.6028680503368378
+        },
+        "pool": {
+          "count": 181176,
+          "feature_and_label_storage_bytes": 57251616,
+          "feature_bytes": 55802208,
+          "index_bytes": 1449408,
+          "indices_sha256": "4bfc5c55424385f47160ebdb4755f3f45001015c9b989843eef628be42240e33",
+          "label_bytes": 1449408,
+          "outside_attack_replay_memory_budget": true
+        },
+        "protocol": {
+          "bisection_iterations": 50,
+          "expansion_multiplier": 2.0,
+          "finite_sample_limit": "FP <= floor(alpha * calibration_count); strict Normal prior maximum and nonincreasing observed FP required",
+          "initial_expansion_step": 4.0,
+          "initial_tau_range": [
+            -1.0,
+            3.0
+          ],
+          "limitation": "The permanent pool was available to allocation validation; it is not a fresh independent calibration sample",
+          "maximum_expansion_steps": 32,
+          "pool": "Same seed-specific permanent Normal TRAIN holdout for every method; never optimized",
+          "replay_la": "Same Replay weights and total tau; baseline tau=1 plus delta, no extra training or inference",
+          "rule": "First adjacent initial-grid bracket when present; otherwise expand toward the missing infeasible lower or feasible upper endpoint; retain feasible upper endpoint after 50 bisections",
+          "section": "27.9",
+          "section26_10_unchanged": true,
+          "targets": [
+            0.01,
+            0.02,
+            0.05
+          ],
+          "tau_range_policy": "normal_holdout_only_bidirectional_bracket_expansion",
+          "test_role": "Evaluate selected total tau only; test metrics never select tau or the expansion range",
+          "version": 2
+        }
+      },
+      "completed": true,
+      "completed_at": "2026-10-19T18:42:16.785376+08:00",
+      "cost_seconds": {
+        "existing_final_cache_cost_seconds_not_recharged": {
+          "cell_attempt_elapsed": 2.966734200002975,
+          "checkpoint_load_and_holdout": 0.14597169999979087,
+          "data_verification_charged": 0.0,
+          "normal_holdout_logit_inference": 0.1156038000008266,
+          "normal_only_search_seconds": 2.2173106000009284,
+          "reproduction_check_seconds": 0.041526899996824795,
+          "selected_test_evaluation_seconds": 0.11688260000300943,
+          "test_logit_inference": 0.3293998000008287
+        },
+        "new_stage_elapsed": 0.0018286000013176817
+      },
+      "metrics": {
+        "attack_detection": 0.9901893336097787,
+        "balanced_accuracy": 0.7446500975432425,
+        "confusion_matrix": [
+          [
+            450703,
+            3179,
+            86,
+            106,
+            4897,
+            55,
+            270,
+            268
+          ],
+          [
+            424,
+            45149,
+            0,
+            2,
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            15,
+            169,
+            25457,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            23,
+            10,
+            0,
+            2425,
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            32,
+            11,
+            0,
+            0,
+            31563,
+            0,
+            0,
+            0
+          ],
+          [
+            398,
+            1,
+            0,
+            23,
+            0,
+            30,
+            0,
+            0
+          ],
+          [
+            145,
+            0,
+            0,
+            0,
+            0,
+            0,
+            225,
+            0
+          ],
+          [
+            4,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            2
+          ]
+        ],
+        "evaluated_test_rows": 565673,
+        "macro_f1": 0.685558684527924,
+        "normal_fpr": 0.01928131881522488,
+        "per_class": [
+          {
+            "class_id": 0,
+            "class_name": "Normal",
+            "f1": 0.989134299270938,
+            "family_error_given_attack_alert": null,
+            "gate_normal_miss_rate": null,
+            "other_attack_family_rate": null,
+            "precision": 0.9976955975065523,
+            "recall": 0.9807186811847751,
+            "support": 459564
+          },
+          {
+            "class_id": 1,
+            "class_name": "DoS",
+            "f1": 0.959647165099102,
+            "family_error_given_attack_alert": 6.644223954642097e-05,
+            "gate_normal_miss_rate": 0.009303142004563806,
+            "other_attack_family_rate": 6.582411795681937e-05,
+            "precision": 0.9305426740039985,
+            "recall": 0.9906310338774794,
+            "support": 45576
+          },
+          {
+            "class_id": 2,
+            "class_name": "DDoS",
+            "f1": 0.9947249140356361,
+            "family_error_given_attack_alert": 0.006594864590650121,
+            "gate_normal_miss_rate": 0.000585000585000585,
+            "other_attack_family_rate": 0.006591006591006591,
+            "precision": 0.9966331284500646,
+            "recall": 0.9928239928239928,
+            "support": 25641
+          },
+          {
+            "class_id": 3,
+            "class_name": "Bruteforce",
+            "f1": 0.9672915835660152,
+            "family_error_given_attack_alert": 0.004106776180698152,
+            "gate_normal_miss_rate": 0.00935720097640358,
+            "other_attack_family_rate": 0.0040683482506102524,
+            "precision": 0.9487480438184663,
+            "recall": 0.9865744507729862,
+            "support": 2458
+          },
+          {
+            "class_id": 4,
+            "class_name": "PortScan",
+            "f1": 0.9274233831869069,
+            "family_error_given_attack_alert": 0.00034838791410654336,
+            "gate_normal_miss_rate": 0.0010124659874707334,
+            "other_attack_family_rate": 0.0003480351831930646,
+            "precision": 0.8656884256719692,
+            "recall": 0.9986394988293362,
+            "support": 31606
+          },
+          {
+            "class_id": 5,
+            "class_name": "WebAttack",
+            "f1": 0.11152416356877323,
+            "family_error_given_attack_alert": 0.4444444444444444,
+            "gate_normal_miss_rate": 0.8805309734513275,
+            "other_attack_family_rate": 0.05309734513274336,
+            "precision": 0.3488372093023256,
+            "recall": 0.06637168141592921,
+            "support": 452
+          },
+          {
+            "class_id": 6,
+            "class_name": "Botnet",
+            "f1": 0.5202312138728323,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.3918918918918919,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.45454545454545453,
+            "recall": 0.6081081081081081,
+            "support": 370
+          },
+          {
+            "class_id": 7,
+            "class_name": "Infiltration",
+            "f1": 0.014492753623188406,
+            "family_error_given_attack_alert": 0.0,
+            "gate_normal_miss_rate": 0.6666666666666666,
+            "other_attack_family_rate": 0.0,
+            "precision": 0.007407407407407408,
+            "recall": 0.3333333333333333,
+            "support": 6
+          }
+        ],
+        "seen_classes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ]
+      },
+      "mode": "reused_valid_final_calibration_no_forward",
+      "task_index": 3
+    }
+  ],
+  "tasks": [
+    [
+      0,
+      1
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      4,
+      5
+    ],
+    [
+      6,
+      7
+    ]
+  ],
+  "training_configuration": {
+    "batch_size": 256,
+    "buffer_per_class": 200,
+    "calibration_policy": null,
+    "epochs_per_task": 8,
+    "gate_step_policy": null,
+    "hidden": 128,
+    "learning_rate": 0.001,
+    "min_steps_per_task": 2000,
+    "normal_training_rows": null
+  },
+  "training_git_commit": "b835a9309d8aa3bfb20e4e30eb426cb8b076e9d1"
+}

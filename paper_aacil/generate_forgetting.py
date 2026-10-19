@@ -125,8 +125,20 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name, content in render(summary).items():
         (args.output_dir/name).write_text(content, encoding="utf-8")
+    macros = []
+    for group in summary["groups"]:
+        if group["method"] != "aacil" or not group["complete_five_seed"]:
+            continue
+        prefix = {"NSL-KDD": "NSL", "UNSW-NB15": "UNSW", "CIC-IDS-2017": "CIC"}[group["dataset"]]
+        for key, suffix in (("average_incremental_accuracy", "AAIncBAcc"),
+                            ("final_balanced_accuracy", "AAFinalBAcc"),
+                            ("forgetting_all_old_classes", "AAForget")):
+            stat = group["metrics"][key]
+            macros.append("\\newcommand{\\"+prefix+suffix+"}{"+f"{100*stat['mean']:.2f}"+"}")
+            macros.append("\\newcommand{\\"+prefix+suffix+"SD}{"+f"{100*stat['sample_sd']:.2f}"+"}")
+    (args.output_dir/"forgetting_macros.tex").write_text("\n".join(macros)+"\n", encoding="utf-8")
     print(json.dumps({"status": "complete", "groups": len(summary["groups"]),
-        "files": ["forgetting_results.tex", "forgetting_decomposition.tex", "forgetting_per_class.tex"]}))
+        "files": ["forgetting_results.tex", "forgetting_decomposition.tex", "forgetting_per_class.tex", "forgetting_macros.tex"]}))
 
 
 if __name__ == "__main__":
