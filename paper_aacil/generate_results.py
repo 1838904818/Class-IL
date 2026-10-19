@@ -249,7 +249,7 @@ def retention_outputs(evidence):
           ['Data','Version','n','Mean inc. BAcc','Final BAcc','Forget (pp)','ADR','MF1','FPR'],rows,'llrrrrrrr',
           note='Only complete seeds 1/2/3/4/42 receive means and sample SD; incomplete groups show n and dashes. All outcomes come from formal test trajectories, never development selection metrics. Signed forgetting includes old Normal; rates/accuracies are percentages. Eligibility is a development property, not formal success.')
     formal_text=('Complete formal five-seed groups in the saved assessment: '+', '.join(completed)+'. '
-                 'Incomplete groups have no aggregate performance or inferential conclusion in this presentation.')
+                 'Incomplete groups have no aggregate performance or inferential conclusion in the Section 29.8 presentation; separately labeled Section 29.9 partial groups are descriptive only.')
     iso=group_map.get(('UNSW-NB15','aacil_iso'),{})
     kd=group_map.get(('UNSW-NB15','aacil_kd'),{})
     contrasts={c['metric']:c for c in evidence['iso_minus_kd'] if c['dataset']=='UNSW-NB15'}
@@ -349,6 +349,14 @@ def kd_reassessment_macros(evidence):
         'NSL seeds 1/2 were available before the document commit at 20:47:57 MYT, and all five were available before direct authorization at approximately 21:29 MYT; '
         'NSL is therefore not represented as blind confirmation, and availability does not imply that the user inspected the outcomes. '
         +conclusion+' The original Section 29.8 CBF failure and Section 27.8 failure remain unchanged.')
+    for d in evidence['dataset_results']:
+        if 0 < d['n'] < 5:
+            text+=(' '+SHORT[d['dataset']]+f" has {d['n']}/5 completed KD seeds: mean incremental BAcc "
+                +fmt(d['metrics']['average_incremental_accuracy'])+r'\%, final BAcc '
+                +fmt(d['metrics']['final_balanced_accuracy'])+r'\%, and signed forgetting '
+                +fmt(d['metrics']['forgetting_all_old_classes'])+' pp, descriptive only; missing seeds are '
+                +', '.join(map(str,d.get('missing_seeds',[s for s in SEEDS if s not in d['seeds']])))+'. '
+                +'A single seed has no sample SD; no partial checkpoint supplies a completed-cell result.')
     return {'KDReassessmentText':text,
             'KDReassessmentTables':r'\section{Separately scoped KD reassessment}\input{generated/section299_comparisons.tex}'}
 
@@ -357,9 +365,23 @@ def kd_reassessment_summary_zh(evidence):
     if not evidence:
         return []
     counts='、'.join(f"{SHORT[d['dataset']]} KD {d['n']}/5（{d['status']}）" for d in evidence['dataset_results'])
+    partial=[]
+    for d in evidence['dataset_results']:
+        if 0 < d['n'] < 5:
+            def mean_only(key):
+                m=d['metrics'].get(key)
+                return '--' if not m or m.get('mean') is None else f"{100*m['mean']:.2f}"
+            partial.append(SHORT[d['dataset']]+' 已完成种子的增量/最终BAcc/遗忘均值为 '
+                +'/'.join(mean_only(k) for k in ['average_incremental_accuracy','final_balanced_accuracy','forgetting_all_old_classes'])
+                +'（前两项%，遗忘pp），仅描述；缺seed '+','.join(map(str,d.get('missing_seeds',[s for s in SEEDS if s not in d['seeds']])))+'。')
+    cutoff=('硬截止已结束；保存的执行状态为 '+str(evidence.get('execution',{}).get('saved_execution_status') or '未知')+'，不代表进程仍活跃。'
+            if evidence.get('execution',{}).get('hard_cutoff_ended') else '')
+    if evidence.get('execution',{}).get('termination_cause') == 'owner_hard_deadline':
+        cutoff+='终止原因是预设截止 TimeoutError，不是 OOM；未完成种子的保存阶段不计入完整种子指标。'
     return ['**29.9 单独重评 KD：** '+counts+'。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，'
             '五个均在约21:29直接授权前已可得，因此不是盲法确认，也不推测用户是否看过。'
-            'NSL/CIC 两者的三个固定条件仍须完整；当前数值判定为 '+evidence['required_numeric_verdict']+'，不改原CBF失败。', '']
+            'NSL/CIC 两者的三个固定条件仍须完整；当前数值判定为 '+evidence['required_numeric_verdict']+'，不改原CBF失败。'
+            +''.join(partial)+cutoff, '']
 
 
 def retention_summary_zh(evidence, aggregate_text):

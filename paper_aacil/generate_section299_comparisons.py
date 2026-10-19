@@ -26,6 +26,7 @@ KD = 'aacil_kd'
 SOURCE = '7418b7d418f9974e88cba5dcc66c6126df117264'
 DOCUMENT_TIME = '2026-10-19T20:47:57+08:00'
 AUTHORIZATION_TIME_APPROX = '2026-10-19T21:29:00+08:00'
+HARD_CUTOFF = '2026-10-19T21:50:26+08:00'
 FINAL_BACC = 'final_balanced_accuracy'
 METRICS = [AIA, FINAL_BACC, FORGET, ADR, 'final_macro_f1', 'final_normal_fpr']
 
@@ -97,6 +98,9 @@ def assess(summary, groups, rows, sources):
                 'not_blind_confirmatory_results_available_before_authorization' if dataset == 'NSL-KDD' else
                 'prospectively_requested_followup_incomplete_until_all_comparators_present',
             'n': g.get('n', 0), 'seeds': g.get('seeds', []), 'kd_complete_five_seed': complete(groups, dataset, KD),
+            'completed_seeds': [s for s in SEEDS if s in g.get('seeds', [])],
+            'missing_seeds': [s for s in SEEDS if s not in g.get('seeds', [])],
+            'descriptive_only': not complete(groups, dataset, KD),
             'metrics': {k: g.get('metrics', {}).get(k) for k in METRICS},
             'available_group_counts': {m: groups.get((dataset, m), {}).get('n', 0) for m in EXTERNAL+[KD, 'aacil', 'replay_bs']},
             'tests': tests, 'status': all_required([t['decision'] for t in tests]),
@@ -125,6 +129,7 @@ def assess(summary, groups, rows, sources):
             'NSL seeds 1/2 were available before the Section29.9 document commit, and all five before direct authorization; no user inspection is inferred.',
             'No inference, training, checkpoint audit or CM metric recomputation is performed by this reporting script.',
             'Only complete five-seed groups permit significance; missing CIC KD, original-AA or Replay-BS seeds remain pending.',
+            'Partial group means use only completed trajectories at their actual n; a single seed has null sample SD. Partial checkpoints never supply completed-cell metrics.',
             'Known necessary-condition failure takes precedence over other missing evidence; no seed is dropped.',
             'Paired one-sided tests are unadjusted; no detected harm is not equivalence or noninferiority.',
             'Section29.8 CBF failure and the original Section27.8 failure remain unchanged.']}
@@ -134,10 +139,11 @@ def render(result):
     rows = []
     for d in result['dataset_results']:
         rows.append([escape(DATA[d['dataset']]), str(d['n'])] +
-            [value(d['metrics'][k]) if d['kd_complete_five_seed'] and d['metrics'][k] else '--' for k in METRICS])
+            [value(d['metrics'][k]) if d['n'] >= 1 and d['metrics'][k] else '--' for k in METRICS])
     text = table('Section 29.9 KD reassessment at stagewise Normal-holdout calibration target $\\alpha=2\\%$.',
         'section299-kd', 'lrrrrrrr', ['Data', '$n$', 'Mean inc. BAcc', 'Final BAcc', 'Forget (pp)', 'ADR', 'MF1', 'FPR'], rows,
-        r'Mean$\pm$sample SD, exact five formal seeds; incomplete groups show counts and dashes. '
+        r'Mean$\pm$sample SD over completed trajectories at the stated $n$; $n=1$ has undefined SD (--). '
+        r'Incomplete groups are descriptive only; significance requires all five formal seeds. '
         r'UNSW is exploratory. NSL results were available before direct authorization, so NSL is not blind confirmation. '
         r'KD uses fixed $\lambda_G=.5$ and DER $\alpha=\beta=1$. Original CBF and Section27.8 failures are unchanged.')
     rows = []
@@ -155,7 +161,82 @@ def render(result):
             r'2: final BAcc superiority over Replay-BS requires $p_{>}<.05$. 3: ADR harm relative to original AA means $p_{<}<.05$. '
             r'NSL and CIC17 are both required; UNSW does not replace either. Unadjusted tests; no detected harm is not equivalence. '
             'Required numerical verdict: '+escape(result['required_numeric_verdict'])+'.')
+    missing = ['{} completed seeds {}; missing {}'.format(DATA[d['dataset']],
+        ','.join(map(str, d['completed_seeds'])) or 'none', ','.join(map(str, d['missing_seeds'])) or 'none')
+        for d in result['dataset_results'] if d['missing_seeds']]
+    if missing:
+        text += r'\par\noindent\footnotesize '+escape('; '.join(missing))+r'.\normalsize\par'+'\n'
+    execution = result.get('execution', {})
+    if execution.get('hard_cutoff_ended'):
+        text += (r'\par\noindent\footnotesize The hard cutoff ended at 21:50:26 MYT. '
+            'The saved execution status is '+escape(execution.get('saved_execution_status') or execution.get('saved_status') or 'unavailable')+
+            r'; this stored status is not a live-process observation. Incomplete work is not counted as completed scientific evidence.\normalsize\par'+'\n')
+        if execution.get('termination_cause') == 'owner_hard_deadline':
+            text += r'\par\noindent\footnotesize The runner recorded the owner-deadline TimeoutError, not an out-of-memory failure.\normalsize\par'+'\n'
+        if execution.get('known_partial_checkpoint_count') is not None:
+            cost = execution.get('saved_partial_stage_cost_seconds', {}).get('training_seconds')
+            text += (r'\par\noindent\footnotesize The incomplete seed has '+str(execution['known_partial_checkpoint_count'])+
+                ' saved stages'+(f' with {cost:.2f} s of recorded stage training' if cost is not None else '')+
+                r'. This is a lower bound, excluding the unfinished unsaved stage and unrecorded overhead; it supplies no final-seed metric.\normalsize\par'+'\n')
     return '% Separate Section29.9 reassessment; original decisions unchanged.\n'+text
+
+
+def execution_metadata(path, hard_cutoff_ended):
+    """Optional post-exit small JSON only; never inspect a live process or weights."""
+    out = {'hard_cutoff_at': HARD_CUTOFF, 'hard_cutoff_ended': hard_cutoff_ended,
+           'saved_execution_status': None, 'saved_status': None,
+           'known_partial_checkpoint_count': None, 'recorded_cost_seconds': None,
+           'note': 'Execution metadata is separate from completed scientific trajectories; unavailable costs/counts are not zero.'}
+    if path is None:
+        return out
+    raw = read(path)
+    out.update(source=relative(path), input_rule='Caller supplies this saved file only after the training process has exited',
+               saved_execution_status=raw.get('execution_status'), saved_status=raw.get('status'),
+               saved_completed=raw.get('completed'), saved_completed_at=raw.get('completed_at'))
+    if raw.get('error_type') == 'TimeoutError' and raw.get('error') == 'Owner experiment hard deadline reached; preserve completed checkpoints':
+        out.update(termination_cause='owner_hard_deadline', saved_failure_at=raw.get('failed_at'),
+                   termination_note='The frozen runner recorded the configured deadline, not a model efficacy or out-of-memory failure.')
+    # A supplied incomplete physical result can expose saved checkpoints/costs.
+    if raw.get('identity') and raw.get('completed') is not True and isinstance(raw.get('checkpoints'), list):
+        out['known_partial_checkpoint_count'] = len(raw['checkpoints'])
+        out['known_partial_task_indices'] = [c.get('task_index') for c in raw['checkpoints']]
+    costs = {k: v for k, v in raw.items() if k.endswith('_seconds_total') and isinstance(v, (int, float)) and not isinstance(v, bool)}
+    out['recorded_cost_seconds'] = costs or None
+    current = raw.get('current_cell')
+    if not isinstance(current, dict):
+        return out
+    dataset, method, seed = (current.get(k) for k in ('dataset', 'method', 'seed'))
+    if dataset not in DATASETS or method != KD or seed not in SEEDS:
+        raise ValueError('Execution metadata current_cell is not a fixed Section29.9 KD cell')
+    cell = path.parent/dataset.lower().replace('-', '_')/f'{method}_seed{seed}'
+    out['current_cell'] = {'dataset': dataset, 'method': method, 'seed': seed}
+    final = cell/'result.json'
+    if final.exists() and read(final).get('completed') is True:
+        out['partial_cell_note'] = 'The saved current_cell already has a completed result; it is not counted as partial work.'
+        return out
+    folder = cell/'checkpoints'
+    if not folder.is_dir():
+        out['partial_cell_note'] = 'No checkpoint sidecar directory is available; saved partial cost is unknown.'
+        return out
+    stages = []
+    for sidecar in sorted(folder.glob('checkpoint_*.json')):
+        record = read(sidecar)
+        task = record.get('task_index')
+        if (not isinstance(task, int) or isinstance(task, bool) or task < 0 or
+                sidecar.name != f'checkpoint_{task:03d}.json'):
+            raise ValueError('Partial checkpoint sidecar has an ambiguous stage index')
+        stage_cost = {k: v for k, v in record.items()
+            if k.endswith('_seconds') and isinstance(v, (int, float)) and not isinstance(v, bool)}
+        stages.append({'task_index': task, 'sidecar': relative(sidecar), 'recorded_cost_seconds': stage_cost})
+    fields = sorted({k for stage in stages for k in stage['recorded_cost_seconds']})
+    out.update(known_partial_checkpoint_count=len(stages),
+        known_partial_task_indices=[s['task_index'] for s in stages],
+        saved_partial_stages=stages,
+        saved_partial_stage_cost_seconds={k: sum(s['recorded_cost_seconds'].get(k, 0.) for s in stages) for k in fields},
+        saved_partial_cost_field_stage_counts={k: sum(k in s['recorded_cost_seconds'] for s in stages) for k in fields},
+        partial_cost_scope='Lower bound from saved stage JSON only. The unsaved current stage, loading, serialization and unrecorded work are unknown. Training includes gate+family; family includes base-family+CBF, so these nested fields must not be added again. Cumulative training fields are excluded.',
+        partial_cell_note='Saved partial stages do not supply completed-seed metrics or significance; no checkpoint payload was read.')
+    return out
 
 
 def main():
@@ -163,10 +244,19 @@ def main():
     parser.add_argument('--input', type=Path, default=ROOT/'ncd/results/problem_scout/section28/forgetting_v1')
     parser.add_argument('--output', type=Path, default=ROOT/'ncd/results/problem_scout/section29/section299_comparisons_v1/result.json')
     parser.add_argument('--tex-output', type=Path, default=ROOT/'paper_aacil/generated/section299_comparisons.tex')
+    parser.add_argument('--hard-cutoff-ended', action='store_true',
+                        help='Declare the fixed hard cutoff has elapsed; never infer this from an in_progress file')
+    parser.add_argument('--execution-status', type=Path,
+                        help='Optional saved matrix or incomplete result JSON, read only after process exit; requires --hard-cutoff-ended')
     args = parser.parse_args()
+    if args.execution_status and not args.hard_cutoff_ended:
+        parser.error('--execution-status is restricted to post-exit hard-cutoff reporting')
+    if args.hard_cutoff_ended and datetime.now().astimezone() < datetime.fromisoformat(HARD_CUTOFF):
+        parser.error('The fixed hard cutoff has not elapsed')
     summary, groups, rows, sources = load_snapshot(args.input.resolve())
     result = assess(summary, groups, rows, sources)
     result['source_summary'] = relative(args.input/'result.json')
+    result['execution'] = execution_metadata(args.execution_status.resolve() if args.execution_status else None, args.hard_cutoff_ended)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.tex_output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False)+'\n', encoding='utf-8')
