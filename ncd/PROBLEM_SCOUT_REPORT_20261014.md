@@ -1,5 +1,26 @@
 # 类增量 NIDS 选题侦察｜剩余差距、步数对照与历史资格判定
 
+## Section25 后续：攻击家族替代与同状态学习干扰（探索性，完整）
+
+**2026-10-19。** 既有task末轨迹确认恶化发生于task2→3：Replay原正确R2L转U2R平均362.4条、转Normal111.8条；原正确WebAttack转Bruteforce12.33条、转Normal1条（各5/3 seeds）。这只能定位任务更新，不能恢复历史优化步。以下逐步时间是重新精确复现的训练路径，不是历史测试样本的逐步轨迹。
+
+**匹配小对照。** 两数据集×MIR/额外稀有CE×seeds1/2，共8条路径，各2000真实步；起点、当前样本顺序、回放配额/选样、常驻记忆及Adam均保持原设定。每50步的更新前状态固定取40点，以相同参数、Adam矩及批次做full、rare-only、nonrare-only、zero-gradient、without-competitor五个一次Adam克隆，全部丢弃；另有不更新参照。保留原整批CE权重/分母，不对子集重新平衡。竞争类预定NSL R2L/CIC DoS；去除其真标签损失贡献，不删除logit。CIC nonrare含当前Botnet及旧类，并非仅旧类；zero-gradient仍可被Adam动量推动。
+
+下表“失误步”是探针中最早一行从正确变错误，依次seed1/2；新/旧分别为U2R/R2L、Infiltration/WebAttack。ΔCE单位为10⁻³，正值更差；先取每seed全部40点均值，再给两seed均值±样本SD，事件不作独立重复。新类Δ=`full−rare-only`，旧类Δ=`full−nonrare-only`。
+
+| 数据集 / 路径 | 新类首次失误步 | 旧类首次失误步 | 新类ΔCE | 旧类ΔCE |
+|---|---:|---:|---:|---:|
+| NSL / MIR | 214 / 212 | 79 / 24 | +1.172 ± 0.055 | +0.544 ± 0.064 |
+| NSL / 额外CE | 233 / 194 | 36 / 22 | +0.407 ± 0.081 | +1.467 ± 0.205 |
+| CIC / MIR | 1060 / 1663 | 1 / 47 | +4.876 ± 0.639 | −0.073 ± 0.157 |
+| CIC / 额外CE | 无 / 1828 | 1 / 38 | +0.994 ± 1.683 | −0.043 ± 0.172 |
+
+**替代去向。** NSL新U2R首次丢失均转R2L；旧R2L最早一行在3/4路径先转Normal，但各行首次失误的累计去向以U2R为主。四路径最终仍52/52、200/200正确，属于可恢复干扰。CIC MIR各一行Infiltration短暂转Botnet后恢复，最终均30/30；额外CE则29/30、28/30行从未正确，最终DoS22/28行、Normal7/0行，主要是未学会而非遗忘。其seed2仅一行首次于1828转Normal、1871恢复，随后还发生过翻转。旧WebAttack主要被Bruteforce替代，最终正确187/183（MIR）、186/183（CE），并非所有首次恢复都能保持至终点。
+
+**判断。** NSL双向局部效应跨seed同向，新类效应在四个固定500步窗口均为正；但真实完整更新相对不更新仍平均降低新类CE，不能说每步恶化。CIC额外CE的新类效应跨seed反号；MIR各路径40点新类ΔCE绝对值之和的92–95%来自首点，不能当作持续效应量。`full−without-DoS`在两个臂均跨seed反号，不支持“预测为DoS，所以DoS梯度是稳定致因”；NSL R2L特定效应也有CE seed2均值为负的例外。主分析保留全部点及无rare行事件，不按符号、窗口或结果筛选。下一项有价值的假设是区分当前Botnet与旧类梯度、并检查Adam/整批权重尺度，而非继续排斥Normal或直接增大稀有CE；尚未追加该实验。
+
+**复核/成本/边界。** [完整分析](results/problem_scout/rare_boundary/interference_analysis_v1/result.json)及[原始探针](results/problem_scout/rare_boundary/interference_v1/result.json)：8终点模型/完整Adam/记忆/CM/6曝光链精确复现；320预状态及8逐行NPZ实际哈希通过，full克隆对真实下一步的参数/Adam各320次精确一致。另独立重执行各路径pre0/500/1500共24点，1152标量比较最大差0。正式16000真实步、1600诊断Adam步；driver外层cell wall合计331.295s，其中不重叠组件292.632s（采用含诊断的优化区间，不重复相加其子项）、未分项38.663s；独立复核另120克隆步、6.421s。匹配数据/真实步/每条件一次Adam及探针量，不匹配损失项总权重、梯度尺度或FLOPs。仅两已暴露seed，训练/常驻探针、事后选定竞争类；路径间状态不同，不能作额外CE的同状态因果比较，单步效应不证明长期机制或测试改善。源`79991f2f`；`python -I ncd/analyze_family_interference.py --weights verify`复核。权重/逐行NPZ仅本地；RQ1/RQ3及创新仍未关闭。
+
 ## Section25 后续：稀有攻击检查点诊断与预算匹配小对照（探索性，完整）
 
 **2026-10-19：64个历史检查点及16个对照均完成。** [历史诊断](results/problem_scout/rare_boundary/diagnosis_v1/result.json)重现64/64原CM。仅有task末检查点：R2L/WebAttack可定位到task2→3（零起算）；U2R/Botnet/Infiltration首次出现在最后task3，不能称为“后续遗忘”或定位历史优化步。D2的R2L判Normal平均1745.4→1551.6条，却有家族正确1033→694条；正确R2L→U2R的251.4条多于→Normal的103.6条，并非统一的Normal吞噬。
