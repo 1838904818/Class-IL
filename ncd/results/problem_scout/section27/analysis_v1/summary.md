@@ -12,8 +12,8 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 | NSL-KDD | Freq | 5/5 | 1.990±0.000 | 4.928±2.423 | 69.667±2.534 | 56.843±4.322 | 53.503±3.495 |
 | NSL-KDD | Replay+LA | 5/5 | 1.990±0.000 | 4.080±2.162 | 65.386±5.301 | 46.829±4.930 | 34.830±5.777 |
 | NSL-KDD | AA-CIL | 5/5 | 1.990±0.000 | 6.146±1.794 | 62.838±3.460 | 55.664±3.364 | 49.364±1.981 |
-| NSL-KDD | TS-mem | 0/5 | pending | pending | pending | pending | pending |
-| NSL-KDD | AA-noAttMem | 0/5 | pending | pending | pending | pending | pending |
+| NSL-KDD | TS-mem | 5/5 | 1.990±0.000 | 4.409±2.117 | 63.192±4.660 | 51.441±2.160 | 45.622±1.921 |
+| NSL-KDD | AA-noAttMem | 5/5 | 1.990±0.000 | 4.317±1.824 | 60.295±3.157 | 56.672±3.337 | 47.294±3.049 |
 | NSL-KDD | FARQ (supplementary) | 5/5 | 1.990±0.000 | 3.680±0.989 | 67.448±2.773 | 58.860±5.788 | 48.699±4.938 |
 | NSL-KDD | Joint (offline) | 5/5 | 1.990±0.000 | 6.786±1.002 | 66.633±1.795 | 59.371±2.898 | 50.009±2.750 |
 | UNSW-NB15 | Replay | 5/5 | 1.993±0.000 | 1.784±0.201 | 38.521±3.773 | 26.266±0.855 | 17.037±0.984 |
@@ -21,7 +21,7 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 | UNSW-NB15 | WACB | 5/5 | 1.993±0.000 | 1.931±0.239 | 48.970±4.140 | 32.807±1.176 | 22.389±1.464 |
 | UNSW-NB15 | Freq | 5/5 | 1.993±0.000 | 2.009±0.264 | 50.419±2.932 | 31.224±1.729 | 21.251±1.542 |
 | UNSW-NB15 | Replay+LA | 5/5 | 1.993±0.000 | 1.784±0.201 | 38.521±3.773 | 26.266±0.855 | 17.037±0.984 |
-| UNSW-NB15 | AA-CIL | 0/5 | pending | pending | pending | pending | pending |
+| UNSW-NB15 | AA-CIL | 5/5 | 1.993±0.000 | 1.922±0.153 | 69.090±0.928 | 41.178±0.277 | 50.269±1.181 |
 | UNSW-NB15 | TS-mem | 0/5 | pending | pending | pending | pending | pending |
 | UNSW-NB15 | AA-noAttMem | 0/5 | pending | pending | pending | pending | pending |
 | UNSW-NB15 | FARQ (supplementary) | 5/5 | 1.993±0.000 | 1.838±0.184 | 45.099±4.200 | 30.247±1.676 | 20.095±1.619 |
@@ -47,6 +47,12 @@ A logically determined pass/fail is kept separate from evidence completeness; mi
 
 NSL-KDD AA-CIL (5/5): recorded G/F/sum training 175.948/159.800/335.747 s; G/F steps 44280/40000. Per-task actual memory, benign stream and separate calibration rows/bytes are in result.json; capacity is an upper limit, not actual occupancy.
 
+NSL-KDD TS-mem (5/5): recorded G/F/sum training 158.666/156.346/315.012 s; G/F steps 40000/40000. Per-task actual memory, benign stream and separate calibration rows/bytes are in result.json; capacity is an upper limit, not actual occupancy.
+
+NSL-KDD AA-noAttMem (5/5): recorded G/F/sum training 173.364/153.185/326.549 s; G/F steps 44280/40000. Per-task actual memory, benign stream and separate calibration rows/bytes are in result.json; capacity is an upper limit, not actual occupancy.
+
+UNSW-NB15 AA-CIL (5/5): recorded G/F/sum training 205.047/188.788/393.835 s; G/F steps 52880/50000. Per-task actual memory, benign stream and separate calibration rows/bytes are in result.json; capacity is an upper limit, not actual occupancy.
+
 Strongest baselines use one fixed five-seed mean winner per dataset/metric among the seven Section27.4 controls; FARQ is supplementary only. Replay+LA shares Replay weights and calibrated total τ, so its physical cost is not charged twice.
 No detected significant harm is not proof of noninferiority/equivalence. These paired tests are unadjusted, use five seeds, and retain selection/multiplicity limitations. Joint is an offline access exception, not a guaranteed attainable upper bound. This RQ2 sub-study does not close RQ1, RQ3, or substantive innovation.
-Payload mode: verify; actual payload hashes checked: 410. No new inference or threshold fitting was performed by this analyzer.
+Payload mode: verify; actual payload hashes checked: 475. No new inference or threshold fitting was performed by this analyzer.
