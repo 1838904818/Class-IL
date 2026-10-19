@@ -1,8 +1,9 @@
 """Export small, path-sanitized publication copies, never weights.
 
-Reads completed non-smoke physical cells from the four explicit experiment
-roots; --section29 additionally includes formal Section29/local_v1 and
-Section29/retention_local_v1 cells, never the development or queue roots.
+Reads completed non-smoke physical cells from the four Section28 experiment
+roots and the retrieved Section29.11 original-AA root by default. --section29
+also includes formal Section29 cells and resumed KD cells, never development
+or queue roots.
 Original JSON, checkpoints, logs, matrices and score caches are immutable.
 The paper table generator can consume --input publication_v1 without weights.
 """
@@ -25,8 +26,10 @@ INPUT_NAMES = ("replay_bs_local_v1", "cic_local_queue_v1",
 METHODS = {"replay_bs", "aacil", "ts_mem", "aa_noattmem"}
 SECTION29_METHODS = {"aacil_kd", "aacil_nogkd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
 RETENTION_METHODS = {"aacil_kd", "aacil_iso", "aacil_wa", "aacil_cbf", "aacil_ncm"}
-RETENTION_ROOTS = (SECTION29 / "retention_local_v1", SECTION29 / "section299_cic_kd_local_v1")
+RETENTION_ROOTS = (SECTION29 / "retention_local_v1", SECTION29 / "section299_cic_kd_local_v1",
+                   SECTION29 / "section2911_cic_kd_resume_v1")
 SECTION29_ROOTS = (SECTION29 / "local_v1", *RETENTION_ROOTS)
+HPC_SECTION2911_ROOT = ROOT / "ncd/results/problem_scout/section27/hpc_cic_section2911"
 SECTION29_CONFIG_KEYS = ("section298", "section298_schema_version", "lambda_g",
                          "derpp_alpha", "derpp_beta", "cbf_epochs", "cbf_lr_multiplier")
 FORMAL_SEEDS = {1, 2, 3, 4, 42}
@@ -136,7 +139,7 @@ def write_derived(path, value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", choices=INPUT_NAMES, action="append",
-                        help="Explicit Section28 experiment root name; defaults to all four")
+                        help="Explicit Section28 experiment root name; default includes all four plus retrieved Section29.11 original-AA cells")
     parser.add_argument("--section29", action="store_true",
                         help="Also export formal Section29 local_v1 and retention_local_v1 cells; never development, selection, smoke, or queue summaries")
     parser.add_argument("--complete-retention-groups-only", action="store_true",
@@ -145,6 +148,8 @@ def main():
     args = parser.parse_args()
     output = args.output_dir.resolve()
     roots = [SECTION / name for name in (args.input or INPUT_NAMES)]
+    if not args.input:
+        roots.append(HPC_SECTION2911_ROOT)
     if args.section29:
         roots.extend(SECTION29_ROOTS)
     if not output.is_relative_to(SECTION) or any(output.is_relative_to(p) or p.is_relative_to(output) for p in roots):
