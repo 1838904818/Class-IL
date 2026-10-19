@@ -1,7 +1,8 @@
-"""Serial AA-CIL allocation with the frozen UUID telemetry guard and a hard stop.
+"""Serial AA-CIL allocation with the frozen UUID telemetry guard.
 
 This wrapper does not change the scientific runner or submit any other job.
 The local same-entry smoke uses two CPU threads, one seed/epoch and <=64/class.
+Section 29.11 can omit the owner deadline; Slurm limits and resource guards remain.
 """
 from __future__ import annotations
 
@@ -35,7 +36,12 @@ def main():
     parser.add_argument("--dataset", choices=DATASETS, required=True)
     parser.add_argument("--methods", nargs="+", choices=METHODS, required=True)
     parser.add_argument("--seeds", nargs="+", type=int, choices=(1, 2, 3, 4, 42), required=True)
-    parser.add_argument("--deadline-utc", required=True)
+    deadline_mode = parser.add_mutually_exclusive_group(required=True)
+    deadline_mode.add_argument("--deadline-utc", help="Owner absolute hard deadline")
+    deadline_mode.add_argument(
+        "--no-owner-deadline", action="store_true",
+        help="Section 29.11: no owner absolute deadline; retain Slurm/resource limits",
+    )
     parser.add_argument("--local-smoke", action="store_true")
     args = parser.parse_args()
     wrapper_source = os.environ.get("NCD_SOURCE_COMMIT", "")
@@ -43,9 +49,11 @@ def main():
         parser.error("NCD_SOURCE_COMMIT must identify the actual wrapper commit")
     if os.environ.get("NCD_TRAINING_SOURCE_COMMIT") != TRAINING_SOURCE:
         parser.error("The frozen AA-CIL training source must be explicit")
-    deadline = datetime.fromisoformat(args.deadline_utc.replace("Z", "+00:00"))
-    if deadline.tzinfo is None or deadline <= datetime.now(timezone.utc):
-        parser.error("The hard deadline must be a future timezone-aware timestamp")
+    deadline = None
+    if not args.no_owner_deadline:
+        deadline = datetime.fromisoformat(args.deadline_utc.replace("Z", "+00:00"))
+        if deadline.tzinfo is None or deadline <= datetime.now(timezone.utc):
+            parser.error("The hard deadline must be a future timezone-aware timestamp")
     if len(set(args.methods)) != len(args.methods) or len(set(args.seeds)) != len(args.seeds):
         parser.error("Repeated methods/seeds would duplicate work")
     roots = (args.code_root, args.data_root, args.output_root, args.protected_root)
@@ -87,7 +95,13 @@ def main():
     record = {"job_id": os.environ.get("SLURM_JOB_ID"), "wrapper_source_commit": wrapper_source,
               "training_source_commit": TRAINING_SOURCE, "dataset": DATASETS[args.dataset],
               "methods": args.methods, "seeds": seeds, "smoke": args.local_smoke,
-              "command": command, "started_utc": utc(), "deadline_utc": deadline.isoformat(),
+              "command": command, "started_utc": utc(),
+              "deadline_utc": deadline.isoformat() if deadline is not None else None,
+              "owner_deadline": deadline.isoformat() if deadline is not None else None,
+              "owner_deadline_reason": (
+                  "Section 29.11: experiment completion has no owner absolute cutoff"
+                  if args.no_owner_deadline else "Explicit owner absolute hard deadline"
+              ),
               "telemetry_policy": {"source": "frozen problem_scout_job.TelemetryGuard",
                                    "sample_interval_seconds": 60, "failure_limit": 3,
                                    "minimum_low_samples": 3, "low_utilization_percent": 10,
@@ -135,7 +149,7 @@ def main():
             child_started, next_sample = time.monotonic(), 0.0
             while child.poll() is None:
                 elapsed = time.monotonic() - child_started
-                if datetime.now(timezone.utc) >= deadline:
+                if deadline is not None and datetime.now(timezone.utc) >= deadline:
                     record["guard_stop_reason"] = "owner_hard_deadline"
                     exit_code = 124
                     raise TimeoutError("Owner hard deadline reached; completed seeds remain usable")
@@ -154,7 +168,10 @@ def main():
                         raise RuntimeError("Stopping own child: " + reason)
                 copy_small(output, protected, previous)
                 try:
-                    child.wait(timeout=min(5, max(.1, (deadline-datetime.now(timezone.utc)).total_seconds())))
+                    wait_seconds = 5 if deadline is None else min(
+                        5, max(.1, (deadline-datetime.now(timezone.utc)).total_seconds())
+                    )
+                    child.wait(timeout=wait_seconds)
                 except subprocess.TimeoutExpired:
                     pass
             exit_code = child.returncode

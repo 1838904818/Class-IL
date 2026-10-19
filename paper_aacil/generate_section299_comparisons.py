@@ -140,12 +140,12 @@ def render(result):
     for d in result['dataset_results']:
         rows.append([escape(DATA[d['dataset']]), str(d['n'])] +
             [value(d['metrics'][k]) if d['n'] >= 1 and d['metrics'][k] else '--' for k in METRICS])
-    text = table('Section 29.9 KD reassessment at stagewise Normal-holdout calibration target $\\alpha=2\\%$.',
+    text = table('Fixed-KD reassessment at stagewise Normal-holdout calibration target $\\alpha=2\\%$.',
         'section299-kd', 'lrrrrrrr', ['Data', '$n$', 'Mean inc. BAcc', 'Final BAcc', 'Forget (pp)', 'ADR', 'MF1', 'FPR'], rows,
         r'Mean$\pm$sample SD over completed trajectories at the stated $n$; $n=1$ has undefined SD (--). '
         r'Incomplete groups are descriptive only; significance requires all five formal seeds. '
         r'UNSW is exploratory. NSL results were available before direct authorization, so NSL is not blind confirmation. '
-        r'KD uses fixed $\lambda_G=.5$ and DER $\alpha=\beta=1$. Original CBF and Section27.8 failures are unchanged.')
+        r'KD uses fixed $\lambda_G=.5$ and DER $\alpha=\beta=1$. The validation-selected CBF and original superiority decisions remain failed.')
     rows = []
     for d in result['dataset_results']:
         for t in d['tests']:
@@ -155,7 +155,7 @@ def render(result):
                 escape(METHODS.get(t.get('reference'), 'pending')), str(t['n']), effect,
                 number(t.get('p_'+t['p_direction'])), t['decision']])
     if any(t['n'] == 5 and t['status'] == 'complete' for d in result['dataset_results'] for t in d['tests']):
-        text += table('Section29.9 fixed KD comparisons: candidate minus reference.', 'section299-tests', 'lllrrrl',
+        text += table('Fixed-KD reassessment: candidate minus reference.', 'section299-tests', 'lllrrrl',
             ['Data', 'Criterion', 'Reference', '$n$', r'$\Delta$ (pp)', 'One-sided $p$', 'Decision'], rows,
             r'1: forgetting harm, $p_{>}<.05$ means failure against the lowest-forgetting external-five member. '
             r'2: final BAcc superiority over Replay-BS requires $p_{>}<.05$. 3: ADR harm relative to original AA means $p_{<}<.05$. '
@@ -168,17 +168,18 @@ def render(result):
         text += r'\par\noindent\footnotesize '+escape('; '.join(missing))+r'.\normalsize\par'+'\n'
     execution = result.get('execution', {})
     if execution.get('hard_cutoff_ended'):
-        text += (r'\par\noindent\footnotesize The hard cutoff ended at 21:50:26 MYT. '
-            'The saved execution status is '+escape(execution.get('saved_execution_status') or execution.get('saved_status') or 'unavailable')+
-            r'; this stored status is not a live-process observation. Incomplete work is not counted as completed scientific evidence.\normalsize\par'+'\n')
+        text += (r'\par\noindent\footnotesize The initial manuscript window ended on 19 October 2026 at 21:50:26 MYT. '
+            'That attempt recorded status '+escape(execution.get('saved_execution_status') or execution.get('saved_status') or 'unavailable')+
+            r'. Follow-up completion of the remaining CIC17 KD seeds and five original-AA seeds is authorized without an owner absolute cutoff; '
+            r'these tables contain only completed results in the saved snapshot.\normalsize\par'+'\n')
         if execution.get('termination_cause') == 'owner_hard_deadline':
-            text += r'\par\noindent\footnotesize The runner recorded the owner-deadline TimeoutError, not an out-of-memory failure.\normalsize\par'+'\n'
+            text += r'\par\noindent\footnotesize The initial runner recorded the configured deadline TimeoutError, rather than an out-of-memory failure.\normalsize\par'+'\n'
         if execution.get('known_partial_checkpoint_count') is not None:
             cost = execution.get('saved_partial_stage_cost_seconds', {}).get('training_seconds')
             text += (r'\par\noindent\footnotesize The incomplete seed has '+str(execution['known_partial_checkpoint_count'])+
                 ' saved stages'+(f' with {cost:.2f} s of recorded stage training' if cost is not None else '')+
                 r'. This is a lower bound, excluding the unfinished unsaved stage and unrecorded overhead; it supplies no final-seed metric.\normalsize\par'+'\n')
-    return '% Separate Section29.9 reassessment; original decisions unchanged.\n'+text
+    return '% Fixed-KD reassessment; original decisions unchanged.\n'+text
 
 
 def execution_metadata(path, hard_cutoff_ended):
@@ -248,7 +249,19 @@ def main():
                         help='Declare the fixed hard cutoff has elapsed; never infer this from an in_progress file')
     parser.add_argument('--execution-status', type=Path,
                         help='Optional saved matrix or incomplete result JSON, read only after process exit; requires --hard-cutoff-ended')
+    parser.add_argument('--render-existing', action='store_true',
+                        help='Render the saved comparison JSON only; do not recompute tests or alter historical execution metadata')
     args = parser.parse_args()
+    if args.render_existing:
+        if args.hard_cutoff_ended or args.execution_status:
+            parser.error('--render-existing cannot change execution metadata')
+        result=read(args.output)
+        if result.get('section')!='29.9' or result.get('candidate')!=KD:
+            parser.error('--render-existing requires the saved fixed-KD comparison')
+        args.tex_output.parent.mkdir(parents=True, exist_ok=True)
+        args.tex_output.write_text(render(result), encoding='utf-8')
+        print(json.dumps({'rendered_existing':str(args.output), 'recomputed_statistics':False}))
+        return
     if args.execution_status and not args.hard_cutoff_ended:
         parser.error('--execution-status is restricted to post-exit hard-cutoff reporting')
     if args.hard_cutoff_ended and datetime.now().astimezone() < datetime.fromisoformat(HARD_CUTOFF):

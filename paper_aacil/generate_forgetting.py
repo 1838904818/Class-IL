@@ -73,8 +73,8 @@ def render(summary):
             r"Smaller forgetting alone is not superiority: inspect final and incremental BAcc together. "
             r"Groups with $n<5$ are incomplete, descriptive only. Joint is offline; FARQ is supplementary; "
             r"Replay+LA shares Replay's calibrated total $\tau$ and incurs no separate inference. "
-            r"Section 29.8 reports all five F variants; the main variant is fixed by development seeds 5/6, not by this test table. "
-            r"These post-hoc stagewise summaries do not change the registered Section 27.8 decision."))
+            r"The validation-selected retention protocol reports all five F variants; the main variant is fixed by development seeds 5/6, not by this test table. "
+            r"These post-hoc stagewise summaries do not change the original superiority protocol decision."))
         aa = [g for g in cells if g["method"] == "aacil"]
         if aa:
             rows = []

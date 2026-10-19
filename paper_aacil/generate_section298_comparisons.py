@@ -180,7 +180,7 @@ def render(result):
             rows.append([escape(NAMES[group["method"]])+marker, str(group["n"])] +
                 [value(group["metrics"][k]) if group["metrics"][k] else "--" for k in DESCRIPTIVE])
         slug = dataset.lower().replace("-", "_")
-        pieces.append(table(escape(DATA[dataset])+r": all five Section 29.8 versions at $\alpha=2\%$.",
+        pieces.append(table(escape(DATA[dataset])+r": all five retention variants at $\alpha=2\%$.",
             "section298-all-"+slug, "lrrrrrrrr", headers, rows,
             r"Mean$\pm$sample SD; accuracy/rates are percentages, signed forgetting is in percentage points. "
             r"$\star$ marks the main version selected only on UNSW training validation seeds 5/6; "
@@ -193,7 +193,7 @@ def render(result):
                 escape(NAMES.get(test.get("reference"), "pending")), str(test["n"]), effect(test),
                 number(test.get("p_"+test["p_direction"])), test["decision"]])
     if decision_rows:
-        pieces.append(table("Section 29.8 necessary tests for the frozen selected main version.", "section298-required", "llrrrrl",
+        pieces.append(table("Retention protocol necessary tests for the frozen selected main version.", "section298-required", "llrrrrl",
             ["Data", "Criterion", "Reference", "$n$", r"$\Delta$ (pp)", "One-sided $p$", "Decision"], decision_rows,
             r"1: all-old forgetting must not be significantly higher than the lowest-forgetting member of the exact external five ($p_{>}<0.05$ means failure). "
             r"2: final BAcc must exceed Replay-BS ($p_{>}<0.05$ required). "
@@ -201,7 +201,7 @@ def render(result):
             r"UNSW and NSL must both satisfy all three; optional CIC17 is separate. No detected harm is not equivalence. "
             "Overall required-dataset verdict: "+escape(result["overall_required_dataset_verdict"])+". "))
     else:
-        pieces.append(r"\par\noindent\textit{Section 29.8: no eligible version was selected on development validation; "
+        pieces.append(r"\par\noindent\textit{Retention protocol: no eligible version was selected on development validation; "
                       r"formal fallback results do not convert this into success.}\par"+"\n")
     rows = [[escape(DATA[c["dataset"]]), "Forget (all)" if c["metric"] == FORGET else "Mean inc. BAcc",
              str(c["n"]), effect(c), number(c.get("p_less")), number(c.get("p_greater")),
@@ -210,7 +210,7 @@ def render(result):
         ["Data", "Metric", "$n$", r"$\Delta$ (pp)", "$p_{<}$", "$p_{>}$", "$p_{2s}$"], rows,
         r"These formal-seed comparisons do not select the main method or add success criteria. "
         r"Five complete matched seeds are required; missing or undefined tests remain unavailable. "
-        r"All p values are unadjusted. Prior Section 29.4 and Section 27.8 decisions are not amended."))
+        r"All p values are unadjusted. Earlier retention and original superiority decisions are not amended."))
     return "% Generated from immutable Section29.8 selection and saved stagewise metrics only.\n"+"\n".join(pieces)
 
 

@@ -55,7 +55,10 @@
 \providecommand{\CICConclusionText}{CIC-IDS-2017 contributes only the evidence completed by the stated cutoff; incomplete groups do not extend the present cross-dataset claim.}
 \providecommand{\RetentionSelectionText}{The validation-only retention selection remains incomplete.}
 \providecommand{\RetentionFormalResultsText}{Complete formal retention groups are not yet available in this snapshot.}
-\providecommand{\RetentionDecisionText}{Section 29.8 remains pending; no success is inferred.}
+\providecommand{\RetentionDecisionText}{The validation-selected retention protocol remains pending.}
+\providecommand{\RetentionAbstractText}{Retention results are pending generated evidence.}
+\providecommand{\RetentionConclusionText}{Retention conclusions are pending generated evidence.}
+\providecommand{\CICKDCompletedSeeds}{\pending}
 \providecommand{\RetentionComparisonAppendix}{}
 \providecommand{\KDReassessmentText}{The separately authorized KD reassessment remains pending; it does not amend the original CBF failure.}
 \providecommand{\KDReassessmentTables}{}
@@ -71,7 +74,7 @@
 \raggedbottom
 \maketitle
 \begin{abstract}
-Class-incremental network intrusion detection must retain old attacks while adapting to new traffic. We study whether benign data remaining available outside attack replay memory improve detection without compromising retention. AA-CIL combines a refreshed, independently calibrated benign--attack gate with an attack-only family classifier. At a stagewise benign-calibration target of \PrimaryAlpha\%, its UNSW-NB15 mean incremental balanced accuracy is \UNSWAAIncBAcc\%, final balanced accuracy is \UNSWAAFinalBAcc\%, and forgetting is \UNSWAAForget$\pm$\UNSWAAForgetSD\ percentage points. NSL-KDD forgetting is \NSLAAForget$\pm$\NSLAAForgetSD\ points. Thus favorable detection does not establish successful class retention. UNSW-NB15 attack detection reaches \UNSWAACILADR\%, but its advantage over the strongest registered comparator is only \UNSWRegisteredADRDelta\ points ($p=\UNSWRegisteredP$), failing the original superiority criterion. NSL-KDD test FPR is \NSLAACILFPR\%, demonstrating calibration shift. A post-hoc exposure-matched control supports a dataset-dependent detection benefit, with unmatched total computation. A subsequent validation-only experiment compares five family-retention alternatives under gate distillation; its main version must meet explicit forgetting, final-accuracy and detection requirements before a method-benefit claim is allowed. We preserve negative and incomplete evidence and do not infer novelty or universal superiority. \CICResultStatus.
+Class-incremental network intrusion detection must control false alarms while retaining old attack classes. We study benign data available outside attack replay memory, using a refreshed, independently calibrated benign--attack gate and an attack-only family classifier. \RetentionAbstractText
 \end{abstract}
 \noindent\textbf{Keywords:} continual learning; intrusion detection; benign data availability; false-positive calibration; replay memory.
 
@@ -91,7 +94,7 @@ The contribution is an evidence-bounded experimental study:
 \item A low-false-alarm evaluation reporting actual test FPR, binary attack detection, family-level performance, and negative registered outcomes rather than relying on aggregate accuracy alone.
 \item A separately identified post-hoc control, Replay-BS, demonstrating a dataset-dependent difference under matched benign exposure while retaining the limitation of unmatched total computation.
 \end{itemize}
-These are study contributions, not a declaration that the architecture or its components are individually novel. In particular, the registered strongest-comparator test includes the ablations, and its failure is retained throughout this paper.
+The study follows three named decision rules: the original superiority protocol, the validation-selected retention protocol, and the fixed-KD reassessment. Their complete criteria and documented chronology are given in Appendix~\ref{app:protocols}; each retains its own outcome.
 
 \section{Related Work}
 \subsection{Replay and class-incremental bias}
@@ -203,7 +206,7 @@ The attack-only family learner uses a task-boundary DER++-objective adaptation: 
 An initial development search used mean stagewise validation balanced accuracy and varied three distillation coefficients. It was superseded before formal KD results by the retention-constrained selection below. Its completed runs remain part of the development cost, but do not enter the new selection. The previously planned noGKD ablation is not one of the five family-model candidates in this revised experiment.
 
 \subsection{Post-hoc parameter isolation: AA-CIL-ISO}
-AA-CIL-ISO changes only the family learner relative to AA-CIL-KD: the gate, G-KD objective, benign refresh and calibration remain the same. It uses the existing MLP feature encoder, not a transplanted transformer pipeline. On the first task containing attacks, the encoder and that task's new family heads train jointly within one family-model update budget. The encoder is then frozen. Each new family $c$ receives its own rank-8 residual adapter and two-logit binary head,
+AA-CIL-ISO changes only the family learner relative to AA-CIL-KD: the gate, G-KD objective, benign refresh and calibration remain the same. It uses the existing MLP feature encoder. On the first task containing attacks, the encoder and that task's new family heads train jointly within one family-model update budget. The encoder is then frozen. Each new family $c$ receives its own rank-8 residual adapter and two-logit binary head,
 \begin{equation}
  h_c=h+U_cV_ch,\qquad p_c(x)=\operatorname{softmax}(H_ch_c)_1.
 \end{equation}
@@ -211,7 +214,7 @@ The head learns that family versus the other attacks available in the current ta
 
 All heads introduced in one task share a single training loop: their class-balanced binary cross-entropies are averaged before each optimizer step. Each new head participates in the task's common $\max(8\text{ epochs},2000\text{ steps})$ schedule, rather than receiving an additional serial budget per head. The first encoder training has no separate pretraining budget. Joint family-loop time and shared steps are recorded once; exclusive per-head time is not inferred from that total. If the first task contains only one attack family, there are no other-attack negatives: this limitation is recorded explicitly, without invented negatives or benign substitution.
 
-After the gate declares an attack, prediction is $\arg\max_{c\in\mathcal A_t}p_c(x)$ over independently normalized positive probabilities. This is head-only inference with no router and no cross-head softmax calibration. It adapts OFRA-style parameter isolation to the present backbone and protocol; historical OFRA forgetting values do not establish its performance here. ISO is evaluated under the newly registered retention and detection criteria, with descriptive paired comparisons against KD. No ISO success is inferred before those results are available.
+After the gate declares an attack, prediction is $\arg\max_{c\in\mathcal A_t}p_c(x)$ over independently normalized positive probabilities. This is head-only inference with no router and no cross-head softmax calibration. It adapts OFRA-style parameter isolation to the present backbone and is evaluated under the validation-selected retention protocol, with descriptive paired comparisons against KD.
 
 \subsection{Retention alternatives and validation-only selection}
 The revised experiment compares five family learners under the same G-KD gate: KD, ISO, weight alignment (WA), class-balanced fine-tuning (CBF), and nearest-class-mean prediction (NCM). WA rescales newly introduced classifier weights by the mean old-to-new weight-norm ratio after task training \citep{wa}. CBF adds small-learning-rate updates on balanced retained attack training memory \citep{eeil}. NCM computes class prototypes from retained attack training rows encoded by the current family encoder and predicts by feature-space distance \citep{icarl}. These are adaptations of established mechanisms, not claims of novel versions of the cited algorithms. Their additional time, steps, prototype storage and model storage are reported separately.
@@ -249,7 +252,7 @@ For confusion counts $C_{ij}$ with Normal index $b$, we report
 \end{align}
 ADR is binary attack detection, not correct-family recall. Macro-F1 and attack-family macro recall supplement it. The registered family-recall guard includes attack classes meeting the specified minimum test support; excluded rare classes remain visible in per-class evidence. Precision is undefined for a class with no predictions in a seed and is never changed to zero. Its group mean and sample standard deviation use only defined seed values, with the actual $n_{\mathrm{defined}}$ (\texttt{defined\_n}) reported separately from the total seed count. If none are defined, the mean remains undefined; with fewer than two defined values, the sample standard deviation is undefined. Such a seed is not dropped from recall, forgetting, or other defined endpoints.
 
-The primary calibration target is $\alpha=\PrimaryAlpha\%$. Actual test FPR is reported alongside it because equal calibration targets need not yield equal test FPR. The primary registered superiority criterion requires a one-sided paired test against the highest-mean registered comparator in at least two datasets. The comparator is chosen once per dataset and endpoint from whole-seed means, not separately per seed. Other criteria test Macro-F1 harm, the family-recall guard, the CIC gate-refresh ablation, and descriptive cost/Joint reporting. Paired differences, sample standard deviations, and effect sizes accompany tests where available. No multiplicity correction was registered; selection of the highest observed mean and the small seed count limit inferential strength. A nonsignificant difference is not an equivalence or noninferiority result.
+The primary calibration target is $\alpha=\PrimaryAlpha\%$. Actual test FPR is reported alongside it because equal calibration targets need not yield equal test FPR. The original superiority protocol requires a one-sided paired test against the highest-mean registered comparator in at least two datasets. The comparator is chosen once per dataset and endpoint from whole-seed means, not separately per seed. Other criteria concern Macro-F1 harm, attack-family recall, the CIC gate-refresh ablation, and descriptive cost/Joint reporting. Paired differences, sample standard deviations and effect sizes accompany complete five-seed comparisons. Appendix~\ref{app:protocols} defines all three protocols and their distinct comparator sets.
 
 \section{Results}
 \subsection{Class-incremental retention and forgetting}
@@ -270,60 +273,60 @@ The historical maximum excludes the final stage; negative values therefore retai
 
 The completed original-AA trajectories show why detection and retention must be separated. On UNSW-NB15, mean incremental BAcc is \UNSWAAIncBAcc\%, final BAcc is \UNSWAAFinalBAcc\%, and signed forgetting is \UNSWAAForget$\pm$\UNSWAAForgetSD\ percentage points. On NSL-KDD, the corresponding values are \NSLAAIncBAcc\%, \NSLAAFinalBAcc\%, and \NSLAAForget$\pm$\NSLAAForgetSD\ points. A higher trajectory average therefore coexists with substantial old-class recall loss; the new KD and ISO variants target that unresolved endpoint rather than converting the earlier detection gain into a retention claim.
 
-For each old attack class, the confusion matrix partitions its error into a gate miss (prediction Normal) and a wrong attack-family prediction. At the same class-specific pre-final peak used above, the recall loss equals the increase in these two error rates. The decomposition uses their common class support and common peak checkpoint; it does not sum independently selected worst stages. It separates observed routing errors, not a causal proof that weight interference alone caused forgetting, because every checkpoint also receives its own calibrated threshold.
+For each old attack class, the confusion matrix partitions its error into a gate miss (prediction Normal) and a wrong attack-family prediction. At the same class-specific pre-final peak used above, the recall loss equals the increase in these two error rates. Both components use the same class support and peak checkpoint.
 \generatedtable{forgetting_decomposition}{Gate and family components of forgetting}
 
-The revised pre-formal decision rule (Section 29.8 of the work order, superseding Section 29.4) makes retention mandatory. On both UNSW-NB15 and NSL-KDD, the validation-selected version must have no significantly greater forgetting than the lowest-forgetting external baseline, significantly higher final balanced accuracy than exposure-matched Replay-BS, and no significantly lower $\alpha=2\%$ attack detection than original AA-CIL. The external set is Replay, DER++, WACB, Freq and Replay+LA; one comparator is chosen from each complete five-seed group mean, never per seed. Tests are paired, one-sided, at $p<0.05$. CIC-IDS-2017 is reported as available and does not replace either required dataset. Mean incremental balanced accuracy, Macro-F1 and FPR remain mandatory descriptive outcomes. Failure of any necessary condition leaves the false-alarm--forgetting trade-off unresolved and precludes a successful method-contribution claim. Incomplete groups remain incomplete. This revised experiment cannot overwrite the failed original Section 27.8 test, and nonsignificant harm is not proof of equivalence or noninferiority.
+The validation-selected retention protocol makes retention mandatory on both UNSW-NB15 and NSL-KDD. Its selected version must satisfy the forgetting, final-BAcc and ADR conditions in Appendix~\ref{app:retention-protocol}. CIC-IDS-2017 is supplementary to this protocol. Mean incremental BAcc, Macro-F1 and actual test FPR accompany all five variants.
 
 \RetentionSelectionText
 \generatedtable{retention_selection}{Locked validation-only retention selection}
 \RetentionFormalResultsText
 \generatedtable{retention_results}{Formal five-version retention results}
 \RetentionDecisionText{}
-The supplemental Section 29.8 CIC-IDS-2017 job reached the scheduler's \texttt{DEADLINE} state without an allocation or any execution, yielding no scientific results; this is missing evidence, not a negative model outcome.
 
 \paragraph{Separately scoped KD reassessment.}
 \KDReassessmentText
+The CIC-IDS-2017 KD group currently contains \CICKDCompletedSeeds/5 completed seeds and is descriptive only; its incomplete paired comparisons remain pending.
 
 \subsection{Primary calibration-set operating points}
-Table~\ref{tab:main-results} reports all available methods at the common calibration target, including actual test FPR and completed seed counts. \CICResultStatus. The cutoff is \EvidenceCutoff; an unavailable cell denotes unfinished evidence, not zero performance.
+Table~\ref{tab:main-results} reports methods at the common calibration target, actual test FPR and completed seed counts at \EvidenceCutoff.
 \IfFileExists{generated/main_results.tex}{%
 \AddToHookNext{env/table*/end}{\par\vspace{2pt}\begin{minipage}{.98\linewidth}\footnotesize
-Exposure confound: AA-CIL and AA-noAttMem refresh up to 50,000 benign training rows per task outside replay memory. After Normal's introduction, ordinary replay controls use quota-limited Normal training memory. Their ADR differences therefore cannot be attributed wholly to the gate/family structure. Post-hoc Replay-BS matches the added benign exposure and attack allocation, but not the two-model total computation.
+\CICResultStatus\ AA-CIL and AA-noAttMem refresh benign training rows outside replay memory; ordinary replay controls use quota-limited Normal training memory. Replay-BS matches the added benign exposure and attack allocation. Computational and causal limitations are discussed in Section~\ref{sec:limitations}.
 \end{minipage}}%
 \input{generated/main_results.tex}%
 }{\generatedtable{main_results}{Primary operating-point results}}
 
 On UNSW-NB15, AA-CIL obtains ADR \UNSWAACILADR\%, Macro-F1 \UNSWAACILMFOne\%, and test FPR \UNSWAACILFPR\%. Relative to the strongest \emph{external} ADR baseline, the gain is \UNSWExternalADRDelta\ percentage points. This comparison is descriptive with an associated paired test, distinct from the registered strongest-comparator conclusion.
 
-High binary detection does not imply accurate attack naming: AA-CIL's UNSW-NB15 Worms recall is \UNSWWormsRecall\%, but precision is only \UNSWWormsPrecision\%; Fuzzers recall is \UNSWFuzzersRecall\%. The appendix retains these difficult-family results rather than using ADR to conceal family-level errors.
+AA-CIL's UNSW-NB15 Worms recall is \UNSWWormsRecall\%, with precision \UNSWWormsPrecision\%; Fuzzers recall is \UNSWFuzzersRecall\%. The appendix reports the corresponding difficult-family metrics.
 
 On NSL-KDD, AA-CIL reaches ADR \NSLAACILADR\%, compared with \NSLFreqADR\% for Freq. Its Macro-F1 is \NSLAACILMFOne\%, compared with \NSLWACBMFOne\% for WACB. Its test FPR, \NSLAACILFPR\%, is substantially different from the calibration target. The method therefore neither wins across benchmarks nor delivers the nominal low-FPR operating point on this shifted test distribution.
 
 \CICPrimaryResultsText
 
-\subsection{The registered conclusion remains negative}
+\subsection{Outcome of the original superiority protocol}
 On UNSW-NB15, the strongest registered ADR comparator is AA-noAttMem, not Freq. AA-CIL's paired mean advantage is \UNSWRegisteredADRDelta\ percentage points, with one-sided $p=\UNSWRegisteredP$. It does not pass the registered significance criterion. NSL-KDD also fails the superiority requirement. Even a favorable CIC-IDS-2017 result cannot then provide superiority in the required majority of datasets. The primary registered criterion and conjunction are therefore negative; remaining individual criteria retain their actual complete or incomplete states.
 \generatedtable{registered_criteria}{Registered criterion-by-criterion decision}
 
-This result is not revised by restricting the baseline set to external methods. The external comparison answers a useful but different question: whether the complete configuration improves upon the selected standard replay alternatives. Both comparisons are shown, and neither is described as a proof of equivalence.
+The separately reported external-baseline comparison does not alter this protocol's strongest-comparator definition or negative outcome.
 
 \subsection{What the ablations identify}
 \generatedtable{ablation_results}{Availability and memory ablations}
-The UNSW-NB15 contrast between TS-mem (ADR \UNSWTSADR\%) and AA-noAttMem (\UNSWNoAttADR\%) is consistent with a substantial benefit from greater benign refresh within the two-model design. The latter retains ordinary attack allocations, so attack-memory transfer is not required to observe this particular gain. However, the comparison also changes benign sample exposure, realized gate updates, and temporary storage. It does not by itself prove that the architecture, rather than the additional training data, causes the improvement.
+On UNSW-NB15, TS-mem achieves ADR \UNSWTSADR\%, compared with \UNSWNoAttADR\% for AA-noAttMem. The latter uses greater benign refresh while retaining ordinary attack allocations.
 
-The AA-CIL--AA-noAttMem contrast is the evidence for attack-memory transfer. Its UNSW-NB15 detection difference is small relative to the external-baseline gap and is not significant in the registered one-sided test. This makes memory transfer a secondary, presently weakly supported component. It does not establish zero benefit, equivalence, or dispensability on every dataset.
+The AA-CIL--AA-noAttMem contrast measures attack-memory transfer. Its UNSW-NB15 detection difference is small relative to the external-baseline gap and is not significant in the registered one-sided test.
 
 \subsection{Post-hoc exposure-matched and shift analyses}
-Replay-BS was requested after the initial results. It supplies a single multiclass replay model with the same refreshed benign samples, attack-only memory capacity, current attacks, and calibration policy as AA-CIL. It is the necessary control for distinguishing decomposition from the broader benign-access setting. Its evidence is reported separately and cannot retroactively rescue the registered criterion.
+Replay-BS was added after the initial results as an exposure-matched control. Its single multiclass replay model uses the same refreshed benign samples, attack-only memory capacity, current attacks and calibration policy as AA-CIL.
 \generatedtable{replay_bs}{Post-hoc Replay-BS comparison}
 
-The complete NSL-KDD and UNSW-NB15 groups now permit this comparison. On UNSW-NB15, AA-CIL improves attack detection over Replay-BS by \UNSWAABSDiff\ percentage points in the post-hoc paired test ($p=\UNSWAABSP$; Table~\ref{tab:ablation-results}), despite matching the additional benign exposure and replay-allocation rule. This supports an incremental benefit of the decomposed configuration beyond merely providing more benign examples under this protocol. On NSL-KDD, the difference is only \NSLAABSDiff\ points ($p=\NSLAABSP$), and AA-CIL has higher test FPR and lower Macro-F1 than Replay-BS. Hence the evidence is dataset dependent, not a general architectural advantage. Moreover, the two-model system still has a separate family-training budget, so this is not a compute-matched causal isolation of architecture.
+On UNSW-NB15, AA-CIL improves attack detection over Replay-BS by \UNSWAABSDiff\ percentage points in the post-hoc paired test ($p=\UNSWAABSP$; Table~\ref{tab:ablation-results}). On NSL-KDD, the difference is \NSLAABSDiff\ points ($p=\NSLAABSP$), with higher test FPR and lower Macro-F1 than Replay-BS. The exposure-matched detection result therefore differs across datasets.
 
-The completed NSL sensitivity analysis contrasts thresholds calibrated using training-domain benign holdout data with thresholds estimated from test-domain Normal data. The latter deliberately uses test information and is therefore diagnostic only: it must not replace the primary result, be called a deployment-valid evaluation, or be used to select a favorable main threshold. Test-Normal calibration brings the measured false-alarm rate to the target by construction but reduces attack detection and Macro-F1 for the evaluated gate variants (Table~\ref{tab:calibration-shift}). The original discrepancy is consequently not resolved as a free improvement: threshold tightening exposes a detection cost, while the same-population calibration cannot establish out-of-sample reliability.
+The diagnostic NSL sensitivity analysis contrasts training-domain benign-holdout thresholds with thresholds estimated using test-domain Normal labels. Test-Normal calibration brings the measured false-alarm rate to the target by construction but reduces attack detection and Macro-F1 for the evaluated gate variants (Table~\ref{tab:calibration-shift}).
 \generatedtable{calibration_shift}{Post-hoc calibration-shift sensitivity}
 
-The operating curves in Figs.~\ref{fig:curve-nsl_kdd}--\ref{fig:curve-cic_ids_2017} are also post hoc. A mean curve at a common threshold is not the same estimand as averaging per-seed interpolated detection at a fixed FPR. Finite-grid points without a bracket remain unavailable; they are not extrapolated to make all methods comparable. A visually favorable curve does not replace the calibration-holdout test or its registered inference.
+The post-hoc operating curves in Figs.~\ref{fig:curve-nsl_kdd}--\ref{fig:curve-cic_ids_2017} show the sampled false-alarm--detection and Macro-F1 trade-offs. Finite-grid points without a bracket remain unavailable; no extrapolation is applied.
 \curvefigure{nsl_kdd}{NSL-KDD}
 \curvefigure{unsw_nb15}{UNSW-NB15}
 \curvefigure{cic_ids_2017}{CIC-IDS-2017}
@@ -331,23 +334,31 @@ The operating curves in Figs.~\ref{fig:curve-nsl_kdd}--\ref{fig:curve-cic_ids_20
 \subsection{Cost and storage}
 \generatedtable{joint_gaps}{Descriptive gaps from the offline reference}
 \generatedtable{costs}{Training and storage costs}
-We charge the gate and family model separately and report their sum. Selection, calibration, evaluation, and additional benign sample storage are separate quantities. A common replay capacity does not make AA-CIL compute-matched to a single-network baseline. Nor does a common maximum memory establish equal occupancy: rare old classes may exhaust their retained samples and leave slots unused.
+We charge the gate and family model separately and report their sum. Selection, calibration, evaluation and additional benign sample storage are separate quantities. Realized replay occupancy is reported alongside capacity because rare old classes may leave slots unused.
 
 The permanent benign pool and the extra benign training inputs of AA-CIL, AA-noAttMem and Replay-BS are outside the replay ceiling but inside the disclosed total data footprint. TS-mem instead uses its retained Normal training rows within the ceiling. Normal validation rows already counted within TS-mem's replay allocation are not counted again as additional unique calibration rows. Successful optimization time excludes loading and serialization unless explicitly stated. Local GPU sharing and heterogeneous execution devices preclude interpreting raw runtime differences as an exclusive hardware benchmark. Failed, duplicate, or superseded executions are not scientific replicates and are accounted for separately from selected successful-cell costs.
 
-\section{Discussion and Limitations}
+\section{Discussion and Limitations}\label{sec:limitations}
 \subsection{A useful result without a universal winner}
 The strongest supported observation is dataset dependent: independently calibrated benign-refresh models substantially improve the selected external-baseline comparison on UNSW-NB15, whereas NSL-KDD does not improve the relevant registered endpoints. The evidence does not support a blanket superiority claim. In particular, favorable binary ADR can coexist with poor family discrimination: detected attacks assigned to the wrong family count as detected in ADR but not as correct in the multiclass metrics.
 
 The work also separates a design hypothesis from its identification. TS-mem shows the outcome of restricting benign refresh within a two-model architecture. The completed Replay-BS comparison strengthens the UNSW-NB15 evidence beyond an explanation based solely on additional benign exposure. Its NSL-KDD result does not support the same benefit, and its single network still receives less total model training than the gate-plus-family configuration. The supported claim is therefore an exposure-matched, dataset-dependent configuration benefit, not a compute-isolated causal estimate of decomposition.
+
+The TS-mem--AA-noAttMem contrast changes benign exposure, realized gate updates and temporary storage together. The attack-memory contrast isolates a different allocation decision within that design, but its nonsignificant detection difference does not establish zero benefit or dispensability. Similarly, the gate/family decomposition partitions observed errors; it cannot by itself attribute forgetting to weight interference, because the operating threshold also changes between checkpoints.
 
 \CICInterpretationText\ Regardless of this additional comparison, the failed original superiority requirement is unchanged. A CIC-only gain would not establish a universal advantage, and a post-hoc curve or Replay-BS contrast would remain distinct from that registered decision.
 
 \subsection{Calibration and deployment assumptions}
 Clean labeled benign data are a substantial resource. They may be contaminated, costly to curate, or distributionally unrepresentative of future traffic. Refresh from a fixed training pool is only a benchmark surrogate for continuous benign availability. It does not validate resilience to poisoned benign pools, temporal drift, network migration, or delayed labels. NSL-KDD's calibration-to-test shift illustrates why a nominal calibration target must not be equated with realized deployment FPR.
 
+The test-Normal sensitivity analysis deliberately uses test labels and is not a deployable calibration rule or a replacement for the primary result. Threshold tightening exchanges false alarms for missed attacks, and same-population calibration does not establish out-of-sample reliability. Post-hoc mean curves at a common threshold and averages of per-seed interpolated ADR at a fixed FPR are different summaries; neither changes the holdout-calibrated protocol decisions.
+
 \subsection{Scope of statistical and architectural claims}
 The benchmark uses few paired seeds, fixed task orders, a finite known label universe, prepared tabular features, and a shared training implementation. These choices support controlled within-protocol comparisons but do not cover arbitrary task order, unseen network environments, or open-world label discovery. A matched schedule is not matched total computation or exposure. CSE-CIC-IDS2018 was not run for this study. Joint remains an offline reference whose available information differs from incremental methods.
+
+All reported paired tests are unadjusted. Selection of a comparator from the highest or lowest observed whole-group mean and the small seed count limit inferential strength. A nonsignificant harm test is not an equivalence or noninferiority result. KD was not selected as the primary version by validation: its UNSW-NB15 reassessment is exploratory, and its NSL-KDD outcomes were already available before direct authorization. The first two NSL seeds also predate the reassessment document. We therefore do not describe NSL as blind confirmation or infer whether those available results had been inspected.
+
+The initial manuscript window left the CIC-IDS-2017 KD group incomplete (\CICKDCompletedSeeds/5 seeds in this snapshot). A supplemental retention job reached the scheduler's \texttt{DEADLINE} state without allocation or execution; that job produced no scientific outcome. The subsequent deadline-free continuation is unfinished here. Missing trajectories are missing evidence rather than negative model results, and partial-group means are descriptive only.
 
 The targeted literature review does not establish first-of-its-kind status. In particular, external benign data and attack-only old memory already appear in neighboring adaptation work. Our restricted-refresh ablation is not an implementation of that literature. Full-text unavailability for Wang and Cao further limits precise differentiation. A novel substantive contribution would require verified distinction and an identifiable benefit beyond combining a gate, replay, and threshold calibration; neither architecture naming nor an external-baseline gain alone meets that standard.
 
@@ -355,12 +366,42 @@ The targeted literature review does not establish first-of-its-kind status. In p
 This manuscript addresses predictive retention, class-wise safety, and cost under class-incremental updates. It does not measure silent explanation drift across checkpoints, and it does not evaluate non-suppressive explanation governance. Those explanatory and governance questions remain unanswered by these experiments. Predictive gains alone cannot establish stable explanations or the safety of an explanation-governance mechanism.
 
 \section{Conclusion}
-AA-CIL makes an asymmetric data-access assumption explicit and combines repeated benign refresh, an independently calibrated binary gate, and attack-only family learning. Its UNSW-NB15 results motivate further examination of benign access, but the registered strongest-comparator superiority requirement fails and NSL-KDD exposes both limited detection and calibration shift. The UNSW-NB15 attack-memory contrast does not establish a significant incremental benefit. Post-hoc exposure matching supports a decomposed-configuration gain on UNSW-NB15, not NSL-KDD, while additional total computation remains a limitation. \CICConclusionText\ We therefore present AA-CIL as a reproducible, qualified empirical study rather than a universally superior detector or established novel solution.
+Class-incremental NIDS must balance false alarms, attack detection and retention as new families arrive. \RetentionConclusionText
+
+The resulting contribution is a reproducible study of this unresolved trade-off under an explicit benign-data availability assumption. Clean benign access, calibration shift, unmatched total computation and incomplete CIC-IDS-2017 evidence limit generalization. Silent explanation drift and non-suppressive explanation governance remain separate, unanswered research questions.
 
 \section*{Reproducibility and evidence availability}
 Tables and numerical prose are generated from repository result files rather than manually transcribed. The companion code retains training configurations, seeds, taskwise confusion matrices, sample-access policies, and separate gate/family costs. Model payloads and datasets are not embedded in the manuscript. The evidence cutoff and actual group sizes are reported; unfinished results are not inferred from a running process or an anticipated completion time.
 
 \appendix
+\section{Decision protocols and documented chronology}\label{app:protocols}
+This appendix makes the three decision rules self-contained. Times below are the repository's document-recording timestamps, not claims of external preregistration or evidence that a reader had inspected results. All times are UTC+08:00 on 19 October 2026. Formal comparisons use the fixed paired seeds $\{1,2,3,4,42\}$, one-sided paired $t$ tests at $p<0.05$, and thresholds set only from the common permanent Normal training holdout at $\alpha=2\%$. A partial group supplies descriptive means at its actual $n$, not a five-seed significance conclusion. A known necessary-condition failure remains a failure when another comparison is incomplete.
+
+\subsection{Original superiority protocol}\label{app:original-protocol}
+The revised original criteria were recorded at 14:31:21 (revision \texttt{aa16079}); the common holdout-calibration and separate gate/family update-budget clarification was recorded at 14:34:56 (\texttt{fe42938}). The comparator set contains Replay, DER++, WACB, Freq, Replay+LA, TS-mem and AA-noAttMem. The strongest comparator is chosen once per dataset and endpoint from the highest complete five-seed mean, never independently for individual seeds. The conjunction requires:
+\begin{enumerate}
+\item ADR significantly greater than the strongest comparator in at least two of NSL-KDD, UNSW-NB15 and CIC-IDS-2017.
+\item Macro-F1 not significantly lower than its strongest comparator on any dataset; a one-sided lower-tail $p<0.05$ identifies harm.
+\item Attack-family macro recall not significantly lower than Replay, using attack classes with at least 20 test examples. All other per-class results remain reported.
+\item On CIC-IDS-2017, AA-CIL Macro-F1 significantly greater than TS-mem Macro-F1.
+\item Descriptive reporting of the offline Joint gap and training cost, without a numerical success threshold.
+\end{enumerate}
+This protocol's superiority condition failed and is not replaced by the later external-only or retention comparisons.
+
+\subsection{Validation-selected retention protocol}\label{app:retention-protocol}
+The retention-constrained candidate-selection and decision rule was recorded at 18:42:22 (\texttt{e494c64}). Development uses only UNSW-NB15 seeds $\{5,6\}$, permanent attack validation rows and the Normal calibration pool. Among configurations with final validation BAcc at least the original-AA development mean minus 3 percentage points, selection minimizes mean signed forgetting; this selects CBF. KD, ISO, WA, CBF and NCM are all reported on the formal seeds, including versions retained only as descriptive fallbacks after failing eligibility. The selected version must satisfy all three conditions on \emph{both} UNSW-NB15 and NSL-KDD:
+\begin{enumerate}
+\item Signed all-old-class forgetting not significantly higher than the lowest-forgetting member of the external five: Replay, DER++, WACB, Freq and Replay+LA. The comparator minimizes the complete five-seed mean; an upper-tail $p<0.05$ identifies harm.
+\item Final BAcc significantly higher than exposure-matched Replay-BS (upper-tail $p<0.05$).
+\item ADR at the common calibration target not significantly lower than original AA-CIL (lower-tail $p<0.05$ identifies harm).
+\end{enumerate}
+Mean incremental BAcc, Macro-F1 and actual test FPR are mandatory descriptive outcomes. CIC-IDS-2017 is supplementary and cannot replace either required dataset. Failure of any necessary condition leaves the trade-off unresolved. The validation-selected CBF failure remains the outcome of this protocol.
+
+\subsection{Fixed-KD reassessment}\label{app:kd-protocol}
+The fixed-KD reassessment was recorded at 20:47:57 (\texttt{88d6355}), after the UNSW-NB15 formal outcomes had motivated reconsidering KD. It retains the frozen $\lambda_G=0.5$ and family DER coefficients $\alpha=\beta=1$, with no further tuning. It applies the same three forgetting, final-BAcc and ADR conditions immediately above, but requires \emph{both NSL-KDD and CIC-IDS-2017}; UNSW-NB15 remains exploratory. Each comparison still requires its complete five-seed candidate and reference groups. Neither this reassessment nor any favorable descriptive KD outcome changes the validation-selected CBF decision.
+
+NSL-KDD seeds 1 and 2 had completed before the reassessment document was recorded, and all five had completed before direct execution authorization at approximately 21:29. Result availability does not establish that the results were inspected, but it rules out describing this NSL evidence as blind confirmation. The reassessment's NSL final-BAcc superiority condition failed. The remaining CIC-IDS-2017 comparison is reported at its actual completeness and cannot reverse that necessary-condition failure. The original manuscript cutoff was later removed for completion of the remaining experiments; it does not redefine the criteria or turn partial trajectories into complete results.
+
 \RetentionComparisonAppendix
 \KDReassessmentTables
 \section{Additional calibration targets}

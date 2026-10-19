@@ -11,6 +11,7 @@ from collections import defaultdict
 import datetime as dt
 import json
 from pathlib import Path
+import re
 import statistics as st
 import numpy as np
 from scipy.stats import ttest_rel
@@ -208,7 +209,7 @@ def retention_outputs(evidence):
     if not evidence['selection_complete']:
         return {'RetentionSelectionText':'The validation-only retention selection remains incomplete.',
                 'RetentionFormalResultsText':'No complete formal retention group is presented.',
-                'RetentionDecisionText':'Section 29.8 remains pending; no success is inferred.',
+                'RetentionDecisionText':'The validation-selected retention protocol remains pending.',
                 'RetentionComparisonAppendix':appendix}
     main=evidence['selected_main']
     if main:
@@ -217,12 +218,11 @@ def retention_outputs(evidence):
         if main['method']=='aacil_cbf':
             choice+=f", {cfg['cbf_epochs']} CBF epoch(s), learning-rate multiplier {cfg['cbf_lr_multiplier']:g}"
         choice+=')'
-        selection_text=('UNSW training-validation seeds 5/6 locked '+choice+' as the eligible main version. '
-            'This is a development selection, not a formal test result; test outcomes cannot reselect the version. ')
+        selection_text=('UNSW training-validation seeds 5/6 locked '+choice+' as the eligible main version. ')
     else:
         selection_text='No version met the development eligibility constraint; no main version was selected. '
     ineligible=[RETENTION_NAMES[v['method']] for v in evidence['per_version'] if not v['eligible']]
-    selection_text+=(', '.join(ineligible)+' remain mandatory descriptive formal fallbacks, not eligible successes.'
+    selection_text+=(', '.join(ineligible)+' are reported as development-ineligible fallback configurations.'
         if ineligible else 'All five versions remain in the formal report.')
     rows=[]
     for v in evidence['per_version']:
@@ -231,7 +231,7 @@ def retention_outputs(evidence):
             str(c['cbf_epochs']) if v['method']=='aacil_cbf' else '--',
             f"{c['cbf_lr_multiplier']:g}" if v['method']=='aacil_cbf' else '--',
             'eligible main' if main and v['method']==main['method'] else 'eligible alternative' if v['eligible'] else 'ineligible fallback'])
-    table('retention_selection','Locked Section 29.8 development selection; no test performance is shown here.',
+    table('retention_selection','Validation-selected retention protocol: frozen development configurations.',
           ['Version',r'$\lambda_G$','CBF epochs','CBF LR multiplier','Development role'],rows,'lrrrl',
           note='Selection uses UNSW training-validation seeds 5/6 only. DER weights are fixed at one. Ineligible versions are still reported on the five formal seeds, without converting fallback selection into eligibility.')
     group_map={(g['dataset'],g['method']):g for g in evidence['groups']}
@@ -245,11 +245,10 @@ def retention_outputs(evidence):
             rows.append([SHORT[ds],RETENTION_NAMES[m],g.get('n',0)]+[
                 fmt(g['metrics'][k]) if full and g['metrics'].get(k) else '--' for k in RETENTION_METRICS])
         completed.append(f'{SHORT[ds]} {count}/5 versions')
-    table('retention_results','Formal Section 29.8 results at stagewise Normal-holdout calibration target $\\alpha=2\\%$.',
+    table('retention_results','Retention variants at stagewise Normal-holdout calibration target $\\alpha=2\\%$.',
           ['Data','Version','n','Mean inc. BAcc','Final BAcc','Forget (pp)','ADR','MF1','FPR'],rows,'llrrrrrrr',
           note='Only complete seeds 1/2/3/4/42 receive means and sample SD; incomplete groups show n and dashes. All outcomes come from formal test trajectories, never development selection metrics. Signed forgetting includes old Normal; rates/accuracies are percentages. Eligibility is a development property, not formal success.')
-    formal_text=('Complete formal five-seed groups in the saved assessment: '+', '.join(completed)+'. '
-                 'Incomplete groups have no aggregate performance or inferential conclusion in the Section 29.8 presentation; separately labeled Section 29.9 partial groups are descriptive only.')
+    formal_text=('Complete formal five-seed groups: '+', '.join(completed)+'.')
     iso=group_map.get(('UNSW-NB15','aacil_iso'),{})
     kd=group_map.get(('UNSW-NB15','aacil_kd'),{})
     contrasts={c['metric']:c for c in evidence['iso_minus_kd'] if c['dataset']=='UNSW-NB15'}
@@ -262,19 +261,15 @@ def retention_outputs(evidence):
         forget,incremental=(contrasts[k] for k in endpoints)
         formal_text+=(' On UNSW-NB15, AA-CIL-ISO recorded signed forgetting of '
             +fmt(iso['metrics']['forgetting_all_old_classes'],100,3)+' pp alongside final balanced accuracy of '
-            +fmt(iso['metrics']['final_balanced_accuracy'])+r'\%; low forgetting alone does not establish effective class-incremental learning. '
+            +fmt(iso['metrics']['final_balanced_accuracy'])+r'\%. '
             +'ISO minus KD differences were '+fmt(forget['delta_pp'],1)+' pp for forgetting '
             +r'($p_{<}='+probability_tex(forget['p_less'])+r'$) and '
             +fmt(incremental['delta_pp'],1)+' pp for mean incremental balanced accuracy '
             +r'($p_{<}='+probability_tex(incremental['p_less'])+r'$), using five paired seeds and unadjusted one-sided tests. ')
-        fallback=all(not v['eligible'] for v in evidence['per_version'] if v['method'] in ['aacil_iso','aacil_kd'])
-        formal_text+=('These development-ineligible fallback contrasts' if fallback else 'These descriptive contrasts')
-        formal_text+=' do not alter the validation-locked main selection.'
     verdict=evidence['verdict']
-    decision=('Section 29.8 fails a necessary condition; the false-alarm--forgetting trade-off remains unresolved.' if verdict=='fail'
-              else 'The selected main satisfies the three Section 29.8 conditions on both required datasets.' if verdict=='pass'
-              else 'Section 29.8 remains pending until the selected main and its required comparisons are complete on both UNSW and NSL.')
-    decision+=' Nonsignificant harm is not equivalence or noninferiority. The original Section 27.8 failure and its comparison set are unchanged.'
+    decision=('The validation-selected retention protocol fails a necessary condition; the false-alarm--forgetting--accuracy trade-off remains unresolved.' if verdict=='fail'
+              else 'The selected main satisfies the three retention conditions on both required datasets.' if verdict=='pass'
+              else 'The validation-selected retention protocol remains pending on UNSW and NSL.')
     return {'RetentionSelectionText':selection_text,'RetentionFormalResultsText':formal_text,
             'RetentionDecisionText':decision,'RetentionComparisonAppendix':appendix}
 
@@ -303,7 +298,7 @@ def retention_comparison_outputs(evidence):
         iso_rows.append([SHORT[c['dataset']], 'Forget (all)' if c['metric']=='forgetting_all_old_classes' else 'Mean inc. BAcc',
             c['n'],fmt(c['delta_pp'],1),pvalue(c.get('p_less')),pvalue(c.get('p_greater')),pvalue(c.get('p_two_sided'))])
     definitions=[('retention_necessary_tests',rows,
-        'Completed Section 29.8 necessary comparisons for the validation-selected main version.',
+        'Necessary comparisons under the validation-selected retention protocol.',
         ['Data','Criterion','Reference','n',r'$\Delta$ (pp)','One-sided $p$','Decision'],'llrrrll',
         r'Candidate minus reference; exact five paired formal seeds. 1: all-old forgetting, $p_{>}<.05$ means harm/failure against the lowest-forgetting external baseline. '
         r'2: final BAcc, $p_{>}<.05$ is required against Replay-BS. 3: ADR, $p_{<}<.05$ means harm/failure against original AA-CIL. '
@@ -311,7 +306,7 @@ def retention_comparison_outputs(evidence):
         ('retention_iso_kd',iso_rows,'Completed descriptive AA-CIL-ISO minus AA-CIL-KD comparisons.',
         ['Data','Metric','n',r'$\Delta$ (pp)',r'$p_{<}$',r'$p_{>}$',r'$p_{2s}$'],'llrrrrr',
         r'Exact five paired formal seeds; mean$\pm$sample SD of differences in percentage points. These unadjusted comparisons neither select the main version nor add a success requirement. '
-        r'Undefined tests remain --; no seed is discarded. Prior Sections 27.8 and 29.4 are unchanged.')]
+        r'Undefined tests remain --; no seed is discarded. The original superiority and earlier retention decisions are unchanged.')]
     included=[]
     for name,values,caption,header,cols,note in definitions:
         if values:
@@ -340,25 +335,93 @@ def kd_reassessment_evidence(path):
 def kd_reassessment_macros(evidence):
     if not evidence:
         return {'KDReassessmentText':'The separately authorized KD reassessment remains pending; it cannot amend the original CBF failure.',
-                'KDReassessmentTables':''}
+                'KDReassessmentTables':'', 'CICKDCompletedSeeds':'0'}
     status=evidence['required_numeric_verdict']
     conclusion=('A necessary numerical condition fails; the trade-off remains unresolved.' if status=='fail' else
         'The specified numerical conditions pass on both required datasets, but this does not establish independent blind confirmation.' if status=='pass' else
         'The required NSL/CIC17 numerical comparison remains incomplete; no success claim is made.')
-    text=(r'Section 29.9 reconsiders KD with fixed $\lambda_G=.5$ and DER $\alpha=\beta=1$; its UNSW outcome is exploratory. '
-        'NSL seeds 1/2 were available before the document commit at 20:47:57 MYT, and all five were available before direct authorization at approximately 21:29 MYT; '
-        'NSL is therefore not represented as blind confirmation, and availability does not imply that the user inspected the outcomes. '
-        +conclusion+' The original Section 29.8 CBF failure and Section 27.8 failure remain unchanged.')
+    text=(r'The fixed-KD reassessment uses $\lambda_G=.5$ and DER $\alpha=\beta=1$. ')
+    nsl=next((d for d in evidence['dataset_results'] if d['dataset']=='NSL-KDD'),{})
+    accuracy=next((t for t in nsl.get('tests',[]) if t['criterion']==2),{})
+    if accuracy.get('n')==5 and accuracy.get('status')=='complete':
+        text+=('On NSL-KDD, the final BAcc difference from Replay-BS is '
+            +fmt(accuracy['delta_pp'],1)+r' pp ($p_{>}='+f"{accuracy['p_greater']:.4f}"+r'$); '
+            +('the required superiority condition is not met. ' if accuracy['decision']=='fail' else 'the required superiority condition is met. '))
+    text+=conclusion
     for d in evidence['dataset_results']:
         if 0 < d['n'] < 5:
             text+=(' '+SHORT[d['dataset']]+f" has {d['n']}/5 completed KD seeds: mean incremental BAcc "
                 +fmt(d['metrics']['average_incremental_accuracy'])+r'\%, final BAcc '
                 +fmt(d['metrics']['final_balanced_accuracy'])+r'\%, and signed forgetting '
                 +fmt(d['metrics']['forgetting_all_old_classes'])+' pp, descriptive only; missing seeds are '
-                +', '.join(map(str,d.get('missing_seeds',[s for s in SEEDS if s not in d['seeds']])))+'. '
-                +'A single seed has no sample SD; no partial checkpoint supplies a completed-cell result.')
+                +', '.join(map(str,d.get('missing_seeds',[s for s in SEEDS if s not in d['seeds']])))+'.')
     return {'KDReassessmentText':text,
-            'KDReassessmentTables':r'\section{Separately scoped KD reassessment}\input{generated/section299_comparisons.tex}'}
+            'KDReassessmentTables':r'\section{Fixed-KD reassessment}\input{generated/section299_comparisons.tex}',
+            'CICKDCompletedSeeds':str(next((d['n'] for d in evidence['dataset_results'] if d['dataset']=='CIC-IDS-2017'),0))}
+
+
+def retention_narrative_evidence(retention, kd_reassessment):
+    """Read saved headline measures and tests; do not recalculate statistics."""
+    path=ROOT/'ncd/results/problem_scout/section28/forgetting_v1/result.json'
+    if not path.exists() or not retention.get('assessment_available') or not kd_reassessment:
+        return None
+    groups={(g['dataset'],g['method']):g for g in read(path)['groups']}
+    datasets=['UNSW-NB15','NSL-KDD']
+    required=[(d,m) for d in datasets for m in ['aacil','aacil_kd']]+[('UNSW-NB15','aacil_cbf')]
+    if any(groups.get(k,{}).get('n')!=5 for k in required):
+        return None
+    checks={d['dataset']:d for d in kd_reassessment['dataset_results']}
+    nsl_accuracy=next((t for t in checks.get('NSL-KDD',{}).get('tests',[]) if t['criterion']==2),{})
+    if nsl_accuracy.get('n')!=5 or nsl_accuracy.get('status')!='complete':
+        return None
+    measure=lambda d,m,k:groups[d,m]['metrics'][k]['mean']
+    forget_checks=[next((t for t in checks[d]['tests'] if t['criterion']==1),{}) for d in datasets]
+    return {
+        'original_forgetting':[measure(d,'aacil','forgetting_all_old_classes') for d in datasets],
+        'cbf_forgetting':measure('UNSW-NB15','aacil_cbf','forgetting_all_old_classes'),
+        'kd_forgetting':[measure(d,'aacil_kd','forgetting_all_old_classes') for d in datasets],
+        'kd_adr':[measure(d,'aacil_kd','final_attack_detection') for d in datasets],
+        'kd_nsl_fpr':measure('NSL-KDD','aacil_kd','final_normal_fpr'),
+        'kd_nsl_accuracy_p':nsl_accuracy['p_greater'],
+        'kd_nsl_accuracy_decision':nsl_accuracy['decision'],
+        'kd_forgetting_harm_not_detected':all(t.get('n')==5 and t.get('status')=='complete' and t.get('decision')=='pass' for t in forget_checks),
+        'retention_verdict':retention['verdict'],
+        'selected_method':(retention.get('selected_main') or {}).get('method'),
+    }
+
+
+def retention_narrative_macros(retention, kd_reassessment):
+    facts=retention_narrative_evidence(retention,kd_reassessment)
+    if facts is None:
+        pending='The saved retention and fixed-KD comparisons remain incomplete.'
+        return {'RetentionAbstractText':pending, 'RetentionConclusionText':pending}
+    pair=lambda values:' and '.join(f'{100*v:.2f}' for v in values)
+    original=pair(facts['original_forgetting'])
+    kd_forget=pair(facts['kd_forgetting'])
+    kd_adr=pair(facts['kd_adr'])
+    cbf=f"{100*facts['cbf_forgetting']:.2f}"
+    p=f"{facts['kd_nsl_accuracy_p']:.4f}"
+    fpr=f"{100*facts['kd_nsl_fpr']:.2f}"
+    cbf_outcome=('failed the retention criterion' if facts['retention_verdict']=='fail' else
+        'remains subject to the retention criterion')
+    harm=('KD forgetting was not significantly higher than the lowest-forgetting external baseline on either dataset. '
+        if facts['kd_forgetting_harm_not_detected'] else '')
+    accuracy=('its final balanced-accuracy advantage over the matched-exposure Replay-BS control on NSL-KDD was not significant '
+        if facts['kd_nsl_accuracy_decision']=='fail' else 'its final balanced-accuracy advantage over Replay-BS on NSL-KDD was significant ')
+    scope='KD was not the validation-selected main version; UNSW is exploratory and NSL is not blind confirmation.'
+    abstract=('Original AA-CIL combines strong attack detection with substantial forgetting: '+original+
+        ' pp on UNSW-NB15 and NSL-KDD. The validation-selected CBF variant '+cbf_outcome+
+        ' with '+cbf+' pp forgetting on UNSW. AA-CIL-KD reduced forgetting to '+kd_forget+
+        ' pp while achieving attack-detection rates of '+kd_adr+r'\%, respectively, at nominal calibration target $\alpha=2\%$. '+
+        harm+'However, '+accuracy+r'($p='+p+r'$), and its NSL test FPR was '+fpr+r'\%. '+
+        'The false-alarm--forgetting--accuracy trade-off therefore remains unresolved. '+scope)
+    conclusion=('Benign-stream training with an independently calibrated gate supports strong attack detection in the studied setting, '
+        'but the original decoupled model exhibits '+original+' pp forgetting on UNSW-NB15 and NSL-KDD. '
+        'The validation-selected CBF variant '+cbf_outcome+'; KD reduced forgetting to '+kd_forget+
+        ' pp with attack-detection rates of '+kd_adr+r'\% at nominal $\alpha=2\%$. '+
+        'Nevertheless, '+accuracy+r'($p='+p+r'$), while the NSL test FPR of '+fpr+r'\% exposes calibration shift. '+
+        'These results support a trade-off study, not a fully resolved false-alarm--forgetting--accuracy solution. '+scope)
+    return {'RetentionAbstractText':abstract, 'RetentionConclusionText':conclusion}
 
 
 def kd_reassessment_summary_zh(evidence):
@@ -374,19 +437,20 @@ def kd_reassessment_summary_zh(evidence):
             partial.append(SHORT[d['dataset']]+' 已完成种子的增量/最终BAcc/遗忘均值为 '
                 +'/'.join(mean_only(k) for k in ['average_incremental_accuracy','final_balanced_accuracy','forgetting_all_old_classes'])
                 +'（前两项%，遗忘pp），仅描述；缺seed '+','.join(map(str,d.get('missing_seeds',[s for s in SEEDS if s not in d['seeds']])))+'。')
-    cutoff=('硬截止已结束；保存的执行状态为 '+str(evidence.get('execution',{}).get('saved_execution_status') or '未知')+'，不代表进程仍活跃。'
+    cutoff=('历史初稿窗口于2026-10-19 21:50:26 MYT结束；该次保存状态为 '+str(evidence.get('execution',{}).get('saved_execution_status') or '未知')+'。'
             if evidence.get('execution',{}).get('hard_cutoff_ended') else '')
     if evidence.get('execution',{}).get('termination_cause') == 'owner_hard_deadline':
-        cutoff+='终止原因是预设截止 TimeoutError，不是 OOM；未完成种子的保存阶段不计入完整种子指标。'
-    return ['**29.9 单独重评 KD：** '+counts+'。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，'
+        cutoff+='该次中断为预设截止 TimeoutError，不是 OOM；部分阶段不计入完整种子指标。'
+    cutoff+='后续已授权继续CIC17 KD seeds3/4/42及原AA五个seed，不设负责人绝对截止；纳入数量以表中已完成轨迹为准。'
+    return ['**固定KD复评：** '+counts+'。UNSW 为探索性；NSL seeds1/2 在20:47:57文档提交前已可得，'
             '五个均在约21:29直接授权前已可得，因此不是盲法确认，也不推测用户是否看过。'
-            'NSL/CIC 两者的三个固定条件仍须完整；当前数值判定为 '+evidence['required_numeric_verdict']+'，不改原CBF失败。'
+            'NSL/CIC 两者均为要求的数据集；当前判定为 '+evidence['required_numeric_verdict']+'，原CBF失败保留。'
             +''.join(partial)+cutoff, '']
 
 
 def retention_summary_zh(evidence, aggregate_text):
     if not evidence['selection_complete']:
-        return ['**29.8 开发选择尚未完成，正式结论待齐。** 不使用开发数字充当正式测试结果。']
+        return ['**验证选择尚未完成，保持协议的正式结论待齐。**']
     main=evidence['selected_main']
     lines=[]
     if main:
@@ -394,8 +458,8 @@ def retention_summary_zh(evidence, aggregate_text):
         config=f"λG={c['lambda_g']:g}"
         if main['method']=='aacil_cbf':
             config+=f"，CBF epochs={c['cbf_epochs']}，LR 倍率={c['cbf_lr_multiplier']:g}"
-        lines.append(f"**原29.8锁定主版本：{RETENTION_NAMES[main['method']]}（{config}）**。"
-            '仅用 UNSW 训练验证 seeds5/6，先满足最终 BAcc≥原 AA−3 pp，再选最低遗忘；开发选择不是正式测试成功。')
+        lines.append(f"**验证集锁定主版本：{RETENTION_NAMES[main['method']]}（{config}）**。"
+            '仅用 UNSW 训练验证 seeds5/6，先满足最终 BAcc≥原 AA−3 pp，再选最低遗忘。')
     else:
         lines.append('没有版本通过开发资格约束，未选择主版本；回退版本的正式结果不能将开发失败改为成功。')
     ineligible=[RETENTION_NAMES[v['method']] for v in evidence['per_version'] if not v['eligible']]
@@ -412,11 +476,11 @@ def retention_summary_zh(evidence, aggregate_text):
     lines+=['', '正式 seeds1/2/3/4/42 齐全才显示均值±样本 SD；-- 为未齐，不以开发数字填补。']
     if evidence['assessment_available']:
         labels={'pass':'满足当前条款','fail':'FAIL（至少一项必要条件失败）','pending':'未完成'}
-        lines.append('29.8：**'+labels.get(evidence['verdict'],evidence['verdict'])+'**。'
+        lines.append('验证选择保持协议：**'+labels.get(evidence['verdict'],evidence['verdict'])+'**。'
             'UNSW 与 NSL 均须满足：遗忘不显著劣于最低遗忘外部基线、最终 BAcc 显著高于 Replay-BS、ADR 不显著低于原 AA；'
             f"[完整配对结果](../{evidence['comparison_result']})。")
     else:
-        lines.append('正式 29.8 比较文件尚未生成；表中 n=0 指当前已纳入摘要的组数，不代表训练进程状态。')
+        lines.append('保持协议的正式比较尚未生成；n=0表示尚未纳入结果。')
     lines+=['不显著有害不等于等效或非劣；已知必要条件失败优先于未完成。', '']
     return lines
 
@@ -433,21 +497,33 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
     cil={(g['dataset'],g['method']):g for g in forgetting.get('groups',[])}
     def original(ds,metric):
         return aggregate_text(cil.get((ds,'aacil'),{}).get('metrics',{}).get(metric))
+    facts=retention_narrative_evidence(retention,kd_reassessment)
+    key_findings=[]
+    if facts:
+        pair=lambda values:' / '.join(f'{100*v:.2f}' for v in values)
+        key_findings=[
+            '**核心结果（UNSW / NSL）：** 原AA-CIL遗忘 '+pair(facts['original_forgetting'])+
+            ' pp；验证选定的CBF在UNSW仍有 '+f"{100*facts['cbf_forgetting']:.2f}"+
+            ' pp遗忘，未通过保持标准。KD将遗忘降到 '+pair(facts['kd_forgetting'])+
+            ' pp，ADR为 '+pair(facts['kd_adr'])+'%。',
+            'KD在NSL相对Replay-BS的最终BAcc优势不显著（p='+f"{facts['kd_nsl_accuracy_p']:.4f}"+
+            '），测试FPR为 '+f"{100*facts['kd_nsl_fpr']:.2f}"+
+            '%，并非校准目标2%。**误报–遗忘–准确率权衡尚未完全解决。** KD不是验证选定的主版本；UNSW为探索性，NSL不是盲确认。',
+            '',
+        ]
     lines = [
         '# AA-CIL 中文摘要',
         '',
-        f"截止：{macros['EvidenceCutoff']}。**检出收益不能替代类增量保持，原 27.8 注册结论仍为 FAIL。** "
-        f"原 AA 的 UNSW 增量/最终 BAcc 为 {original('UNSW-NB15','average_incremental_accuracy')}/"
-        f"{original('UNSW-NB15','final_balanced_accuracy')}%，遗忘 {original('UNSW-NB15','forgetting_all_old_classes')} pp；"
-        f"NSL 遗忘 {original('NSL-KDD','forgetting_all_old_classes')} pp。",
+        f"结果快照与修订时间：{macros['EvidenceCutoff']}。原始优越性协议仍为FAIL。",
         '',
+        *key_findings,
         *retention_summary_zh(retention, aggregate_text),
         *kd_reassessment_summary_zh(kd_reassessment),
         '口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，'
         '遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。',
         '',
-        '边界：校准目标不保证测试 FPR；Replay-BS 匹配曝光但不匹配总计算。正式顺序 UNSW→NSL；'
-        '21:50:26 MYT 硬截止，未完成项目保留缺失；29.8要求UNSW/NSL，29.9另要求NSL/CIC，不能互换。解释漂移、治理及总体创新仍未闭合。',
+        '边界：不显著有害不等于等效；Replay-BS匹配曝光但不匹配G+F总计算。保持协议要求UNSW/NSL，'
+        '固定KD复评要求NSL/CIC，不能互换。CIC未补完前保持描述性；解释漂移、治理及总体创新仍未闭合。',
         '',
         '[完整逐阶段指标与逐类结果](../ncd/results/problem_scout/section28/forgetting_v1/result.json)；其余 FPR/MF1、配对检验与成本见论文及源结果。',
     ]
@@ -504,12 +580,8 @@ def cic_result_text(groups, comparisons, stats):
         else:
             sentence += r' (one-sided ADR $p='+pvalue(adr['p_one_sided'])+'$).'
         interpretation.append(sentence)
-    interpretation.append('These contrasts do not establish causal component effects or equivalence; '
-                          'Replay-BS matches the specified benign exposure and replay allocation, not the combined G+F compute budget.')
     coverage = 'All three CIC AA-family groups contain five seeds' if all(complete(m) for m in family) else 'CIC AA-family coverage remains incomplete'
-    conclusion = (coverage+', but the original Section 27.8 overall decision remains FAIL. '
-                  'The separately reported external-only and post-hoc comparisons do not replace that decision, '
-                  'prove novelty or causal benefit, or constitute compute-matched evidence.')
+    conclusion = coverage+'; the original superiority protocol remains failed.'
     return {'CICPrimaryResultsText':' '.join(primary),
             'CICInterpretationText':' '.join(interpretation), 'CICConclusionText':conclusion,
             'CICResultStatus':'CIC-IDS-2017 AA-family coverage: '+str(sum(count(m) for m in family))
@@ -518,14 +590,62 @@ def cic_result_text(groups, comparisons, stats):
                 +'/5$); Replay-BS is reported separately.'}
 
 
+def refresh_presentation(args, retention, kd_reassessment):
+    """Revise saved presentation only, without rerunning any scientific calculation."""
+    macro_path=PAPER/'generated'/'macros.tex'
+    macros={}
+    for line in macro_path.read_text(encoding='utf-8').splitlines():
+        if not line.strip():continue
+        match=re.fullmatch(r'\\newcommand\{\\([A-Za-z]+)\}\{(.*)\}',line)
+        if not match:
+            raise ValueError('Presentation-only refresh requires the existing single-line generated macros')
+        macros[match[1]]=match[2]
+    renames={
+        'Section 27.8':'original superiority protocol',
+        'Section27.8':'original superiority protocol',
+        'Section 29.8':'validation-selected retention protocol',
+        'Section29.8':'validation-selected retention protocol',
+        'Section 29.9':'fixed-KD reassessment',
+        'Section29.9':'fixed-KD reassessment',
+        'Section 29.4':'earlier retention protocol',
+        'Section29.4':'earlier retention protocol',
+    }
+    def rename(text):
+        for old,new in renames.items():text=text.replace(old,new)
+        return text
+    macros={k:rename(v) for k,v in macros.items()}
+    if args.cutoff:macros['EvidenceCutoff']=args.cutoff
+    macros.update(retention_outputs(retention))
+    macros.update(kd_reassessment_macros(kd_reassessment))
+    macros.update(retention_narrative_macros(retention,kd_reassessment))
+    macro_path.write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
+    for name in ['registered_criteria','calibration_shift','forgetting_results','section298_comparisons']:
+        path=PAPER/'generated'/f'{name}.tex'
+        text=path.read_text(encoding='utf-8')
+        revised=rename(text)
+        if revised!=text:path.write_text(revised,encoding='utf-8')
+    saved_path=PAPER/'generated'/'paper_results.json'
+    saved=read(saved_path)
+    saved.update(cutoff=macros['EvidenceCutoff'],section298=retention,section299=kd_reassessment)
+    saved_path.write_text(json.dumps(saved,indent=2,allow_nan=False)+'\n',encoding='utf-8')
+    write_summary_zh(None,None,None,macros,[],retention,kd_reassessment)
+    print(json.dumps({'presentation_only':True,'recomputed_statistics':False,
+        'evidence_label':macros['EvidenceCutoff'],'cic_kd_completed_seeds':macros['CICKDCompletedSeeds']}))
+
+
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--input',action='append',default=[]);ap.add_argument('--cutoff',default=None)
     ap.add_argument('--retention-selection',type=Path,default=ROOT/'ncd/results/problem_scout/section29/retention_queue_v1/selection.json')
     ap.add_argument('--retention-comparisons',type=Path,default=ROOT/'ncd/results/problem_scout/section29/retention_comparisons_v1/result.json')
     ap.add_argument('--kd-reassessment',type=Path,default=ROOT/'ncd/results/problem_scout/section29/section299_comparisons_v1/result.json')
+    ap.add_argument('--presentation-only',action='store_true',
+                    help='Reuse saved paper statistics and comparison JSON; revise text/tables only')
     args=ap.parse_args()
     retention=retention_evidence(args.retention_selection.resolve(),args.retention_comparisons.resolve())
     kd_reassessment=kd_reassessment_evidence(args.kd_reassessment.resolve())
+    if args.presentation_only:
+        refresh_presentation(args,retention,kd_reassessment)
+        return
     (PAPER/'generated').mkdir(exist_ok=True);(PAPER/'figures').mkdir(exist_ok=True)
     analysis=read(ROOT/'ncd/results/problem_scout/section27/analysis_v1/result.json')
     cells={(x['dataset'],x['method'],x['seed']):x for x in analysis['cells'] if x['points']['0.02']['status']=='available'}
@@ -628,7 +748,7 @@ def main():
     statuses.append('PASS' if complete else 'PENDING')
     table('registered_criteria','Original registered superiority test and separately identified external-only comparison. The latter does not replace the former.',
           ['Data','Comparison set','Fixed mean winner','$\\Delta$ ADR (pp)','$p_{>}$','$d_z$','Dataset test'],rows,'lllrrrl',
-          note='Original Section 27.8 criteria 1--5: '+', '.join(f'{i+1}: {v}' for i,v in enumerate(statuses))+'. Overall registered decision: FAIL, because NSL and UNSW cannot contribute the required two significant wins. The registered set includes TS-mem and AA-noAttMem. No detected harm is not equivalence/noninferiority.')
+          note='Original superiority protocol, criteria 1--5: '+', '.join(f'{i+1}: {v}' for i,v in enumerate(statuses))+'. Overall decision: FAIL, because NSL and UNSW cannot contribute the required two significant wins. The comparator set includes TS-mem and AA-noAttMem.')
     safetyrows=[]
     for ds in DATASETS:
         for key,label in [('registered_macro_f1','MF1 vs strongest'),('guard','Guard vs Replay')]:
@@ -750,7 +870,7 @@ def main():
     table('calibration_shift',
           r'Post-hoc NSL-KDD calibration-distribution sensitivity at $\alpha=2\%$. Test metrics are mean $\pm$ sample standard deviation in percent.',
           ['Method','Threshold calibration pool','n','Test FPR','ADR','MF1'],shiftrows,'llrrrr',
-          note=r'Each method uses the same paired seeds in both rows. TEST-Normal thresholds use test Normal labels and are evaluated on the same test population: this is a test-label-conditioned, non-deployable sensitivity analysis, not an independent evaluation. It does not change the registered Section 27.8 decisions. Incomplete seed groups remain descriptive.')
+          note=r'Each method uses the same paired seeds in both rows. TEST-Normal thresholds use test Normal labels and are evaluated on the same test population: this is a test-label-conditioned, non-deployable sensitivity analysis. The original superiority decision is unchanged; incomplete seed groups remain descriptive.')
     macros={'EvidenceCutoff':args.cutoff or dt.datetime.now().astimezone().strftime('%Y-%m-%d %H:%M MYT'),
             'NumCompletedNew':str(sum(n(ds,m) for ds in DATASETS for m in ['aacil','ts_mem','aa_noattmem'])),
             'PrimaryAlpha':str(int(100*analysis['primary_alpha'])), 'GateBenignRows':str(cfg['normal_training_rows']),
@@ -786,6 +906,7 @@ def main():
     macros.update(cic_result_text(groups, comparisons, stats))
     macros.update(retention_outputs(retention))
     macros.update(kd_reassessment_macros(kd_reassessment))
+    macros.update(retention_narrative_macros(retention,kd_reassessment))
     (PAPER/'generated'/'macros.tex').write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
     derived={'cutoff':macros['EvidenceCutoff'],'registered_original_overall':'fail','registered_criteria_status':statuses,
              'comparisons':comparisons,'groups':[{'dataset':ds,'method':m,'n':n(ds,m),'points':{a:{k:stats(ds,m,k,a) for k in ['normal_fpr','attack_detection','macro_f1','balanced_accuracy','attack_guard_recall']} for a in ALPHAS}} for ds in DATASETS for m in METHODS],
