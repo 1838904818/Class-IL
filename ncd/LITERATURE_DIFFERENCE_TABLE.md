@@ -1,5 +1,24 @@
 # NCD closest-work difference table
 
+## Section 26.8 核实补充（2026-10-19）
+
+以下六篇均已正式发表；技术细节来自出版社全文或作者公开全文，发表信息另核对出版社/作者页面。范围包含多类 Class-IL、二元 domain-incremental 与持续新颖性检测，不能全部视为同一多类协议。“未单列”仅指所读全文的主要结果指标/表格，不是因全文不可得而猜测。
+
+| 论文（正式出处；范围；来源定位） | 回放内存如何跨类分配 | 是否报告良性 FPR | 主要报告指标 |
+|---|---|---|---|
+| **CBRS-NIDS — On Handling Class Imbalance in Continual Learning based NIDS**（[AIMLSystems 2021](https://newslab.iith.ac.in/publications/on-handling-class-imbalance-in-continual-learning-based-network-intrusion-detection-systems/)；攻击类型顺序到达、二元输出）。[作者全文](https://newslab.iith.ac.in/publications/on-handling-class-imbalance-in-continual-learning-based-network-intrusion-detection-systems/download/)，§3.1.2.1、§4.2、§5，pp.3–6、Tables4–8。 | **两种平衡口径**：WACB 将全部攻击合并后与良性平衡；IACB 按原始类别平衡。不是唯一的全类别均分规则。 | 主结果未单列。 | Accuracy、Precision、Recall、F1；任务顺序/内存大小敏感性。 |
+| **ECBRS/PAPA — Augmented Memory Replay-based Continual Learning Approaches for NIDS**（NeurIPS **2023**；二元 domain-incremental）。[官方全文](https://proceedings.neurips.cc/paper_files/paper/2023/file/3755a02b1035fbadd5f93a022170e46f-Paper-Conference.pdf)，§3.1、§4，pp.4、6–8、Tables3–4。 | **全局频数驱动**替换及少数类保护阈值，非固定 M/K；原始类别用于内存管理。 | 正文主结果未单列固定工作点 FPR；ROC-AUC 不等于 FPR。 | ROC-AUC、良性/攻击 PR-AUC、训练时间。 |
+| **SPIDER — A semi-supervised continual learning-based NIDS**（[IEEE INFOCOM 2024](https://newslab.iith.ac.in/publications/spider-a-semi-supervised-continual-learning-based-network-intrusion-detection-system/)；二元 domain-incremental）。[作者全文](https://newslab.iith.ac.in/media/publications/pdfs/SPIDER-Suresh.pdf)，pp.2、4、6–8、Algorithm1、§V–VI。 | **其他**：主方法仅保留上一任务随机无标签样本，每任务更新；过去知识另由 GPM 子空间保持，非全历史逐类等额回放。 | 正文主结果未单列。 | ROC-AUC、良性/攻击 PR-AUC、时间、标签比例敏感性。 |
+| **SSF — Continual Learning with Strategic Selection and Forgetting for NIDS**（IEEE INFOCOM **2025**；二元持续学习/漂移；[作者发表记录 p.2/P27](https://zhihanjiang.com/papers/CV_zhihanjiang_public.pdf)）。[作者全文](https://arxiv.org/html/2412.16264)，§III-B/C、Algorithms1–2、§IV、TablesI–II。 | **分布代表性/漂移驱动**：固定总缓冲，选择代表性新样本、移除不再代表分布的旧样本，非逐类等额。 | 作者全文主结果未单列。 | Accuracy、Precision、Recall、F1；标签预算与消融。 |
+| **CND-IDS — Continual Novelty Detection for IDS**（[ACM/IEEE DAC 2025](https://ieeexplore.ieee.org/document/11132541/)；无监督二元新颖性检测）。[作者全文](https://arxiv.org/html/2502.14094)，§III-B/C、§IV、Figures3–5、TablesII–III。 | **无旧攻击样本回放**：旧模型潜表示正则；另保留洁净 Normal 参考集拟合 PCA，不等于完全不存数据。 | 作者全文主结果未单列。 | F1、平均经验性能、前向/后向迁移、PR-AUC、时间。 |
+| **ACIL — Anomaly-aware class-incremental learning framework for NIDS**（[IJMLC 2026，17:104](https://link.springer.com/article/10.1007/s13042-025-02840-5)；二元及多类）。[作者上传全文](https://www.researchgate.net/publication/400834463_Anomaly-aware_class-incremental_learning_ACIL_framework_for_network_intrusion_detection_systems)，§4.1/4.2、§5.2.1、Table10/12–14，pp.10–11、15–19。 | **多策略框架**：reservoir、herding、CBRS 等，非单一配额；多数实验总缓冲 K=1000，另做大小消融。 | **部分/间接**：定义 FPR/TNR；主表未单列 FPR 数值，Table10 有 Normal 类准确率，不能记为完全不报告良性表现。 | Accuracy、F1、Forgetting、BWT、效率、逐类准确率。 |
+
+**判定：原预设动机句不获支持，待负责人改写；可检验问题仍为配额与 FPR/检测率权衡。** 六篇不能支持“普遍各类均分”；CBRS-NIDS 已有良性/合并攻击二组平衡，不能将 Fixed-50 本身当作新机制。五篇未单列 FPR 只是本次定向样本观察，不是全领域比例或“无人关注误报”的结论；ACIL 的部分/间接报告必须保留。FARQ 的误差驱动配额及其增量价值仍需匹配对照检验，不由本表确立创新，亦不关闭 RQ1/RQ3。
+
+核实边界与纠正：Two-Stage、AdvAs-IIDS、ExBCIL 全文继续标为 **不可得**，未重新搜索，也未猜测配额/FPR；不纳入这六篇可读样本。ACIL 正式发表为 **2026-02-16**，不是 DOI 中的 2025。原 `master_list` 所列 Few-Shot NIDS 的 [DOI 10.3390/fi16100383](https://doi.org/10.3390/fi16100383) 对应其他论文的更正，不能充当该 NIDS 引用，已从本表排除；本次未改动该清单。SSF/CND-IDS 的作者版本用于技术核实，正式发表身份另有上列来源，不将纯预印本计作已发表。
+
+---
+
 Last primary-source check: 2026-10-12. Scope: explanation change, attribution
 uncertainty, statistical inference, continual learning, and drift response. This
 is a targeted 10-source comparison, not an exhaustive novelty opinion.

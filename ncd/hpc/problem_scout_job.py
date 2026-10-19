@@ -101,6 +101,7 @@ def main():
     parser.add_argument("--dataset", choices=DATASETS, required=True)
     parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42), required=True)
     parser.add_argument("--method-group", choices=("all", "joint", "nonjoint"), default="all")
+    parser.add_argument("--section26", action="store_true", help="Matched FARQ matrix, including held-out Joint reference")
     parser.add_argument("--local-smoke", action="store_true")
     args = parser.parse_args()
     source = os.environ.get("NCD_SOURCE_COMMIT", "")
@@ -135,6 +136,10 @@ def main():
     if (sum(info["train_counts"].values()), sum(info["id_counts"].values())) != expected:
         parser.error("Section21.8 requires the frozen full uncapped dataset")
     methods = METHODS if args.method_group == "all" else (["joint"] if args.method_group == "joint" else METHODS[1:])
+    if args.section26:
+        if args.dataset == "cic18" or args.method_group != "all":
+            parser.error("Section26 uses NSL/UNSW/CIC17 and all six training entries")
+        methods = ["replay", "fixed50", "farq", "farq_all", "derpp", "joint"]
     seed = 1 if args.local_smoke else args.seed
     suffix = Path("smoke" if args.local_smoke else "formal") / args.dataset / f"seed_{seed}" / args.method_group
     output, protected = args.output_root / suffix, args.protected_root / suffix
@@ -150,6 +155,8 @@ def main():
     command = [sys.executable, "-I", "-u", "ncd/run_problem_scout.py", "--config", "ncd/configs/problem_scout_section21.json",
                "--output-dir", os.path.relpath(output, args.code_root),
                "--datasets", DATASETS[args.dataset], "--seeds", str(seed), "--methods", *methods]
+    if args.section26:
+        command.extend(["--section26", "--min-steps-per-task", "2000"])
     if args.local_smoke:
         command.append("--smoke")
     record = {"job_id": os.environ.get("SLURM_JOB_ID"), "source_commit": source,

@@ -36,6 +36,9 @@ args=(ncd/hpc/problem_scout_job.py --code-root "$NCD_CODE_ROOT"
   --data-root "$NCD_DATA_ROOT" --output-root "$NCD_OUTPUT_ROOT"
   --protected-root "$NCD_PROTECTED_ROOT" --dataset "$NCD_DATASET"
   --seed "$NCD_SEED" --method-group "${NCD_METHOD_GROUP:-all}")
+if [ "${NCD_SECTION26:-0}" = 1 ]; then
+  args+=(--section26)
+fi
 if [ "${NCD_LOCAL_SMOKE:-0}" = 1 ]; then
   # This is the identical entry and training runner; --smoke makes the runner use
   # seed 1, one epoch, and at most 64 rows/class, including final summary writing.

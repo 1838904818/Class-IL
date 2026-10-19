@@ -19,6 +19,7 @@ import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
@@ -37,7 +38,7 @@ from ncd.run_crr_real_sequence import _scorer, _write_csv
 from ncd.source_commit import source_commit
 from ncd.train_cil import Tee, herding_select, loader, seed_everything
 
-METHODS = ("joint", "replay", "icarl", "replay_lwf", "rcl_tab", "derpp")
+METHODS = ("joint", "replay", "icarl", "replay_lwf", "rcl_tab", "derpp", "fixed50", "farq", "farq_all")
 DATASETS = ("NSL-KDD", "UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018")
 SEEDS = (1, 2, 3, 4, 42)
 DERPP_REFERENCE = "https://github.com/aimagelab/mammoth/blob/e75a491c69fd729edeb01431afb753d9157d9a81/models/derpp.py"
@@ -77,7 +78,14 @@ def save_json(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(json.dumps(value, indent=2, sort_keys=True, allow_nan=False), encoding="utf-8")
-    temp.replace(path)
+    for attempt in range(40):
+        try:
+            temp.replace(path)
+            break
+        except PermissionError:
+            if attempt == 39:
+                raise
+            time.sleep(.05)
 
 
 def require_finite(value) -> None:
@@ -266,6 +274,98 @@ def memory_size(buffer_x, buffer_y):
     return sum(len(y) for y in buffer_y), sum(x.nbytes + y.nbytes for x, y in zip(buffer_x, buffer_y))
 
 
+def section26_pools(data, seed):
+    """Permanent TRAIN-only holdout; same split for every compared method."""
+    train, valid = {}, {}
+    for c in range(len(data.class_order)):
+        rows = np.flatnonzero(data.y_train == c)
+        n = max(5, int(np.ceil(len(rows) * .1)))
+        if n >= len(rows):
+            raise ValueError("Section26 needs at least one training row after holdout")
+        shuffled = np.random.default_rng(seed * 100003 + c * 1009 + 17).permutation(rows)
+        valid[c], train[c] = shuffled[:n], np.sort(shuffled[n:])
+    return train, valid
+
+
+def effective_policies(config):
+    if not config.get("section26", False):
+        return POLICIES
+    return POLICIES | {
+        "joint": "Fresh initialization each task; all seen permanent TRAIN-pool rows excluding the common holdout; reference outside replay-memory budget.",
+        "memory": "M=200*seen classes includes training replay and retained validation. Requested per-class quota may exceed200; unavailable rows leave capacity unused.",
+        "selection_change_from_history": "Section26 explicitly permits matched seen-TRAIN-archive access; permanent heldout rows never enter optimization. Random class-local priority, no test-based selection.",
+        "derpp": "Unchanged CE+alpha logit MSE+beta replay CE, two independent minibatches; classwise reservoir180 training slots plus20 heldout validation slots per class. Only training-split rows are admitted.",
+        "validation": "Permanent max(5,ceil(10%)) per-class TRAIN holdout. Allocation uses old retained validation and at most20 heldout rows for each new class; retained validation is counted inside M.",
+        "replay_count_scope": "replay_examples/bytes fields measure optimization replay only; allocation.actual_total includes retained validation. Selection time includes validation scoring and archive sampling.",
+        "scope": "Section26 matched quota comparison under RQ2/RO2; no claim of strict no-history streaming, OFRA motivation, or RQ1/RQ3 completion.",
+    }
+
+
+def section26_memory(model, data, train, valid, vx, vy, task, seen, method, config, seed, device):
+    """Quota-only Replay change; archive access is matched and explicitly logged."""
+    normal, count = data.class_order.index("Normal"), len(seen)
+    per_class = int(config["buffer_per_class"])
+    total = per_class * count
+    old_valid = {int(y[0]): x for x, y in zip(vx, vy) if len(y)}
+    errors, evaluated, wrong = {}, {}, {}
+    model.eval()
+    with torch.no_grad():
+        for c in seen:
+            values = data.x_train[valid[c][:20]] if c in task else old_valid[c]
+            if not len(values):
+                raise ValueError("No heldout validation examples for a seen class")
+            scores = model(torch.from_numpy(np.asarray(values)).to(device))[:, list(seen)]
+            if not torch.isfinite(scores).all():
+                raise ValueError("Nonfinite heldout scores")
+            pred = np.asarray(seen)[scores.argmax(1).cpu().numpy()]
+            wrong[c], evaluated[c] = int(np.count_nonzero(pred != c)), len(values)
+            errors[c] = wrong[c] / evaluated[c]
+    f = errors[normal]
+    attacks = sorted(c for c in seen if c != normal)
+    m = float(np.mean([errors[c] for c in attacks])) if attacks else 0.0
+    q = 1.0 / count
+    caps = {c: per_class for c in seen}
+    if method in {"fixed50", "farq"}:
+        q = .5 if method == "fixed50" else float(np.clip(f / (f + m) if f + m else q, q, .6))
+        nc = min(int(np.floor(q * total)), total - 20 * len(attacks))
+        base, rem = divmod(total - nc, len(attacks))
+        caps = {normal: nc, **{c: base + (i < rem) for i, c in enumerate(attacks)}}
+    elif method == "farq_all" and sum(errors.values()):
+        remaining = total - 20 * count
+        raw = {c: remaining * errors[c] / sum(errors.values()) for c in seen}
+        caps = {c: 20 + int(np.floor(raw[c])) for c in seen}
+        order = sorted(seen, key=lambda c: (-(raw[c] - np.floor(raw[c])), c))
+        for c in order[:total - sum(caps.values())]:
+            caps[c] += 1
+        q = caps[normal] / total
+    xs, ys, vxs, vys, tn, vn = [], [], [], [], {}, {}
+    for c in sorted(seen):
+        nv = max(5, int(np.ceil(caps[c] * .1)))
+        chosen_v = valid[c][:nv]
+        # A fixed class-local priority permits quota growth without selecting on test data.
+        priority = np.random.default_rng(seed * 10000 * 10007 + c).permutation(len(train[c])) if method not in {"derpp", "joint"} else np.empty(0, dtype=np.int64)
+        chosen_t = np.sort(train[c][priority[:max(0, caps[c] - nv)]])
+        xs.append(data.x_train[chosen_t].copy()); ys.append(np.full(len(chosen_t), c, dtype=np.int64))
+        vxs.append(data.x_train[chosen_v].copy()); vys.append(np.full(len(chosen_v), c, dtype=np.int64))
+        tn[str(c)], vn[str(c)] = len(chosen_t), len(chosen_v)
+    detail = {"policy": method, "f": f, "m": m, "q_requested": q,
+              "m_definition": "macro mean P(predicted family != true attack family)",
+              "target_counts": {str(c): int(caps[c]) for c in seen},
+              "actual_training_counts": tn, "actual_validation_counts": vn,
+              "validation_eval_counts": {str(c): evaluated[c] for c in seen},
+              "validation_class_errors": {str(c): errors[c] for c in seen},
+              "validation_error_counts": {str(c): wrong[c] for c in seen},
+              "heldout_pool_counts": {str(c): len(valid[c]) for c in seen},
+              "capacity_total": total, "actual_total": sum(tn.values()) + sum(vn.values()),
+              "old_training_pool_access_classes": [int(c) for c in seen if c not in task],
+              "old_validation_pool_access_classes": [int(c) for c in seen if c not in task],
+              "validation_role": "permanent TRAIN holdout; never optimization or training replay; retained validation counts inside M",
+              "archive_access": "all methods may resample seen TRAIN pools; not strict no-history-access streaming"}
+    detail["normal_actual_fraction_of_capacity"] = (tn[str(normal)] + vn[str(normal)]) / total
+    detail["normal_actual_fraction_of_used"] = (tn[str(normal)] + vn[str(normal)]) / detail["actual_total"]
+    return xs, ys, vxs, vys, detail
+
+
 def metrics_from_confusion(cm, seen, class_order, tasks, train_counts):
     n = len(class_order)
     if cm.shape != (n, n) or np.any(cm < 0):
@@ -301,7 +401,7 @@ def metrics_from_confusion(cm, seen, class_order, tasks, train_counts):
             "normal_support": normal_n, "per_class": rows}
 
 
-def evaluate(scorer, x, y, seen, data, config, device):
+def evaluate(scorer, x, y, seen, data, config, device, log_prior=None):
     if x is None or y is None:
         return None
     selected = np.flatnonzero(np.isin(y, seen))
@@ -312,6 +412,8 @@ def evaluate(scorer, x, y, seen, data, config, device):
         for start in range(0, len(selected), int(config["eval_batch_size"])):
             idx = selected[start:start + int(config["eval_batch_size"])]
             logits = scorer(torch.from_numpy(np.asarray(x[idx])).to(device))
+            if log_prior is not None:
+                logits = logits + log_prior
             if not torch.isfinite(logits).all():
                 raise ValueError("nonfinite evaluation scores")
             local = logits[:, list(seen)].argmax(dim=1).cpu().numpy()
@@ -357,9 +459,13 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
         print(f"CELL_RESUME {identity['dataset']} {identity['method']} {identity['seed']}", flush=True)
         return result
     method, seed = identity["method"], identity["seed"]
+    section26 = bool(config.get("section26", False))
+    train_pools, valid_pools = section26_pools(data, seed) if section26 else ({}, {})
+    validation_x, validation_y = [], []
     model = MLP(data.x_train.shape[1], int(config["hidden"]), len(data.class_order)).to(device)
     buffer_x, buffer_y, previous_seen, records = [], [], (), []
-    memory = ClassReservoir(int(config["buffer_per_class"]), data.x_train.shape[1], len(data.class_order)) if method == "derpp" else None
+    reservoir_cap = int(config["buffer_per_class"]) - (max(5, int(np.ceil(config["buffer_per_class"] * .1))) if section26 else 0)
+    memory = ClassReservoir(reservoir_cap, data.x_train.shape[1], len(data.class_order)) if method == "derpp" else None
     cumulative = 0.0
     for t, task in enumerate(data.tasks):
         checkpoint = output / "checkpoints" / f"checkpoint_{t:03d}.pt"
@@ -374,8 +480,11 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
             model.load_state_dict(state["model_state"])
             buffer_x = [a.numpy().copy() for a in state["buffer_x"]]
             buffer_y = [a.numpy().copy() for a in state["buffer_y"]]
+            if section26:
+                validation_x = [a.numpy().copy() for a in state["validation_x"]]
+                validation_y = [a.numpy().copy() for a in state["validation_y"]]
             if method == "derpp":
-                memory = ClassReservoir(int(config["buffer_per_class"]), data.x_train.shape[1], len(data.class_order), state["derpp_memory"])
+                memory = ClassReservoir(reservoir_cap, data.x_train.shape[1], len(data.class_order), state["derpp_memory"])
             cumulative = state["training_seconds_cumulative"]
             print(f"CHECKPOINT_RESUME {identity['dataset']} {method} seed={seed} task={t}", flush=True)
         else:
@@ -385,7 +494,10 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                 # Joint is never warm-started, even after a resumed checkpoint.
                 model = MLP(data.x_train.shape[1], int(config["hidden"]), len(data.class_order)).to(device)
             selected_classes = seen if method == "joint" else tuple(task)
-            if method == "joint" and len(seen) == len(data.class_order):
+            if section26:
+                indices = np.sort(np.concatenate([train_pools[c] for c in selected_classes]))
+                current_x, current_y = data.x_train[indices], data.y_train[indices]
+            elif method == "joint" and len(seen) == len(data.class_order):
                 current_x, current_y = data.x_train, data.y_train
             else:
                 mask = np.isin(data.y_train, selected_classes)
@@ -397,7 +509,7 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
             if method not in {"joint", "derpp"} and buffer_x:
                 train_x = np.concatenate([current_x, *buffer_x])
                 train_y = np.concatenate([current_y, *buffer_y])
-            teacher = copy.deepcopy(model).to(device).eval() if t and method not in {"joint", "replay", "derpp"} else None
+            teacher = copy.deepcopy(model).to(device).eval() if t and method not in {"joint", "replay", "derpp", "fixed50", "farq", "farq_all"} else None
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
                 torch.cuda.reset_peak_memory_stats(device)
@@ -412,7 +524,7 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                     train_derpp(model, current_x, current_y, memory, config, task_seed, device,
                                 training_stats=training_schedule)
             else:
-                _train(model, train_x, train_y, method="replay" if method == "joint" else method,
+                _train(model, train_x, train_y, method="replay" if method in {"joint", "fixed50", "farq", "farq_all"} else method,
                        old_model=teacher, old_classes=previous_seen, seen_classes=seen,
                        epochs=int(config["epochs_per_task"]), batch_size=int(config["batch_size"]),
                        learning_rate=float(config["learning_rate"]), seed=task_seed,
@@ -428,7 +540,24 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
             peak_reserved = int(torch.cuda.max_memory_reserved(device)) if device.type == "cuda" else None
             del teacher
             started = time.perf_counter()
-            if method not in {"joint", "derpp"}:
+            if section26:
+                new_x, new_y, validation_x, validation_y, allocation = section26_memory(
+                    model, data, train_pools, valid_pools, validation_x, validation_y,
+                    task, seen, method, config, seed, device)
+                if method not in {"joint", "derpp"}:
+                    buffer_x, buffer_y = new_x, new_y
+                else:
+                    allocation["old_training_pool_access_classes"] = list(previous_seen) if method == "joint" else []
+                    allocation["actual_training_counts"] = {
+                        str(c): min(reservoir_cap, memory.observations[c]) if memory is not None else 0 for c in seen}
+                    allocation["actual_total"] = sum(allocation["actual_training_counts"].values()) + sum(allocation["actual_validation_counts"].values())
+                    normal = str(data.class_order.index("Normal"))
+                    normal_n = allocation["actual_training_counts"][normal] + allocation["actual_validation_counts"][normal]
+                    allocation["normal_actual_fraction_of_capacity"] = normal_n / allocation["capacity_total"]
+                    allocation["normal_actual_fraction_of_used"] = normal_n / allocation["actual_total"]
+                    allocation["reference_not_replay_budget"] = method == "joint"
+                del new_x, new_y
+            elif method not in {"joint", "derpp"}:
                 buffer_x, buffer_y = update_memory(model, current_x, current_y, buffer_x, buffer_y, method, config, task_seed, device,
                                                    scratch_dir=output / "selection_tmp")
             selection_seconds = time.perf_counter() - started
@@ -448,6 +577,10 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                      "replay_allocated_bytes_after": memory.allocated_bytes() if memory is not None else after_bytes,
                      "train_rows": len(train_y), "new_training_rows": len(current_y),
                      "train_class_counts": {str(c): int(np.sum(train_y == c)) for c in seen}}
+            if section26:
+                state.update(validation_x=[torch.from_numpy(a.copy()) for a in validation_x],
+                             validation_y=[torch.from_numpy(a.copy()) for a in validation_y],
+                             allocation=allocation)
             if training_schedule is not None:
                 baseline_steps = int(config["epochs_per_task"]) * ((len(train_y) + int(config["batch_size"]) - 1) // int(config["batch_size"]))
                 expected_steps = max(baseline_steps, min_steps)
@@ -472,10 +605,17 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                                            "train_rows", "new_training_rows", "train_class_counts")}
             if "training_schedule" in state:
                 record["training_schedule"] = state["training_schedule"]
+            if section26:
+                record["allocation"] = state["allocation"]
             record.update(new_classes=list(task), checkpoint_file=checkpoint.relative_to(output).as_posix(),
                           checkpoint_sha256=checkpoint_hash, identity_hash=canonical_hash(identity),
                           id=evaluate(scorer, data.x_test, data.y_test, seen, data, config, device),
                           shift=evaluate(scorer, x_shift, y_shift, seen, data, config, device))
+            if section26 and method == "replay":
+                counts = np.bincount(data.y_train, minlength=len(data.class_order))
+                prior = torch.tensor(np.log(counts / counts.sum()), dtype=torch.float32, device=device)
+                record["la_id"] = evaluate(scorer, data.x_test, data.y_test, seen, data, config, device, prior)
+                record["la_definition"] = "logit + log(original TRAIN prior), tau=1; Section25 adaptation, not Menon Eq9 reproduction"
             record["evaluation_seconds"] = time.perf_counter() - started
             del scorer
             save_json(metric_path, record)
@@ -487,9 +627,12 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
               "class_order": data.class_order, "tasks": data.tasks,
               "train_counts": {str(c): int(np.sum(data.y_train == c)) for c in range(len(data.class_order))},
               "checkpoints": records, "training_seconds_total": cumulative,
-              "setting_metadata": metadata, "policies": POLICIES,
+              "setting_metadata": metadata, "policies": effective_policies(config),
               "command": subprocess.list2cmdline(["python", "-I", "ncd/run_problem_scout.py", *sys.argv[1:]]),
               "log_path": path_label(output.parents[1] / "run.log")}
+    if section26:
+        result["completed_at"] = datetime.now().astimezone().isoformat()
+        result["section26_policy"] = "Permanent 10% TRAIN holdout, at least5/class; retained validation included in M=200*seen; all methods allowed seen TRAIN archive access; no test selection. Fixed50 is dynamic capacity, not Section25 fixed_final."
     save_json(final_path, result)
     print(f"CELL_COMPLETE {identity['dataset']} {method} seed={seed}", flush=True)
     return result
@@ -519,6 +662,7 @@ def main():
     parser.add_argument("--min-steps-per-task", type=int,
                         help="Minimum optimizer updates per task; retain all configured epochs before extra batches")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--section26", action="store_true", help="Matched permanent TRAIN holdout and archive-enabled Replay quotas")
     parser.add_argument("--evaluate-only", action="store_true")
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
@@ -536,9 +680,21 @@ def main():
     if int(config.get("min_steps_per_task", 0)) < 0:
         parser.error("config min_steps_per_task must be nonnegative")
     datasets, methods, seeds = args.datasets or config["datasets"], args.methods or config["methods"], args.seeds or config["seeds"]
+    if args.section26:
+        config["section26"] = True
+        if not args.methods:
+            methods = ["replay", "fixed50", "farq", "farq_all", "derpp", "joint"]
+        if any(m not in {"replay", "fixed50", "farq", "farq_all", "derpp", "joint"} for m in methods):
+            parser.error("Section26 only supports its matched comparisons")
+        if "CSE-CIC-IDS2018" in datasets:
+            parser.error("Section26 excludes CSE18")
+        if int(config["buffer_per_class"]) != 200:
+            parser.error("Section26 fixes M=200*seen, including validation memory")
+    elif any(m in {"fixed50", "farq", "farq_all"} for m in methods):
+        parser.error("Quota methods require --section26")
     if args.smoke:
         seeds = [1]
-        config.update(epochs_per_task=1, buffer_per_class=min(16, int(config["buffer_per_class"])))
+        config.update(epochs_per_task=1, buffer_per_class=int(config["buffer_per_class"]) if args.section26 else min(16, int(config["buffer_per_class"])))
         if config.get("min_steps_per_task", 0):
             config["smoke_requested_min_steps_per_task"] = config["min_steps_per_task"]
             config["min_steps_per_task"] = 0
@@ -571,13 +727,18 @@ def main():
             total = len(datasets) * len(methods) * len(seeds)
             for dataset in datasets:
                 data, x_shift, y_shift, metadata = prepare_setting(dataset, config)
+                if args.section26:
+                    x_shift, y_shift = None, None
                 if args.smoke:
                     data, x_shift, y_shift = smoke_subset(data, x_shift, y_shift)
                 data_hashes = binding(data, x_shift, y_shift)
-                selection_path = ROOT / config["lambda_files"].get(dataset, config["lambda_files"]["default"])
-                selection = json.loads(selection_path.read_text(encoding="utf-8"))
-                if selection.get("selection_seeds") != [5, 6]:
-                    raise ValueError("expected previously registered calibration seeds 5,6")
+                if args.section26:
+                    selection_path, selection = None, {"lambdas": {}, "git_commit": None}
+                else:
+                    selection_path = ROOT / config["lambda_files"].get(dataset, config["lambda_files"]["default"])
+                    selection = json.loads(selection_path.read_text(encoding="utf-8"))
+                    if selection.get("selection_seeds") != [5, 6]:
+                        raise ValueError("expected previously registered calibration seeds 5,6")
                 for method in methods:
                     for seed in seeds:
                         regularization = selection["lambdas"].get(method, 0.0)
@@ -585,8 +746,15 @@ def main():
                                                  "class_order": data.class_order, "tasks": data.tasks,
                                                  "feature_names": data.feature_names, "data_binding": data_hashes,
                                                  "data_metadata_sha256": canonical_hash(metadata),
-                                                 "regularization": regularization, "lambda_file": path_label(selection_path),
-                                                 "lambda_file_sha256": digest(selection_path), "lambda_source_commit": selection["git_commit"]}
+                                                 "regularization": regularization, "lambda_file": path_label(selection_path) if selection_path else None,
+                                                 "lambda_file_sha256": digest(selection_path) if selection_path else None, "lambda_source_commit": selection["git_commit"]}
+                        if args.section26:
+                            train_pools, valid_pools = section26_pools(data, seed)
+                            identity["section26_holdout"] = {
+                                str(c): {"train_count": len(train_pools[c]), "validation_count": len(valid_pools[c]),
+                                         "validation_indices_sha256": hashlib.sha256(valid_pools[c].tobytes()).hexdigest()}
+                                for c in valid_pools}
+                            del train_pools, valid_pools
                         slug = dataset.lower().replace("-", "_")
                         cell_dir = out / slug / f"{method}_seed{seed}"
                         result = run_cell(data, x_shift, y_shift, metadata, config, identity, cell_dir, device, args.evaluate_only)
@@ -601,7 +769,7 @@ def main():
                                     "expected_cells": total, "cells": cells, "final_rows": rows,
                                     "training_seconds_total": sum(c["training_seconds_total"] for c in cells),
                                     "command": subprocess.list2cmdline(["python", "-I", "ncd/run_problem_scout.py", *sys.argv[1:]]),
-                                    "log_path": path_label(out / "run.log"), "policies": POLICIES}
+                                    "log_path": path_label(out / "run.log"), "policies": effective_policies(config)}
                         save_json(result_path, snapshot)
                         _write_csv(out / "final_rows.csv", rows)
                 # Avoid retaining a full prepared dataset while the next one loads.
