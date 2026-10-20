@@ -698,7 +698,8 @@ def cse_summary_zh(evidence, aggregate_text):
         '第3项只按差值均值≥−2pp判定；其对零差值的描述性t p_less=0.002195、符号翻转p_less=0.03125亦保存在JSON，不参与门槛。',
         '未检出遗忘/ADR伤害不等于等效。精确符号翻转枚举32种，仅作敏感性核对，不替换预登记t规则。'
         '本地与HPC成本不混称同硬件比较；旧FAIL、RQ1/RQ3及创新门槛不因此闭合。',
-        '§42要求的gate KD mask已经存在于已执行代码，不能改名重复训练；新的额外候选需要真正不同的预注册干预。机制诊断尚未得到因果证明。','']
+        '§42要求的gate KD mask已经存在于已执行代码，不能改名重复训练；新的额外候选需要真正不同的预注册干预。机制诊断尚未得到因果证明。',
+        '已发布均值中，原AA-CIL的最终BAcc也低于Replay-BS；此描述性比较不作显著性判定。解封前已条件指定一次新种子fallback，但因其mask重复现有算法仍未执行，须先明确真正不同的干预。','']
     return lines
 
 
@@ -954,6 +955,30 @@ def section39_summary_zh(compact):
         '不因本结果重选。'+('CSE18完整判定已报告。' if compact.get('cse_status')=='released_assessed' else 'CSE18仍封存。'),'']
 
 
+def literature_summary_zh():
+    """Editorial synthesis of the existing Sections 26.8/27.3 source record."""
+    return [
+        '### 文献综述与研究边界', '',
+        '论文文献综述按持续/类增量NIDS、Class-IL偏差校正、回放与蒸馏三部分组织，仅使用原有20个bib键。下表前六篇构成定向报告样本，包含二元持续学习和无监督新颖性检测，不能统称多类CIL；后四篇只作可得性背景，不计入六篇比例。未核实不等于没有报告。', '',
+        '| 工作 | 设定 | 良性处理 | 主结果固定工作点良性FPR | 遗忘证据 |',
+        '|---|---|---|---|---|',
+        '| CBRS-NIDS | 二元输出、攻击顺序到达 | 良性/攻击共享回放，两种平衡口径 | 未单列 | 未核实 |',
+        '| ECBRS/PAPA | 二元domain-IL | 共享回放、频数驱动替换 | 未单列 | 未核实 |',
+        '| SPIDER | 半监督二元domain-IL | 上一任务无标签样本；良性配额未核实 | 未单列 | 未核实 |',
+        '| SSF | 二元持续学习/漂移 | 共享固定缓冲、代表性选择 | 未单列 | 未核实 |',
+        '| CND-IDS | 无监督二元新颖性检测 | 洁净Normal参考集，无旧攻击回放 | 未单列 | 报告BWT；显式遗忘未核实 |',
+        '| ACIL | 二元及多类 | 共享回放、多策略 | 部分/间接Normal报告 | 报告Forgetting及BWT |',
+        '| Cerasuolo ComNet | 多类Class-IL | Normal在旧类回放中，每类25样本 | 未核实 | 未核实 |',
+        '| Cerasuolo RTSI | 多类、良性适配 | 新良性在旧攻击专属memory外；一次适配 | 未核实 | 未核实 |',
+        '| Cerasuolo EAAI | 跨域类别适配 | 新域良性及源类memory | 未核实 | 未核实 |',
+        '| Wang与Cao | Class-IL，细节未核实 | 仅摘要，未核实 | 未核实 | 未核实 |', '',
+        'G1（联合报告缺口）：六篇中五篇主结果未单列固定工作点良性FPR，ACIL为部分/间接报告；现有核实记录未确立同时报告遗忘与固定FPR检出的评估，不能扩大成全领域无人研究或把未核实字段写成否。',
+        'G2（条件性的良性回放竞争）：共享缓冲是若干方法的设定，不是普遍事实或已证遗忘根因。ComNet每类25样本不是固定总M的证据；RTSI已有memory外新良性与旧攻击专属memory的先例，CND-IDS另有Normal参考集。',
+        'G3（类别偏差到良性告警控制）：BiC、WA、SS-IL、EEIL及logit adjustment为相关但不同的控制，并未直接提供本文的持续良性刷新、独立门和良性校准协议；不据此断言它们不可适配或门结构新颖。KD+WA借用蒸馏、DER式回放和WA，不声称组件创新；其联合准确率/遗忘收益仍须实证，CSE失败保持。',
+        'G1–G3仅组织锁定RQ2下的预测/保持子研究；原RQ1静默解释漂移、RQ3非抑制治理及全部RO不替换，未完成边界保持。', '',
+    ]
+
+
 def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment, compact):
     """One-page author summary: one formal table, no duplicate old matrices."""
     def aggregate_text(value):
@@ -1005,6 +1030,7 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
         '固定KD复评要求NSL/CIC，不能互换。CIC Replay-BS已补齐五种子，仅更新受影响的KD准确率配对比较；'
         '其余历史检验未重算，原FAIL不变。解释漂移、治理及总体创新仍未闭合。',
         '',
+        *literature_summary_zh(),
         '[完整逐阶段指标与逐类结果](../ncd/results/problem_scout/section28/forgetting_v1/result.json)；其余 FPR/MF1、配对检验与成本见论文及源结果。',
     ]
     (PAPER / 'summary_zh.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
