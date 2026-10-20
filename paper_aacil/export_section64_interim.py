@@ -1,6 +1,6 @@
 """Publish one complete local five-method decision set; never run final tests.
 
-Only the Section64 and explicit Section66 local assignments are supported. HPC collection and the
+Only the Section64 and explicit Section66/67 local assignments are supported. HPC collection and the
 1-percent external-baseline evaluation are separate, unfinished work.
 """
 from __future__ import annotations
@@ -28,6 +28,10 @@ SECTION66 = {
     "commit": "d7056fe1b405412d477761fe40f3afdfc603d604",
     "sha256": "d624528a15d77c1cf4ad44643f78666f2aa5df9da1c5f0eb1371b43b73c5061d",
 }
+SECTION67 = {
+    "commit": "47bc1ff48462b9862d0d15b3c10a6699467d09e1",
+    "sha256": "38335c7c6b9782ce9cf057d7f0fe657bb967dcc08bb9f640491388228f1144d7",
+}
 
 
 def canonical_hash(value):
@@ -37,14 +41,16 @@ def canonical_hash(value):
     ).encode()).hexdigest()
 
 
-def complete_local_set(root, seed, section66=False):
+def complete_local_set(root, seed, section66=False, section67=False):
     """Read structural status only; reject partial sets before opening results."""
     paths = sorted((root / "attempts").glob("*/status.json"))
     require(len(paths) == 1, "Multiple attempts need explicit cost reconciliation")
     job, digest = read_shared(paths[0])
-    launcher = SECTION66["commit"] if section66 else LAUNCHER
-    launcher_sha = SECTION66["sha256"] if section66 else LAUNCHER_SHA
-    order = DECISION if section66 else ORDER
+    require(not (section66 and section67), "Choose one assignment")
+    binding = SECTION67 if section67 else SECTION66 if section66 else None
+    launcher = binding["commit"] if binding else LAUNCHER
+    launcher_sha = binding["sha256"] if binding else LAUNCHER_SHA
+    order = DECISION if binding else ORDER
     require(job["launcher_commit"] == launcher
             and job["launcher_sha256"] == launcher_sha
             and job["package_sha256"] == PACKAGE_SHA
@@ -53,8 +59,9 @@ def complete_local_set(root, seed, section66=False):
             and job["status"] in ("running", "complete"), "Assignment mismatch")
     planned = job["planned_cells"]
     seeds = list(dict.fromkeys(c[2] for c in planned))
-    require(seeds in (([6],) if section66 else ([5], [6], [5, 6]))
-            and (not section66 or seed == 6)
+    expected_seed = 7 if section67 else 6 if section66 else None
+    require(seeds in (([expected_seed],) if binding else ([5], [6], [5, 6]))
+            and (seed == expected_seed if binding else seed in seeds)
             and planned == [[DATASET, m, s] for s in seeds for m in order],
             "Unexpected serial assignment")
     cells = job["cells"]
@@ -76,17 +83,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--package", type=Path, required=True)
-    parser.add_argument("--seed", type=int, choices=(5, 6), required=True)
-    parser.add_argument("--section66", action="store_true",
+    parser.add_argument("--seed", type=int, choices=(5, 6, 7), required=True)
+    assignment = parser.add_mutually_exclusive_group()
+    assignment.add_argument("--section66", action="store_true",
                         help="Bind the published seed6 five-decision assignment")
+    assignment.add_argument("--section67", action="store_true",
+                            help="Bind the published seed7 five-decision assignment")
     args = parser.parse_args()
     root = args.source_root.resolve()
     destination = ROOT / "ncd/results/problem_scout/section64/interim_local_v1" / f"seed_{args.seed}"
     require(not destination.exists(), "Already exported; preserve original snapshot")
-    job, snapshot, status_path, cells = complete_local_set(root, args.seed, args.section66)
-    section = "section66" if args.section66 else "section64"
-    launcher = SECTION66["commit"] if args.section66 else LAUNCHER
-    launcher_sha = SECTION66["sha256"] if args.section66 else LAUNCHER_SHA
+    job, snapshot, status_path, cells = complete_local_set(
+        root, args.seed, args.section66, args.section67)
+    section = "section67" if args.section67 else "section66" if args.section66 else "section64"
+    binding = SECTION67 if args.section67 else SECTION66 if args.section66 else None
+    launcher = binding["commit"] if binding else LAUNCHER
+    launcher_sha = binding["sha256"] if binding else LAUNCHER_SHA
     invocation_name = section + "_local_invocation.json"
     require(hashlib.sha256(args.package.read_bytes()).hexdigest() == PACKAGE_SHA,
             "Original frozen package required")
@@ -135,10 +147,10 @@ def main():
                  "local_launcher_commit": launcher, "local_launcher_sha256": launcher_sha,
                  "original_selection_changed": False, "tuning_permitted": False}
         require(all(cfg.get(k) == v for k, v in fixed.items()), "Fixed execution mismatch")
-        if args.section66:
-            require(cfg.get("section66") is True
-                    and cfg.get("assignment") == "seed6_decision_five",
-                    "Section66 assignment configuration mismatch")
+        if binding:
+            require(cfg.get(section) is True
+                    and cfg.get("assignment") == f"seed{args.seed}_decision_five",
+                    "Assignment configuration mismatch")
         for split, count in (("train", 12882081), ("test", 3255102)):
             require(ident["data_binding"]["x_" + split]["shape"] == [count, 78]
                     and ident["data_binding"]["y_" + split]["shape"] == [count],
