@@ -47,6 +47,8 @@ DATASETS = ("UNSW-NB15", "NSL-KDD", "CIC-IDS-2017", "CSE-CIC-IDS2018")
 FORMAL_SEEDS = (1, 2, 3, 4, 42)
 TUNING_SEEDS = (5, 6)
 COEFFICIENTS = (0.25, 0.5)
+NOGKD_WA = "aacil_nogkd_wa"
+CONFIRMATION_SEEDS = (5, 6, 7, 8, 9)
 SOURCE_PATHS = (*retention.SOURCE_PATHS, "ncd/aacil_compact.py", "ncd/run_aacil_compact.py")
 ADAPTATION = ("Task-boundary shared attack-memory DER++ adaptation: current and retained-old attack balanced CE, "
               "stored raw-logit MSE only over seen-at-admission outputs, independent old-memory replay CE. "
@@ -80,8 +82,10 @@ def run_cell(data, config, identity, output, device, evaluate_only=False):
         raise ValueError("Normal must occur in task0")
     seed, method = identity["seed"], identity["method"]
     coefficient = float(config["lambda_g"])
+    if method == NOGKD_WA and (coefficient != 0.0 or config["derpp_alpha"] != 1.0 or config["derpp_beta"] != 1.0):
+        raise ValueError("Section44 noGKD+WA requires lambda_g=0 and DER alpha=beta=1")
     der_family = method != "aacil_ema_kd"
-    kind = method
+    kind = "aacil_kd_wa" if method == NOGKD_WA else method
     attack_ids = [c for c in range(len(data.class_order)) if c != normal]
     mapping = {c: j for j, c in enumerate(attack_ids)}
     train, valid = section26_pools(data, seed)
@@ -91,7 +95,7 @@ def run_cell(data, config, identity, output, device, evaluate_only=False):
     seed_everything(seed * 10000)
     gate = MLP(data.x_train.shape[1], int(config["hidden"]), 2).to(device)
     family = CompactFamily(data.x_train.shape[1], int(config["hidden"]), len(attack_ids),
-                           method, ema_decay=config["ema_decay"]).to(device)
+                           kind, ema_decay=config["ema_decay"]).to(device)
     for task_index, task in enumerate(data.tasks):
         check_deadline(config)
         seen = [c for part in data.tasks[:task_index + 1] for c in part]
@@ -169,7 +173,7 @@ def run_cell(data, config, identity, output, device, evaluate_only=False):
             selection_seconds = preparation_seconds + time.perf_counter() - started
             cbf_seconds, wa_seconds, ncm_seconds = 0.0, 0.0, 0.0
             postprocess, prototypes = {}, {}
-            if method == "aacil_kd_wa":
+            if kind == "aacil_kd_wa":
                 postprocess = apply_weight_alignment(family, [mapping[c] for c in seen if c != normal and c not in new_attacks],
                                                     [mapping[c] for c in new_attacks])
                 wa_seconds = postprocess["elapsed_seconds"]
@@ -339,6 +343,11 @@ def run_cell(data, config, identity, output, device, evaluate_only=False):
                               "Compact retention candidate; fixed attack validation outside M only during selection, never optimization or test-based tuning.",
                               "Two networks and refreshed benign data are not compute-matched to one-stage baselines.",
                               "Does not close RQ1/RQ3 or establish substantive novelty."]}
+    if method == NOGKD_WA:
+        result["selection_rule"] = "Section44 fixed post-unsealing intervention; no validation selection or tuning"
+        result["limitations"].append(
+            "Designed after observing original CSE18 results; new seeds reuse the same dataset, not an independent dataset. "
+            "Gate KD weight is zero; matched teacher-forward and target-storage overhead is retained and accounted.")
     for key in ("training", "gate_training", "family_training", "base_family_training", "cbf_training", "weight_alignment", "ncm_prototype", "buffer_selection", "teacher_forward",
                 "memory_logit_forward", "logit_storage", "calibration", "evaluation", "validation"):
         result[key + "_seconds_total"] = sum(r[key + "_seconds"] for r in records)
@@ -353,10 +362,12 @@ def main():
     parser.add_argument("--data-root")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--datasets", nargs="+", choices=DATASETS, default=["UNSW-NB15"])
-    parser.add_argument("--methods", nargs="+", choices=METHODS, default=["aacil_kd_weak"])
-    parser.add_argument("--seeds", nargs="+", type=int, choices=(*FORMAL_SEEDS, *TUNING_SEEDS))
+    parser.add_argument("--methods", nargs="+", choices=(*METHODS, NOGKD_WA), default=["aacil_kd_weak"])
+    parser.add_argument("--seeds", nargs="+", type=int, choices=(*FORMAL_SEEDS, *CONFIRMATION_SEEDS))
     parser.add_argument("--device", choices=("cpu", "cuda"))
-    parser.add_argument("--lambda-g", type=float, choices=COEFFICIENTS, required=True)
+    parser.add_argument("--lambda-g", type=float, choices=(0.0, *COEFFICIENTS), required=True)
+    parser.add_argument("--section44-confirmation", action="store_true",
+                        help="Explicit new-seed CSE18 round; outer supervisor must seal all 40 cells")
     parser.add_argument("--der-alpha", type=float, choices=(0.25, 0.5, 1.0), default=1.0)
     parser.add_argument("--der-beta", type=float, choices=(0.25, 0.5, 1.0), default=1.0)
     parser.add_argument("--cbf-epochs", type=int, choices=(1,), default=1)
@@ -371,6 +382,18 @@ def main():
     parser.add_argument("--smoke", action="store_true", help="NONSCIENTIFIC: seed5, one epoch, <=64 rows/class, minsteps0")
     parser.add_argument("--evaluate-only", action="store_true")
     args = parser.parse_args()
+    if NOGKD_WA in args.methods:
+        if args.methods != [NOGKD_WA] or args.lambda_g != 0.0 or args.selection_only:
+            parser.error("noGKD+WA runs alone, forces lambda_g=0, and cannot enter the frozen selection")
+    elif args.lambda_g == 0.0:
+        parser.error("Zero gate KD is reserved for the distinct Section44 noGKD+WA candidate")
+    if args.section44_confirmation:
+        if (args.datasets != ["CSE-CIC-IDS2018"] or args.selection_only
+                or args.methods not in ([NOGKD_WA], ["aacil_kd_wa"])
+                or (args.methods == ["aacil_kd_wa"] and args.lambda_g != 0.5)):
+            parser.error("Section44 confirmation is CSE18 with fixed noGKD+WA or original KD+WA only")
+    elif NOGKD_WA in args.methods and "CSE-CIC-IDS2018" in args.datasets:
+        parser.error("CSE18 noGKD+WA requires explicit --section44-confirmation")
     if args.source_commit:
         if len(args.source_commit) != 40 or any(c not in "0123456789abcdef" for c in args.source_commit.lower()):
             parser.error("source-commit must be a full hexadecimal SHA")
@@ -382,7 +405,8 @@ def main():
             parser.error("deadline-iso must be an ISO timestamp")
         if parsed_deadline.tzinfo is None:
             parser.error("deadline-iso requires an explicit time zone")
-    seeds = args.seeds or list(TUNING_SEEDS if args.selection_only else FORMAL_SEEDS)
+    seeds = args.seeds or list(CONFIRMATION_SEEDS if args.section44_confirmation else
+                              TUNING_SEEDS if args.selection_only else FORMAL_SEEDS)
     if args.smoke:
         seeds = [5]
     if args.selection_only and (not set(args.datasets).issubset({"UNSW-NB15", "NSL-KDD"}) or any(s not in TUNING_SEEDS for s in seeds)):
@@ -393,7 +417,9 @@ def main():
                 parser.error("KD-weak uses alpha,beta in {.25,.5}")
         elif args.der_alpha != 1.0 or args.der_beta != 1.0:
             parser.error("Non-weak methods keep alpha=beta=1; EMA uses its separate consistency coefficient")
-    if not args.selection_only and not args.smoke and any(s not in FORMAL_SEEDS for s in seeds):
+    if args.section44_confirmation and any(s not in CONFIRMATION_SEEDS for s in seeds):
+        parser.error("Section44 confirmation uses only new seeds5/6/7/8/9")
+    if not args.section44_confirmation and not args.selection_only and not args.smoke and any(s not in FORMAL_SEEDS for s in seeds):
         parser.error("Formal runs use only seeds1/2/3/4/42")
     if len(seeds) != len(set(seeds)) or len(args.methods) != len(set(args.methods)) or len(args.datasets) != len(set(args.datasets)):
         parser.error("Duplicate matrix selections are not allowed")
@@ -418,6 +444,11 @@ def main():
                   selection_only=args.selection_only, selection_aggregation="mean seeds5/6 final validation BAcc and signed old-class forgetting separately per dataset",
                   selection_validation_policy="fixed permanent stratified10percent attack TRAIN holdout plus permanent Normal TRAIN holdout; only seen classes; evaluation only; attack holdout outside M during selection only",
                   cpu_threads=2, cpu_interop_threads=1)
+    if NOGKD_WA in args.methods or args.section44_confirmation:
+        config.update(section44=True, section44_confirmation=args.section44_confirmation,
+                      post_unsealing_design=True, independent_dataset_confirmation=False,
+                      derpp_coefficient_source="Section44 fixed intervention: alpha=beta=1; no tuning",
+                      section44_release_policy="All eight methods times five new CSE18 seeds must finish before model-metric inspection")
     if args.smoke:
         config.update(epochs_per_task=1, min_steps_per_task=0)
     torch.set_num_threads(2)
