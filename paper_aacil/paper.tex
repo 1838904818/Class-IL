@@ -67,6 +67,11 @@
 \providecommand{\CompactValidationTable}{}
 \providecommand{\CompactFormalTables}{}
 \providecommand{\CompactCapacityAppendix}{}
+\providecommand{\CSEAbstractText}{\RetentionAbstractText}
+\providecommand{\CSEConclusionText}{}
+\providecommand{\CSEConfirmationText}{CSE18 remains sealed.}
+\providecommand{\CSEConfirmationTables}{}
+\providecommand{\CSEProtocolText}{}
 \providecommand{\KDReassessmentTables}{}
 \newcommand{\generatedtable}[2]{\InputIfFileExists{generated/#1.tex}{}{\par\noindent\textit{#2: pending generated evidence; no value imputed.}\par}}
 \newcommand{\curvefigure}[2]{%
@@ -80,7 +85,7 @@
 \raggedbottom
 \maketitle
 \begin{abstract}
-Class-incremental network intrusion detection must control false alarms while retaining old attack classes. We study benign data available outside attack replay memory, using a refreshed, independently calibrated benign--attack gate and an attack-only family classifier. \RetentionAbstractText
+Class-incremental network intrusion detection must control false alarms while retaining old attack classes. We study benign data available outside attack replay memory, using a refreshed, independently calibrated benign--attack gate and an attack-only family classifier. \CSEAbstractText
 \end{abstract}
 \noindent\textbf{Keywords:} continual learning; intrusion detection; benign data availability; false-positive calibration; replay memory.
 
@@ -239,6 +244,7 @@ The fixed-capacity retention protocol uses both UNSW-NB15 and NSL-KDD developmen
 We use the prepared NSL-KDD, deduplicated UNSW-NB15, and CIC-IDS-2017 benchmarks \citep{nsl,unsw,cic}. Normal and an initial attack family appear in the first task, followed by the fixed attack-family sequence. The data manifest and generated protocol table specify label mappings, task groupings, split sizes, and feature dimensions. Test rows from unobserved classes are excluded at intermediate checkpoints; final metrics use the complete prepared test set. No test row is selected for training, memory construction, or primary calibration.
 \generatedtable{protocol}{Dataset and protocol table}
 \generatedtable{dataset_details}{Dataset preparation and task details}
+\CSEProtocolText
 
 Training uses MLPs with two hidden layers of width \HiddenWidth, Adam with learning rate \LearningRate, and batch size \BatchSize. Each model/update receives
 \begin{equation}
@@ -309,6 +315,10 @@ The validation-selected retention protocol makes retention mandatory on both UNS
 \CICRetentionDevelopmentText
 \input{generated/cic_retention_development.tex}
 
+\subsection{Withheld CSE-CIC-IDS2018 assessment}
+\CSEConfirmationText
+\CSEConfirmationTables
+
 \subsection{Primary calibration-set operating points}
 Table~\ref{tab:main-results} preserves the original operating-point snapshot at the common calibration target, including its then-available seed counts. It predates the supplemental Replay-BS seed 42; current five-seed CIC retention results are in Table~\ref{tab:cic-retention-development}. Historical operating-point tests and tables below are retained without recomputation.
 \IfFileExists{generated/main_results.tex}{%
@@ -375,7 +385,7 @@ Clean labeled benign data are a substantial resource. They may be contaminated, 
 The test-Normal sensitivity analysis deliberately uses test labels and is not a deployable calibration rule or a replacement for the primary result. Threshold tightening exchanges false alarms for missed attacks, and same-population calibration does not establish out-of-sample reliability. Post-hoc mean curves at a common threshold and averages of per-seed interpolated ADR at a fixed FPR are different summaries; neither changes the holdout-calibrated protocol decisions.
 
 \subsection{Scope of statistical and architectural claims}
-The benchmark uses few paired seeds, fixed task orders, a finite known label universe, prepared tabular features, and a shared training implementation. These choices support controlled within-protocol comparisons but do not cover arbitrary task order, unseen network environments, or open-world label discovery. A matched schedule is not matched total computation or exposure. The fixed-capacity extension uses both UNSW and NSL for validation selection, so even its later five-seed results on these datasets are developmental, not blind confirmation. CSE-CIC-IDS2018 outcomes remain sealed and are not part of the present evidence. Joint remains an offline reference whose available information differs from incremental methods.
+The benchmark uses few paired seeds, fixed task orders, a finite known label universe, prepared tabular features, and a shared training implementation. These choices support controlled within-protocol comparisons but do not cover arbitrary task order, unseen network environments, or open-world label discovery. A matched schedule is not matched total computation or exposure. The fixed-capacity extension uses both UNSW and NSL for validation selection, so even its later five-seed results on these datasets are developmental, not blind confirmation. CSE-CIC-IDS2018 was withheld from this selection and assessed only after complete guarded release; it fails the registered conjunction. Heterogeneous local/HPC execution limits cost comparison, and withholding results does not establish independent replication. Joint remains an offline reference whose available information differs from incremental methods.
 
 All reported paired tests are unadjusted. Selection of a comparator from the highest or lowest observed whole-group mean and the small seed count limit inferential strength. A nonsignificant harm test is not an equivalence or noninferiority result. KD was not selected as the primary version by validation: its UNSW-NB15 reassessment is exploratory, and its NSL-KDD outcomes were already available before direct authorization. The first two NSL seeds also predate the reassessment document. We therefore do not describe NSL as blind confirmation or infer whether those available results had been inspected.
 
@@ -388,6 +398,8 @@ This manuscript addresses predictive retention, class-wise safety, and cost unde
 
 \section{Conclusion}
 Class-incremental NIDS must balance false alarms, attack detection and retention as new families arrive. \RetentionConclusionText
+
+\CSEConclusionText
 
 The resulting contribution is a reproducible study of this unresolved trade-off under an explicit benign-data availability assumption. Clean benign access, calibration shift, unmatched total computation and the CIC-IDS-2017 accuracy cost of retention limit generalization. Silent explanation drift and non-suppressive explanation governance remain separate, unanswered research questions.
 
@@ -426,7 +438,7 @@ NSL-KDD seeds 1 and 2 had completed before the reassessment document was recorde
 \subsection{Fixed-capacity retention protocol}\label{app:compact-protocol}
 The fixed-capacity extension was specified on 20 October 2026 before its development results. It preserves the earlier failed decisions and freezes each candidate using only UNSW/NSL validation seeds $\{5,6\}$. Each candidate first requires signed validation forgetting no greater than the external-five minimum plus one percentage point on both datasets; among eligible configurations, mean validation final BAcc selects the configuration and main version. A BAcc tie within one point favors KD-weak/KD+WA/KD+CBF, then EMA-KD, then DUAL. An ineligible fallback is identified explicitly rather than recast as a successful selection.
 
-The external CSE-CIC-IDS2018 assessment is separate from the development-dataset reports. Its frozen candidate must satisfy all four conditions: forgetting not significantly higher than the external-five minimum; final BAcc significantly higher than Replay-BS; mean final BAcc no more than two percentage points below original AA-CIL; and ADR not significantly below original AA-CIL. The two-point BAcc condition is a fixed mean-difference rule, not a significance or noninferiority test. CSE aggregate metrics remain unavailable here until complete five-seed groups and their guarded release exist; no CSE outcome may change the frozen choice. The pipeline additionally withholds its reference summaries until all 35 physical reference cells are complete. Missing external evidence does not support a resolved-trade-off claim.
+The external CSE-CIC-IDS2018 assessment is separate from the development-dataset reports. Its frozen candidate must satisfy all four conditions: forgetting not significantly higher than the external-five minimum; final BAcc significantly higher than Replay-BS; mean final BAcc no more than two percentage points below original AA-CIL; and ADR not significantly below original AA-CIL. The two-point BAcc condition is a fixed mean-difference rule, not a significance or noninferiority test. All 35 physical reference cells and five fixed-candidate cells completed before guarded release on 20 October 2026. The candidate and thresholds were not changed after release. Exact sign-flip tests enumerate all 32 paired-sign assignments as sensitivity checks; they do not replace the recorded paired-$t$ decision rules. The resulting failure does not erase the earlier CBF or fixed-KD failures.
 
 \RetentionComparisonAppendix
 \KDReassessmentTables

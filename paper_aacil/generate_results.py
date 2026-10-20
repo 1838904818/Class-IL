@@ -14,10 +14,12 @@ import json
 from pathlib import Path
 import re
 import statistics as st
+import sys
 import numpy as np
 from scipy.stats import ttest_rel
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 PAPER = Path(__file__).resolve().parent
 DATASETS = ['NSL-KDD', 'UNSW-NB15', 'CIC-IDS-2017']
 METHODS = ['replay', 'derpp', 'wacb', 'freq', 'replay_la', 'ts_mem', 'aa_noattmem', 'aacil', 'replay_bs', 'joint']
@@ -433,8 +435,8 @@ def retention_comparison_outputs(evidence):
 def compact_evidence(selection_path, comparison_path):
     """Present the frozen compact selection and saved development-dataset groups.
 
-    This path never opens CSE outputs, performs inference, or revises selection.
-    External-dataset release and assessment remain a separate guarded workflow.
+    A CSE result is displayed only after revalidating its saved all35/all5
+    release bindings. No tests, inference, or selection are performed here.
     """
     out={'selection_complete':False, 'groups':[], 'per_version':[],
          'selected_main':None, 'cse_status':'sealed_not_consumed'}
@@ -472,10 +474,48 @@ def compact_evidence(selection_path, comparison_path):
     if (a.get('section')!='31' or a.get('selection_sha256')!=out['selection_sha256']
             or a.get('selection_test_metrics_used') is not False or a.get('selected_main')!=main):
         raise ValueError('Regenerate compact comparisons for the immutable selection')
-    if a.get('cse_release_guard') is not None or any(g['dataset'] not in COMPACT_DATASETS+['CIC-IDS-2017']
-            for g in a.get('descriptive_groups',[])):
-        raise ValueError('Use a development-only compact comparison for this sealed-CSE presentation')
+    if a.get('cse_release_guard') is not None:
+        from paper_aacil.generate_section31_comparisons import cse_release_guard, verify_saved_bindings
+        guard=a['cse_release_guard']
+        reference_path=ROOT/guard['reference_summary']
+        _,_,current=cse_release_guard(reference_path.parent)
+        selected_path=ROOT/guard['selected_summary']
+        selected_path.resolve().relative_to(ROOT)
+        selected=read(selected_path)
+        if (any(guard[k]!=v for k,v in current.items())
+                or hashlib.sha256(selected_path.read_bytes()).hexdigest()!=guard['selected_summary_sha256']
+                or selected.get('completed') is not True or selected.get('smoke') is not False
+                or selected.get('physical_cells')!=5 or selected.get('seeds')!=SEEDS
+                or selected.get('test_selected') is not False
+                or a.get('CSE18_all_required_evidence_complete') is not True
+                or len(a.get('CSE18_necessary_tests',[]))!=4
+                or a.get('cse_release_append',{}).get('previous_groups_recomputed') is not False):
+            raise ValueError('CSE presentation requires both intact released groups and saved registered tests')
+        for b in selected['source_results']:
+            p=selected_path.parent/b['path']
+            p.resolve().relative_to(selected_path.parent.resolve())
+            if hashlib.sha256(p.read_bytes()).hexdigest()!=b['sha256']:
+                raise ValueError('Selected released cell changed')
+        verify_saved_bindings(a['source_bindings'])
+        cse_groups=[g for g in a['descriptive_groups'] if g['dataset']=='CSE-CIC-IDS2018']
+        if len(cse_groups)!=9 or any(g['n']!=5 or g['seeds']!=SEEDS for g in cse_groups):
+            raise ValueError('All nine logical CSE groups required')
+        out.update(cse_status='released_assessed',cse_result={
+            'descriptive_groups':cse_groups,'CSE18_necessary_tests':a['CSE18_necessary_tests'],
+            'CSE18_necessary_verdict':a['CSE18_necessary_verdict'],
+            'release_guard':guard})
+        first=read(selected_path.parent/selected['source_results'][0]['path'])
+        raw=read(selected_path.parent/selected['source_results'][0]['path'].rsplit('/',1)[0]/first['raw_result'])
+        out['cse_protocol']={'identity':first['identity'],
+                             'calibration_storage':raw['checkpoints'][0]['calibration_pool_storage']}
+    if any(g['dataset'] not in COMPACT_DATASETS+['CIC-IDS-2017','CSE-CIC-IDS2018']
+           for g in a.get('descriptive_groups',[])):
+        raise ValueError('Unexpected compact dataset')
     for g in a.get('descriptive_groups',[]):
+        if g['dataset']=='CSE-CIC-IDS2018':
+            if out['cse_status']!='released_assessed':
+                raise ValueError('CSE group without verified release')
+            continue
         if g['dataset']=='CIC-IDS-2017':
             if (g['method']!='aacil_kd_wa' or g.get('role')!='development_dataset_descriptive'
                     or g.get('used_for_frozen_selection') is not False
@@ -554,8 +594,10 @@ def compact_outputs(evidence):
               'No compact candidate has a complete formal five-seed group at this snapshot. ')
     if any(g['dataset']=='CIC-IDS-2017' for g in groups):
         progress+='The additional CIC17 KD+WA five-seed group is descriptive, not part of validation selection. '
-    progress+=('UNSW, NSL and CIC17 remain development datasets. CSE-CIC-IDS2018 metrics are sealed and were not read by this presentation; '
-               'no external confirmation or resolved-trade-off conclusion is available.')
+    progress+='UNSW, NSL and CIC17 remain development datasets. '
+    progress+=('The separately released CSE-CIC-IDS2018 assessment is reported below; it does not change the frozen selection.'
+               if evidence['cse_status']=='released_assessed' else
+               'CSE-CIC-IDS2018 metrics are sealed and were not read by this presentation; no external confirmation is available.')
     return {'CompactSelectionText':text,'CompactResultsText':progress,
         'CompactValidationTable':r'\input{generated/compact_selection.tex}', 'CompactFormalTables':formal,
         'CompactCapacityAppendix':r'\section{Fixed-capacity family counts}\input{generated/compact_capacity.tex}'}
@@ -578,7 +620,85 @@ def compact_summary_zh(evidence, aggregate_text):
                 [aggregate_text(g['metrics'][k]) for k in RETENTION_METRICS[:4]])+' |')
     else:
         lines.append('正式五seed完整组尚未纳入；不以开发验证数字填充正式结果。')
-    lines+=['UNSW/NSL/CIC17正式结果仍属开发数据集结果，不是盲确认；CIC17未参与冻结的UNSW/NSL验证选型。CSE18汇总封存、未读取；旧CBF失败与固定KD复评失败不变。', '']
+    lines+=['UNSW/NSL/CIC17正式结果仍属开发数据集结果，不是盲确认；CIC17未参与冻结的UNSW/NSL验证选型。'
+            +('CSE18已按完整35参考单元及5候选单元解封，判定如下。' if evidence['cse_status']=='released_assessed'
+              else 'CSE18汇总封存、未读取。')+'旧CBF失败与固定KD复评失败不变。', '']
+    return lines
+
+
+def cse_presentation(evidence):
+    """Format saved CSE evidence only; never call the statistical test code."""
+    if evidence.get('cse_status')!='released_assessed':
+        return {'CSEAbstractText':r'\RetentionAbstractText','CSEConclusionText':'',
+                'CSEConfirmationText':'CSE18 remains sealed.', 'CSEConfirmationTables':'', 'CSEProtocolText':''}
+    from paper_aacil.generate_section31_comparisons import render
+    result=evidence['cse_result']
+    groups={g['method']:g for g in result['descriptive_groups']}
+    main=groups[evidence['selected_main']['method']]
+    tests=result['CSE18_necessary_tests']
+    if result['CSE18_necessary_verdict']!='fail' or [t['decision'] for t in tests]!=['pass','fail','fail','pass']:
+        raise ValueError('Revise the evidence-bounded narrative for a different saved decision; do not reuse this failure text')
+    bacc=100*main['metrics']['final_balanced_accuracy']['mean']
+    forget=100*main['metrics']['forgetting_all_old_classes']['mean']
+    adr=100*main['metrics']['final_attack_detection']['mean']
+    fpr=100*main['metrics']['final_normal_fpr']['mean']
+    bs=-tests[1]['delta_pp']['mean']; aa=-tests[2]['delta_pp']['mean']
+    identity=evidence['cse_protocol']['identity']; binding=identity['data_binding']
+    calibration=evidence['cse_protocol']['calibration_storage']
+    tasks='; '.join(', '.join(identity['class_order'][c] for c in task) for task in identity['tasks'])
+    (PAPER/'generated/cse_confirmation.tex').write_text(render(result),encoding='utf-8',newline='\n')
+    short=(f'On the previously withheld CSE-CIC-IDS2018 assessment, the fixed KD+WA candidate reaches '
+           f'{bacc:.2f}'+r'\% final balanced accuracy, '+f'{forget:.2f} pp signed forgetting and '
+           f'{adr:.2f}'+r'\% attack detection at '+f'{fpr:.2f}'+r'\% test FPR. '
+           f'Its final accuracy is {bs:.2f} pp below the exposure-matched single classifier and {aa:.2f} pp below original AA-CIL. ')
+    return {
+        'CSEProtocolText':('The additional withheld CSE-CIC-IDS2018 assessment uses the bound full cache with '
+            f"{binding['x_train']['shape'][0]:,} training rows, {binding['x_test']['shape'][0]:,} test rows and "
+            f"{binding['x_train']['shape'][1]} features. Its four tasks are: "+tasks+'. '
+            'The same full-cache rows, task order, update rule and calibration policy are bound across methods. '
+            f"The permanent Normal calibration holdout contains {calibration['rows']:,} rows "
+            f"({calibration['feature_and_index_array_bytes']:,} feature/index bytes), outside replay memory and never optimized. "
+            'These fields are taken from the released execution identities, not inferred from the dataset name.'),
+        'CSEAbstractText':('Validation selected no candidate satisfying the joint forgetting constraint; KD+WA was frozen as an ineligible fallback. '
+            +short+'It fails two of four predeclared conditions. Earlier CBF and fixed-KD protocol failures are retained. '
+            'These results support an unresolved detection--retention--accuracy trade-off, not a universally superior architecture.'),
+        'CSEConclusionText':short+'The accuracy-superiority and two-point accuracy-cost conditions fail, '
+            'while the forgetting and attack-detection harm tests do not detect significant harm. '
+            'This is not equivalence or proof that retention is solved. No test result changes the selected configuration.',
+        'CSEConfirmationText':short+'All 35 physical reference cells and five selected-candidate cells completed before the guarded releases. '
+            'The four saved decisions are pass, fail, fail, pass. Criterion 1 uses Freq, the lowest-mean forgetting member of the fixed external five. '
+            'Paired one-sided t-tests determine the registered significance conditions; exact sign-flip values enumerate all 32 assignments as sensitivity checks. '
+            'Criterion 3 uses only the mean difference, not a significance test. '
+            'Reference seeds 2/42 and selected seed 42 ran locally; the other cells ran on HPC A100. Costs retain this hardware distinction. '
+            'The proposed new-attack mask is already present in the executed KD+WA code: current new attacks receive binary CE only, '
+            'and gate KD applies to benign and replayed old attacks. The proposed duplicate variant was therefore not trained; '
+            'any additional intervention requires a genuinely distinct specification. This source check does not establish a causal explanation of the accuracy loss.',
+        'CSEConfirmationTables':r'\input{generated/cse_confirmation.tex}'}
+
+
+def cse_summary_zh(evidence, aggregate_text):
+    if evidence.get('cse_status')!='released_assessed':
+        return []
+    r=evidence['cse_result']
+    from paper_aacil.generate_section31_comparisons import NAMES
+    lines=['### CSE-CIC-IDS2018 完整冻结候选判定','',
+        '35个参考物理单元及5个固定候选单元全部完成后，以原冻结汇总流程解封。无训练、推理或旧统计重跑。候选不重选，验证不合格状态不变。','',
+        '| 方法 | 增量BAcc | 最终BAcc | 遗忘(pp) | ADR | Macro-F1 | FPR |',
+        '|---|---:|---:|---:|---:|---:|---:|']
+    for g in r['descriptive_groups']:
+        lines.append('| '+' | '.join([NAMES[g['method']]]+[aggregate_text(g['metrics'][k]) for k in RETENTION_METRICS])+' |')
+    lines+=['','| 标准 | 参照 | 差值均值±SD(pp) | 单侧t p | 精确符号翻转p | 判定 |','|---|---|---:|---:|---:|---|']
+    for t in r['CSE18_necessary_tests']:
+        direction=t['p_direction']
+        tp=f"{t['p_'+direction]:.6f}" if direction else '均值规则'
+        sp=f"{t['exact_sign_flip']['p_'+direction]:.5f}" if direction else '不用于判定'
+        d=t['delta_pp']
+        lines.append(f"| {t['criterion']} | {NAMES[t['reference']]} | {d['mean']:.4f}±{d['sample_sd']:.4f} | {tp} | {sp} | {t['decision']} |")
+    lines+=['','四项为pass/fail/fail/pass，整体FAIL。最终BAcc比Replay-BS低7.06pp、比原AA-CIL低5.85pp；不能宣称权衡已解决。'
+        '第3项只按差值均值≥−2pp判定；其对零差值的描述性t p_less=0.002195、符号翻转p_less=0.03125亦保存在JSON，不参与门槛。',
+        '未检出遗忘/ADR伤害不等于等效。精确符号翻转枚举32种，仅作敏感性核对，不替换预登记t规则。'
+        '本地与HPC成本不混称同硬件比较；旧FAIL、RQ1/RQ3及创新门槛不因此闭合。',
+        '§42要求的gate KD mask已经存在于已执行代码，不能改名重复训练；新的额外候选需要真正不同的预注册干预。机制诊断尚未得到因果证明。','']
     return lines
 
 
@@ -805,13 +925,13 @@ def section39_development_rows():
     return rows
 
 
-def section39_development_outputs():
+def section39_development_outputs(compact):
     rows=section39_development_rows()
     table('cic_retention_development',
           r'CIC-IDS-2017 development results at saved stagewise $\alpha=2\%$: five-seed means.',
           ['Method','AIA','Final BAcc','Signed forget.','ADR','Macro-F1'], rows,
           note=r'Rates are percentages; signed forgetting is in percentage points and is not clipped. '
-          r'Seeds are 1, 2, 3, 4, 42. AA-CIL-KD+WA is the selected candidate, blind confirmation pending; '
+          r'Seeds are 1, 2, 3, 4, 42. AA-CIL-KD+WA is the fixed validation-selected candidate; '
           r'CIC17 was not used for frozen validation selection. These are descriptive development results, '
           r'not CSE18 confirmation. Sample SDs and per-seed values remain in the accompanying result artifacts.')
     return {'CICRetentionDevelopmentText':SECTION39_SENTENCE+' '
@@ -822,7 +942,7 @@ def section39_development_outputs():
         'reselects the fixed candidate nor changes the failed historical protocols.'}
 
 
-def section39_summary_zh():
+def section39_summary_zh(compact):
     return ['### CIC-IDS-2017 开发结果（五种子，非盲确认）','',
         '| 方法 | AIA | 最终BAcc | 有符号遗忘(pp) | ADR | Macro-F1 |',
         '|---|---:|---:|---:|---:|---:|',
@@ -830,8 +950,8 @@ def section39_summary_zh():
         SECTION39_SENTENCE,
         '“消除遗忘”仅指组均值有符号遗忘为负，不表示每个类别零遗忘或已证明机制。'
         '最终BAcc相对原AA-CIL降低8.3个百分点，对同数据单分类器Replay-BS没有观察到平均准确率收益；'
-        '后者匹配曝光但不匹配总计算。KD+WA仍是待盲确认的选定候选，验证遗忘约束未满足，'
-        '不因本结果重选。CSE18仍封存。','']
+        '后者匹配曝光但不匹配总计算。KD+WA仍是固定选定候选，验证遗忘约束未满足，'
+        '不因本结果重选。'+('CSE18完整判定已报告。' if compact.get('cse_status')=='released_assessed' else 'CSE18仍封存。'),'']
 
 
 def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment, compact):
@@ -871,7 +991,8 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
           ['原验证选择保持协议和固定KD复评均未通过；历史五版本及CIC完整结果保留于论文和源数据。', '']),
         *kd_reassessment_summary_zh(kd_reassessment),
         *compact_summary_zh(compact, aggregate_text),
-        *section39_summary_zh(),
+        *section39_summary_zh(compact),
+        *cse_summary_zh(compact, aggregate_text),
         '口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，'
         '遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。',
         '',
@@ -978,7 +1099,8 @@ def refresh_presentation(args, retention, kd_reassessment, compact):
     macros.update(kd_reassessment_macros(kd_reassessment))
     macros.update(retention_narrative_macros(retention,kd_reassessment))
     macros.update(compact_outputs(compact))
-    macros.update(section39_development_outputs())
+    macros.update(section39_development_outputs(compact))
+    macros.update(cse_presentation(compact))
     historical_prefix='In the retained original operating-point snapshot: '
     if not macros['CICInterpretationText'].startswith(historical_prefix):
         macros['CICInterpretationText']=historical_prefix+macros['CICInterpretationText']
@@ -1278,7 +1400,8 @@ def main():
     macros.update(kd_reassessment_macros(kd_reassessment))
     macros.update(retention_narrative_macros(retention,kd_reassessment))
     macros.update(compact_outputs(compact))
-    macros.update(section39_development_outputs())
+    macros.update(section39_development_outputs(compact))
+    macros.update(cse_presentation(compact))
     (PAPER/'generated'/'macros.tex').write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
     derived={'cutoff':macros['EvidenceCutoff'],'registered_original_overall':'fail','registered_criteria_status':statuses,
              'comparisons':comparisons,'groups':[{'dataset':ds,'method':m,'n':n(ds,m),'points':{a:{k:stats(ds,m,k,a) for k in ['normal_fpr','attack_detection','macro_f1','balanced_accuracy','attack_guard_recall']} for a in ALPHAS}} for ds in DATASETS for m in METHODS],
