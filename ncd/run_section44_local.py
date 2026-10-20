@@ -82,6 +82,7 @@ def main():
     for name in ("code-root", "data-root", "output-root", "protected-root", "package"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--datasets", nargs="+", choices=DATASETS, default=list(DATASETS))
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--local-smoke", action="store_true")
     parser.add_argument("--child-dataset", choices=DATASETS)
@@ -114,7 +115,9 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"] = "-1" if args.local_smoke else "0"
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     os.environ["NCD_SOURCE_COMMIT"] = WRAPPER_COMMIT
-    cells = [("NSL-KDD", 1)] if args.local_smoke else [(d, s) for d in DATASETS for s in SEEDS]
+    if len(set(args.datasets)) != len(args.datasets):
+        parser.error("Duplicate dataset assignment")
+    cells = [("NSL-KDD", 1)] if args.local_smoke else [(d, s) for d in args.datasets for s in SEEDS]
     if args.child_dataset:
         if ((args.child_dataset, args.child_seed) not in cells
                 or os.environ.get("NCD_SECTION44_LOCAL_PARENT_PID") != str(os.getppid())):
@@ -202,7 +205,7 @@ def main():
             with cell_lock.open("x", encoding="utf-8") as stream:
                 json.dump({"pid": os.getpid(), "utc": ref.utc()}, stream)
             command = [sys.executable, "-I", "-B", "-u", str(ENTRY), "--source-commit", args.source_commit,
-                       "--child-dataset", dataset, "--child-seed", str(seed)]
+                       "--child-dataset", dataset, "--child-seed", str(seed), "--datasets", *args.datasets]
             for name in ("code_root", "data_root", "output_root", "protected_root", "package"):
                 command.extend(["--" + name.replace("_", "-"), str(getattr(args, name))])
             if args.local_smoke:
