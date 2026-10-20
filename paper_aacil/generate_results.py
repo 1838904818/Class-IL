@@ -991,6 +991,11 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
           ['原验证选择保持协议和固定KD复评均未通过；历史五版本及CIC完整结果保留于论文和源数据。', '']),
         *kd_reassessment_summary_zh(kd_reassessment),
         *compact_summary_zh(compact, aggregate_text),
+        '### UNSW 最终任务混淆图（开发描述性）', '',
+        '论文比较 Freq 与固定候选 AA-CIL-KD+WA：仅绘制已保存且源绑定核对一致的 α=2% 矩阵，'
+        '五种子1/2/3/4/42先求和计数再逐行归一化。每种子是同一批30,248测试行，'
+        '不能当作新增独立样本；2%是校准目标，不是实际测试FPR保证。图中≥1%的单元格标注四舍五入整数，'
+        '空白标签不代表零。最终混淆不能单独证明遗忘或因果机制，也不改变CSE失败判定。', '',
         *section39_summary_zh(compact),
         *cse_summary_zh(compact, aggregate_text),
         '口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，'
