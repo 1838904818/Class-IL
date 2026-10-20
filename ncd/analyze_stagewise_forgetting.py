@@ -192,6 +192,9 @@ def stage_binding(path, source, checkpoint):
             compact_effective_config_sha256=canonical(identity["effective_config"]),
             compact_source_hashes=identity["source_hashes"],
             compact_source_record_sha256=canonical(source))
+    if source.get("section39_execution"):
+        binding["section39_original_result_sha256"] = source["publication_derivation"]["original_result_sha256"]
+        binding["section39_invocation_sha256"] = source["section39_execution"]["invocation_sha256"]
     return binding
 
 
@@ -217,7 +220,7 @@ def get_stage(path, source, cp, target, args, data_cache):
         mode = "reused_saved_stage_alpha2_no_forward"
         costs["existing_stage_calibration_seconds_not_recharged"] = cp.get("calibration_seconds")
         costs["existing_stage_evaluation_seconds_not_recharged"] = cp.get("evaluation_seconds")
-    if cm is None and ident["method"] in SECTION29_METHODS | SECTION31_METHODS:
+    if cm is None and (source.get("section39_execution") or ident["method"] in SECTION29_METHODS | SECTION31_METHODS):
         raise ValueError("Formal retention/compact stages require their saved calibrated alpha=2% CM; no checkpoint inference fallback is permitted")
     if cm is None and cp["task_index"] == len(source["tasks"])-1:
         cached = args.final_cache / ident["dataset"].lower().replace("-", "_") / f"{ident['method']}_seed{ident['seed']}" / "result.json"
@@ -337,6 +340,12 @@ def process_cell(path, source, args, data_cache, analysis_commit):
         } for cp in source["checkpoints"]]
         row["resource_accounting_scope"] = "Copied from immutable source records; original successful execution costs are not added again to new analysis time. Training=G+F; base-family/CBF nested within F; peak CUDA is not host or exclusive GPU usage."
         row["limitations"].append("Compact candidate selection used UNSW/NSL validation seeds5/6; formal seeds1/2/3/4/42 are results on development datasets, not blind confirmation.")
+    if source.get("section39_execution"):
+        row["section39_execution"] = source["section39_execution"]
+        row["publication_derivation"] = source["publication_derivation"]
+        row["original_execution_cost_seconds"] = {k: v for k, v in source.items() if k.endswith("_seconds_total")}
+        row["original_cost_scope"] = source["cost_scope"]
+        row["limitations"].append("Section39 CIC17 is a fixed descriptive completion on a development dataset, not blind confirmation. The legacy loader validated shift arrays but did not evaluate them; CSE18 model metrics remain sealed.")
     save_json(target, row)
     return row, False, modes
 
@@ -357,7 +366,11 @@ def mean_sd(values):
 def write_summary(args, attempt):
     path = args.output_dir / "result.json"
     previous = shared_read(path) if path.exists() else {}
-    rows = [shared_read(p) for p in args.output_dir.glob("*/*/result.json")]
+    changed_groups = {("CIC-IDS-2017", m) for m in ("aacil_kd_wa", "replay_bs")} if args.section39_publication else None
+    paths = ([args.output_dir / "cic_ids_2017" / f"{m}_seed{s}/result.json"
+              for _, m in sorted(changed_groups) for s in SEEDS] if changed_groups
+             else args.output_dir.glob("*/*/result.json"))
+    rows = [shared_read(p) for p in paths]
     rows = [r for r in rows if r.get("completed") and r.get("protocol") == PROTOCOL]
     groups = defaultdict(list)
     for row in rows:
@@ -396,14 +409,21 @@ def write_summary(args, attempt):
                 "gate_normal_miss_increase": mean_sd(v["gate_normal_miss_increase"] for v in values if "gate_normal_miss_increase" in v),
                 "other_attack_family_error_increase": mean_sd(v["other_attack_family_error_increase"] for v in values if "other_attack_family_error_increase" in v)}
                 for c, values in sorted(perclass.items())]})
+    cell_index = [{"dataset": r["dataset"], "method": r["method"], "seed": r["seed"],
+                   "source_result": r["source_result"], "completed_at": r["completed_at"]} for r in rows]
+    if changed_groups:
+        # Append the new candidate and complete BS42 without recalculating any
+        # other previously delivered group, stage, comparison or statistical test.
+        summaries += [g for g in previous["groups"] if (g["dataset"], g["method"]) not in changed_groups]
+        cell_index += [r for r in previous["cells"] if (r["dataset"], r["method"]) not in changed_groups]
+        summaries.sort(key=lambda g: (g["dataset"], g["method"]))
     save_json(path, {"completed_at": now(), "protocol": PROTOCOL,
         "units": "Metrics are fractions; multiply by 100 for percentages or forgetting/error-change percentage points",
         "undefined_value_aggregation": "Section29.7: retain null per seed; aggregate only defined seeds and disclose defined_n alongside total n",
-        "groups": summaries, "completed_logical_cells": len(rows),
+        "groups": summaries, "completed_logical_cells": len(cell_index),
         "execution_attempts": previous.get("execution_attempts", [])+[attempt],
         "cost_accounting": "Each execution attempt includes cache-reading/resume time. Nested stage/cell timings are not additive to attempt elapsed. Replay+LA is an alias and adds no forward cost.",
-        "cells": [{"dataset": r["dataset"], "method": r["method"], "seed": r["seed"],
-                   "source_result": r["source_result"], "completed_at": r["completed_at"]} for r in rows]})
+        "cells": cell_index})
 
 
 def main():
@@ -412,6 +432,8 @@ def main():
     parser.add_argument("--input", type=Path, action="append")
     parser.add_argument("--section31", action="store_true",
                         help="Append compact formal UNSW/NSL root; never development, queue, or CSE18 roots")
+    parser.add_argument("--section39-publication", action="store_true",
+                        help="Only six validated Section39 CIC publication cells; saved alpha2 only, update only the two affected summary groups")
     parser.add_argument("--methods", nargs="+", choices=sorted(METHODS),
                         help="Optional one-version processing filter; existing summary caches remain included")
     parser.add_argument("--data-root", type=Path)
@@ -424,6 +446,10 @@ def main():
     parser.add_argument("--complete-compact-groups-only", action="store_true",
                         help="Process Section31 groups only after all five formal seeds are complete")
     args = parser.parse_args()
+    if args.section39_publication:
+        if args.input or args.section31 or args.methods or args.complete_compact_groups_only or args.complete_retention_groups_only:
+            parser.error("Section39 has an exact six-cell assignment; do not combine other input/method modes")
+        args.datasets = ["CIC-IDS-2017"]
     if args.batch_size <= 0:
         parser.error("--batch-size must be positive")
     args.output_dir = args.output_dir.resolve(); args.final_cache = args.final_cache.resolve()
@@ -431,16 +457,31 @@ def main():
     started, began = time.perf_counter(), now()
     analysis_commit = args.source_commit or subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     selected = {}
-    roots = list(args.input or DEFAULT_ROOTS)
+    roots = ([BASE / "section28/publication_v1/cic_ids_2017"] if args.section39_publication
+             else list(args.input or DEFAULT_ROOTS))
     if args.section31 and SECTION31_ROOT not in roots:
         roots.append(SECTION31_ROOT)
     for root in roots:
-        for path in sorted(root.resolve().rglob("result.json")):
+        paths = ([root / f"{m}_seed{s}/result.json" for m, s in
+                  [("aacil_kd_wa", s) for s in SEEDS] + [("replay_bs", 42)]]
+                 if args.section39_publication else sorted(root.resolve().rglob("result.json")))
+        for path in paths:
             if root.resolve() == SECTION31_ROOT.resolve() and any("cse" in part.lower() for part in path.relative_to(root.resolve()).parts):
                 continue  # CSE18 blindness/release is managed separately; never open its result files here.
             source = shared_read(path)
             identity = source.get("identity", {})
             config = identity.get("effective_config", {})
+            if args.section39_publication:
+                execution = source["section39_execution"]
+                invocation = execution["invocation"]
+                if (invocation["launcher_commit"] != "a4d55cd8e8d4087ea67f33a26535c721547483c3"
+                        or invocation["launcher_sha256"] != "b0a76a0dbb8ef7d2acd488e584eedd4219990b917b10bf576e4bb82bbdedded5"
+                        or invocation["dataset"] != "CIC-IDS-2017" or invocation["smoke"]
+                        or execution["cell_attempt"]["exit_code"] != 0
+                        or invocation["selection_changed"] or invocation["CSE18_model_metrics_accessed"]
+                        or (identity["method"], identity["seed"]) != (invocation["method"], invocation["seed"])
+                        or any("0.02" not in cp.get("operating_points", {}) for cp in source["checkpoints"])):
+                    raise ValueError("Invalid Section39 publication provenance or saved stage evaluation")
             if (not source.get("completed") or not source.get("checkpoints") or
                     identity.get("dataset") not in args.datasets or identity.get("method") not in METHODS or
                     identity.get("seed") not in SEEDS or
@@ -449,7 +490,7 @@ def main():
                     (args.methods and identity.get("method") not in args.methods)):
                 continue
             if identity["method"] in SECTION31_METHODS and (
-                    identity["dataset"] not in {"UNSW-NB15", "NSL-KDD"} or
+                    identity["dataset"] not in ({"CIC-IDS-2017"} if args.section39_publication else {"UNSW-NB15", "NSL-KDD"}) or
                     config.get("section31") is not True or config.get("section31_schema_version") != 1 or
                     not source.get("architecture_capacity")):
                 continue
@@ -498,6 +539,10 @@ def main():
         selected = {key: value for key, value in selected.items()
                     if key not in compact_keys or compact_seeds[key[:2]] == set(SEEDS)}
     new, reused, modes, cache = 0, 0, CounterLike(), {}
+    if args.section39_publication and set(selected) != {
+            ("CIC-IDS-2017", m, s) for m, s in
+            [("aacil_kd_wa", s) for s in SEEDS] + [("replay_bs", 42)]}:
+        raise ValueError("Section39 requires all six complete publication cells")
     order = {dataset:i for i,dataset in enumerate(args.datasets)}
     for key, (_, path, source) in sorted(selected.items(), key=lambda pair:(order[pair[0][0]],pair[0][1],SEEDS.index(pair[0][2]))):
         row, was_reused, cell_modes = process_cell(path, source, args, cache, analysis_commit)
@@ -516,7 +561,8 @@ def main():
                                       "device": "cpu", "cpu_threads": 2, "batch_size": args.batch_size,
                                       "complete_retention_groups_only": args.complete_retention_groups_only,
                                       "complete_compact_groups_only": args.complete_compact_groups_only,
-                                      "include_section31": args.section31, "methods": args.methods}}
+                                      "include_section31": args.section31, "methods": args.methods,
+                                      "section39_publication": args.section39_publication}}
     write_summary(args, attempt)
     print(json.dumps({"status":"complete", **attempt}), flush=True)
 

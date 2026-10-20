@@ -105,7 +105,7 @@ def sanitize(value, trail=(), changed=None):
     return cleaned
 
 
-def derived_copy(source, source_hash, source_path, result_path, result_hash):
+def derived_copy(source, source_hash, source_path, result_path, result_hash, source_label=relative):
     changed = []
     exported = sanitize(source, changed=changed)
     # Identity and every non-string value are carried through, not recomputed.
@@ -113,8 +113,8 @@ def derived_copy(source, source_hash, source_path, result_path, result_hash):
         raise AssertionError("Publication export must not alter execution identity")
     exported["publication_derivation"] = {
         "kind": "derived_small_json_with_path_metadata_sanitization",
-        "original_result": relative(result_path), "original_result_sha256": result_hash,
-        "original_json": relative(source_path), "original_json_sha256": source_hash,
+        "original_result": source_label(result_path), "original_result_sha256": result_hash,
+        "original_json": source_label(source_path), "original_json_sha256": source_hash,
         "redacted_fields": changed,
         "changes": "Only private absolute roots in command/path metadata are normalized; original identity and all original numeric values are unchanged.",
         "not_byte_identical_to_original": True,
