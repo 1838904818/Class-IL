@@ -6,6 +6,7 @@ enumerated. All saved operating points, source identities and costs are retained
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -30,25 +31,62 @@ def require(value, message):
         raise ValueError(message)
 
 
+def read_shared(path):
+    """Snapshot a live Windows status file without preventing atomic replacement."""
+    import ctypes
+    import msvcrt
+    import os
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                   ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    kernel.CreateFileW.restype = ctypes.c_void_p
+    handle = kernel.CreateFileW(str(path), 0x80000000, 7, None, 3, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    with os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY), "rb") as stream:
+        content = stream.read()
+    return json.loads(content), hashlib.sha256(content).hexdigest()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=COUNTS, required=True)
     parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument("--local-dataset-complete", action="store_true",
+                        help="Export a complete dataset from the Section50 serial CIC17/NSL assignment")
     args = parser.parse_args()
     root = args.source_root.resolve()
-    local = args.dataset == "UNSW-NB15"
+    local = args.dataset == "UNSW-NB15" or args.local_dataset_complete
     slug = args.dataset.lower().replace("-", "_")
-    exits = sorted((root / "attempts").glob("*/job_exit.json"))
+    exits = sorted((root / "attempts").glob(
+        "*/status.json" if args.local_dataset_complete else "*/job_exit.json"))
     require(len(exits) == 1, "Inspect all attempt costs before exporting a resumed/multiple-attempt assignment")
-    job, job_hash = read(exits[0])
-    require(job["status"] == "complete" and job.get("current_cell") is None
-            and job["smoke"] is False and job["resume"] is False, "Complete first formal assignment required")
-    require([(c["method"], c["seed"]) for c in job["cells"]] == [(METHOD, s) for s in SEEDS]
-            and all(c["exit_code"] == 0 for c in job["cells"]), "Exactly five assigned successful cells required")
+    job, job_hash = (read_shared if args.local_dataset_complete else read)(exits[0])
+    if args.local_dataset_complete:
+        planned = [[d, s] for d in ("CIC-IDS-2017", "NSL-KDD") for s in SEEDS]
+        require(args.dataset in ("CIC-IDS-2017", "NSL-KDD")
+                and job["planned_cells"] == planned and job["status"] in ("running", "complete"),
+                "Exact Section50 local assignment required")
+        require([[c["dataset"], c["seed"]] for c in job["cells"]] == planned[:len(job["cells"])]
+                and len(job["cells"]) <= len(planned)
+                and all(c["method"] == METHOD and c["exit_code"] == 0 for c in job["cells"]),
+                "Successful serial prefix required")
+        require(job.get("current_cell") is None
+                or job["current_cell"]["dataset"] != args.dataset, "Requested dataset still active")
+        selected_cells = [c for c in job["cells"] if c["dataset"] == args.dataset]
+    else:
+        require(job["status"] == "complete" and job.get("current_cell") is None,
+                "Complete first formal assignment required")
+        selected_cells = job["cells"]
+    require(
+        job["smoke"] is False and job["resume"] is False, "First formal assignment required")
+    require([(c["method"], c["seed"]) for c in selected_cells] == [(METHOD, s) for s in SEEDS]
+            and all(c["exit_code"] == 0 for c in selected_cells), "Exactly five assigned successful cells required")
     if local:
         require(job["launcher_commit"] == LOCAL_COMMIT and job["launcher_sha256"] == LOCAL_SHA
                 and job["package_sha256"] == PACKAGE_SHA
-                and job["planned_cells"] == [[args.dataset, s] for s in SEEDS], "Local assignment identity differs")
+                and (args.local_dataset_complete
+                     or job["planned_cells"] == [[args.dataset, s] for s in SEEDS]), "Local assignment identity differs")
         cells_root = root / slug
         commit = WRAPPER_COMMIT
     else:
@@ -97,9 +135,9 @@ def main():
                     and invocation["CSE18_model_metrics_accessed"] is False, "Local invocation mismatch")
         execution = {
             "assignment_exit_sha256": job_hash, "assignment_attempt": exits[0].parent.name,
-            "assignment_started_at": job["started_at"], "assignment_ended_at": job["ended_at"],
+            "assignment_started_at": job["started_at"], "assignment_ended_at": job.get("ended_at"),
             "job_id": job.get("job_id"), "launcher_commit": LOCAL_COMMIT if local else HPC_COMMIT,
-            "cell_attempt": {k: v for k, v in next(c for c in job["cells"] if c["seed"] == seed).items() if k != "command"},
+            "cell_attempt": {k: v for k, v in next(c for c in selected_cells if c["seed"] == seed).items() if k != "command"},
             "wrapper_record": label(wrapper_path), "wrapper_sha256": wrapper_hash,
             "wrapper_actual_entrypoint": wrapper["actual_entrypoint"],
             "wrapper_command": sanitize({"command": wrapper["command"]})["command"],
@@ -111,6 +149,18 @@ def main():
             "legacy_shift_role": "CIC17 loader validates stored shift arrays but does not train or evaluate them." if args.dataset == "CIC-IDS-2017" else None}
         if invocation is not None:
             execution.update(local_invocation=sanitize(invocation), local_invocation_sha256=invocation_hash)
+        if args.local_dataset_complete:
+            execution.pop("assignment_exit_sha256")
+            execution.update(assignment_status_snapshot_sha256=job_hash,
+                             assignment_status_at_export=job["status"],
+                             dataset_completed_at=selected_cells[-1]["ended_at"],
+                             complete_dataset_only=True,
+                             other_dataset_metrics_read=False,
+                             superseded_pending_hpc_job={"job_id": 489810 if args.dataset == "CIC-IDS-2017" else 489811,
+                                 "state": "CANCELLED", "started_at": None,
+                                 "ended_at": "2026-10-20T14:52:34+08:00",
+                                 "elapsed_seconds": 0, "allocated_cpu_seconds": 0,
+                                 "reason": "Section50 reassignment before resource allocation"})
         destination = SECTION / "publication_v1" / slug / f"{METHOD}_seed{seed}"
         exported, _ = derived_copy(raw, raw_hash, raw_path, raw_path, raw_hash, label)
         exported["section46_execution"] = execution
