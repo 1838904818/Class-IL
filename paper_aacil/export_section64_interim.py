@@ -1,6 +1,6 @@
 """Publish one complete local five-method decision set; never run final tests.
 
-Only the Section64 local assignment is supported here. HPC collection and the
+Only the Section64 and explicit Section66 local assignments are supported. HPC collection and the
 1-percent external-baseline evaluation are separate, unfinished work.
 """
 from __future__ import annotations
@@ -24,6 +24,10 @@ DECISION = ORDER[:5]
 LAUNCHER = "a900f810e4723125c60b882234a8cd87bb317474"
 LAUNCHER_SHA = "3c44975f5a203838d0d876fb90ca007e1122310cec782151b6feea72db772055"
 POLICY = "section64_interim_five_per_seed_final_25_decision_full_40"
+SECTION66 = {
+    "commit": "d7056fe1b405412d477761fe40f3afdfc603d604",
+    "sha256": "d624528a15d77c1cf4ad44643f78666f2aa5df9da1c5f0eb1371b43b73c5061d",
+}
 
 
 def canonical_hash(value):
@@ -33,21 +37,25 @@ def canonical_hash(value):
     ).encode()).hexdigest()
 
 
-def complete_local_set(root, seed):
+def complete_local_set(root, seed, section66=False):
     """Read structural status only; reject partial sets before opening results."""
     paths = sorted((root / "attempts").glob("*/status.json"))
     require(len(paths) == 1, "Multiple attempts need explicit cost reconciliation")
     job, digest = read_shared(paths[0])
-    require(job["launcher_commit"] == LAUNCHER
-            and job["launcher_sha256"] == LAUNCHER_SHA
+    launcher = SECTION66["commit"] if section66 else LAUNCHER
+    launcher_sha = SECTION66["sha256"] if section66 else LAUNCHER_SHA
+    order = DECISION if section66 else ORDER
+    require(job["launcher_commit"] == launcher
+            and job["launcher_sha256"] == launcher_sha
             and job["package_sha256"] == PACKAGE_SHA
             and job["wrapper_commit"] == WRAPPER_COMMIT
             and job["smoke"] is False and job["resume"] is False
             and job["status"] in ("running", "complete"), "Assignment mismatch")
     planned = job["planned_cells"]
     seeds = list(dict.fromkeys(c[2] for c in planned))
-    require(seeds in ([5], [6], [5, 6])
-            and planned == [[DATASET, m, s] for s in seeds for m in ORDER],
+    require(seeds in (([6],) if section66 else ([5], [6], [5, 6]))
+            and (not section66 or seed == 6)
+            and planned == [[DATASET, m, s] for s in seeds for m in order],
             "Unexpected serial assignment")
     cells = job["cells"]
     require([[c["dataset"], c["method"], c["seed"]] for c in cells]
@@ -69,11 +77,17 @@ def main():
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--seed", type=int, choices=(5, 6), required=True)
+    parser.add_argument("--section66", action="store_true",
+                        help="Bind the published seed6 five-decision assignment")
     args = parser.parse_args()
     root = args.source_root.resolve()
     destination = ROOT / "ncd/results/problem_scout/section64/interim_local_v1" / f"seed_{args.seed}"
     require(not destination.exists(), "Already exported; preserve original snapshot")
-    job, snapshot, status_path, cells = complete_local_set(root, args.seed)
+    job, snapshot, status_path, cells = complete_local_set(root, args.seed, args.section66)
+    section = "section66" if args.section66 else "section64"
+    launcher = SECTION66["commit"] if args.section66 else LAUNCHER
+    launcher_sha = SECTION66["sha256"] if args.section66 else LAUNCHER_SHA
+    invocation_name = section + "_local_invocation.json"
     require(hashlib.sha256(args.package.read_bytes()).hexdigest() == PACKAGE_SHA,
             "Original frozen package required")
     with tarfile.open(args.package, "r") as archive:
@@ -81,16 +95,16 @@ def main():
         require(len(members) == 48 and all(m.isfile() for m in members), "Package inventory mismatch")
         hashes = {m.name: hashlib.sha256(archive.extractfile(m).read()).hexdigest() for m in members}
     prepared, rows, common = [], [], None
-    label = lambda p: "section64_local/" + p.resolve().relative_to(root).as_posix()
+    label = lambda p: section + "_local/" + p.resolve().relative_to(root).as_posix()
     for cell in cells:
         method = cell["method"]
         folder = root / SLUG / "cells" / method / f"seed_{args.seed}"
-        invocation, _ = read(folder / "section64_local_invocation.json")
-        require(invocation["launcher_commit"] == LAUNCHER
-                and invocation["launcher_sha256"] == LAUNCHER_SHA
+        invocation, _ = read(folder / invocation_name)
+        require(invocation["launcher_commit"] == launcher
+                and invocation["launcher_sha256"] == launcher_sha
                 and invocation["package_sha256"] == PACKAGE_SHA
                 and invocation["wrapper_commit"] == WRAPPER_COMMIT
-                and invocation["actual_entrypoint"] == "ncd/run_section64_local.py"
+                and invocation["actual_entrypoint"] == f"ncd/run_{section}_local.py"
                 and (invocation["dataset"], invocation["method"], invocation["seed"])
                 == (DATASET, method, args.seed)
                 and invocation["smoke"] is False and invocation["selection_changed"] is False,
@@ -118,9 +132,13 @@ def main():
                 "Configuration hash mismatch")
         fixed = {"section64": True, "smoke": False, "device": "cuda", "cpu_threads": 2,
                  "min_steps_per_task": 2000, "release_policy": POLICY,
-                 "local_launcher_commit": LAUNCHER, "local_launcher_sha256": LAUNCHER_SHA,
+                 "local_launcher_commit": launcher, "local_launcher_sha256": launcher_sha,
                  "original_selection_changed": False, "tuning_permitted": False}
         require(all(cfg.get(k) == v for k, v in fixed.items()), "Fixed execution mismatch")
+        if args.section66:
+            require(cfg.get("section66") is True
+                    and cfg.get("assignment") == "seed6_decision_five",
+                    "Section66 assignment configuration mismatch")
         for split, count in (("train", 12882081), ("test", 3255102)):
             require(ident["data_binding"]["x_" + split]["shape"] == [count, 78]
                     and ident["data_binding"]["y_" + split]["shape"] == [count],
@@ -132,7 +150,7 @@ def main():
         common = shared
         require(len(raw["checkpoints"]) == len(wrapper["stages"]) == len(ident["tasks"]) == 4,
                 "Four completed stages required")
-        sources = [raw_path, wrapper_path, folder / "section64_local_invocation.json"]
+        sources = [raw_path, wrapper_path, folder / invocation_name]
         for index, cp in enumerate(raw["checkpoints"]):
             require(cp["task_index"] == index
                     and cp["checkpoint_file"] == f"checkpoints/checkpoint_{index:03d}.pt",
