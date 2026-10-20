@@ -7,6 +7,8 @@ Original Section29.8 CBF and Section27.8 decisions are never overwritten.
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -182,6 +184,72 @@ def render(result):
     return '% Fixed-KD reassessment; original decisions unchanged.\n'+text
 
 
+def complete_section39_bs(folder, output):
+    """Update only the previously incomplete CIC17 KD-versus-BS comparison."""
+    from paper_aacil.generate_results import require_current_comparison_inputs, section39_execution_matches
+    old = read(output)
+    if old.get('section') != '29.9' or old.get('candidate') != KD:
+        raise ValueError('Expected the saved fixed-KD reassessment')
+    if old.get('section39_bs_completion'):
+        raise ValueError('Section39 BS completion is already recorded; do not recompute')
+    previous_sha = hashlib.sha256(output.read_bytes()).hexdigest()
+    cic = next(d for d in old['dataset_results'] if d['dataset'] == 'CIC-IDS-2017')
+    previous_test = next(t for t in cic['tests'] if t['criterion'] == 2)
+    if (cic['available_group_counts']['replay_bs'] != 4
+            or previous_test['status'] != 'pending'
+            or [p['seed'] for p in previous_test['paired_values']] != [1, 2, 3, 4]
+            or previous_test['candidate'] != KD or previous_test['reference'] != 'replay_bs'
+            or previous_test['metric'] != FINAL_BACC):
+        raise ValueError('Only the recorded four-seed CIC17 BS gap may be completed')
+    # Validate every unaffected historical dependency without recomputing it.
+    unchanged = copy.deepcopy(old)
+    check = next(d for d in unchanged['dataset_results'] if d['dataset'] == 'CIC-IDS-2017')
+    check['tests'] = [t for t in check['tests'] if t['criterion'] != 2]
+    del check['available_group_counts']['replay_bs']
+    require_current_comparison_inputs(unchanged)
+    summary, groups, rows, sources = load_snapshot(folder)
+    if sources != old['source_bindings']:
+        raise ValueError('Historical KD source bindings changed')
+    for pair in previous_test['paired_values']:
+        for method, field in [(KD, 'candidate'), ('replay_bs', 'reference')]:
+            if rows['CIC-IDS-2017', method, pair['seed']]['metrics'][FINAL_BACC] != pair[field]:
+                raise ValueError('Previously saved CIC17 paired input changed')
+    if not complete(groups, 'CIC-IDS-2017', 'replay_bs'):
+        raise ValueError('CIC17 Replay-BS requires all five seeds')
+    addition = rows['CIC-IDS-2017', 'replay_bs', 42]
+    execution = addition.get('section39_execution', {})
+    if not section39_execution_matches(execution, 'replay_bs', 42):
+        raise ValueError('Missing Section39 BS42 execution provenance')
+    accuracy = paired(rows, groups, 'CIC-IDS-2017', KD, 'replay_bs', FINAL_BACC)
+    accuracy.update({k: previous_test[k] for k in ('criterion', 'p_direction', 'rule')})
+    accuracy['decision'] = test_status(accuracy, 'greater')
+    result = copy.deepcopy(old)
+    current = next(d for d in result['dataset_results'] if d['dataset'] == 'CIC-IDS-2017')
+    current['tests'] = [accuracy if t['criterion'] == 2 else t for t in current['tests']]
+    current['available_group_counts']['replay_bs'] = 5
+    current['complete'] = all(complete(groups, 'CIC-IDS-2017', m)
+                              for m in EXTERNAL+[KD, 'aacil', 'replay_bs'])
+    current['status'] = all_required([t['decision'] for t in current['tests']])
+    required = [d for d in result['dataset_results'] if d['required']]
+    result['required_comparisons_complete'] = all(d['complete'] for d in required)
+    result['required_numeric_verdict'] = all_required([d['status'] for d in required])
+    if result['required_numeric_verdict'] != old['required_numeric_verdict']:
+        raise ValueError('The historical required-dataset failure must remain unchanged')
+    result['completed_at'] = datetime.now().astimezone().isoformat()
+    result['source_summary_completed_at'] = summary['completed_at']
+    result['section39_bs_completion'] = {
+        'previous_comparison_sha256': previous_sha, 'previous_completed_at': old['completed_at'],
+        'previous_source_summary_completed_at': old['source_summary_completed_at'],
+        'previous_cic_accuracy_test': previous_test, 'added_method_seed': ['replay_bs', 42],
+        'recomputed_tests': ['CIC-IDS-2017:aacil_kd:replay_bs:final_balanced_accuracy'],
+        'other_tests_recomputed': False, 'cse_metrics_accessed': False,
+        'new_stagewise_result': addition['comparison_input'],
+        'new_stagewise_sha256': hashlib.sha256((ROOT/addition['comparison_input']).read_bytes()).hexdigest(),
+        'section39_execution': execution,
+    }
+    return result
+
+
 def execution_metadata(path, hard_cutoff_ended):
     """Optional post-exit small JSON only; never inspect a live process or weights."""
     out = {'hard_cutoff_at': HARD_CUTOFF, 'hard_cutoff_ended': hard_cutoff_ended,
@@ -251,7 +319,19 @@ def main():
                         help='Optional saved matrix or incomplete result JSON, read only after process exit; requires --hard-cutoff-ended')
     parser.add_argument('--render-existing', action='store_true',
                         help='Render the saved comparison JSON only; do not recompute tests or alter historical execution metadata')
+    parser.add_argument('--complete-section39-bs', action='store_true',
+                        help='Complete only CIC17 KD versus Replay-BS after the missing BS42 cell')
     args = parser.parse_args()
+    if args.complete_section39_bs:
+        if args.render_existing or args.hard_cutoff_ended or args.execution_status:
+            parser.error('--complete-section39-bs cannot change execution history or use another mode')
+        result = complete_section39_bs(args.input.resolve(), args.output.resolve())
+        args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False)+'\n',
+                               encoding='utf-8', newline='\n')
+        args.tex_output.write_text(render(result), encoding='utf-8', newline='\n')
+        print(json.dumps({'updated_only': 'CIC17 KD versus BS', 'other_tests_recomputed': False,
+                          'required_numeric_verdict': result['required_numeric_verdict']}))
+        return
     if args.render_existing:
         if args.hard_cutoff_ended or args.execution_status:
             parser.error('--render-existing cannot change execution metadata')

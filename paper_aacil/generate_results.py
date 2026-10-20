@@ -156,8 +156,24 @@ def architecture():
     fig.tight_layout(pad=.1);fig.savefig(PAPER/'figures'/'architecture.pdf',bbox_inches='tight');plt.close(fig)
 
 
+def section39_execution_matches(execution, method, seed):
+    invocation=execution.get('invocation',{})
+    cell=execution.get('cell_attempt',{})
+    return (invocation.get('actual_entrypoint')=='ncd/run_section39_local.py'
+        and invocation.get('dataset')=='CIC-IDS-2017'
+        and invocation.get('method')==method and invocation.get('seed')==seed
+        and invocation.get('descriptive_development_dataset') is True
+        and invocation.get('selection_changed') is False
+        and invocation.get('CSE18_model_metrics_accessed') is False
+        and invocation.get('smoke') is False
+        and invocation.get('launcher_commit')=='a4d55cd8e8d4087ea67f33a26535c721547483c3'
+        and invocation.get('launcher_sha256')=='b0a76a0dbb8ef7d2acd488e584eedd4219990b917b10bf576e4bb82bbdedded5'
+        and cell.get('method')==method and cell.get('seed')==seed
+        and cell.get('exit_code')==0)
+
+
 def require_current_comparison_inputs(comparison):
-    """Allow a compact-only append without rerunning historical paired tests.
+    """Allow a verified append without rerunning unchanged historical tests.
 
     A changed clock alone is not a changed dependency. The exception requires
     unchanged protocol, saved group values, paired scalar inputs, comparator
@@ -173,9 +189,21 @@ def require_current_comparison_inputs(comparison):
         fail()
     prior_time=dt.datetime.fromisoformat(comparison['source_summary_completed_at'])
     for cell in current['cells']:
-        if dt.datetime.fromisoformat(cell['completed_at'])>prior_time and not (
-                cell['method'] in COMPACT_NAMES and cell['dataset'] in COMPACT_DATASETS):
-            fail()
+        if dt.datetime.fromisoformat(cell['completed_at'])<=prior_time:
+            continue
+        if cell['method'] in COMPACT_NAMES and cell['dataset'] in COMPACT_DATASETS:
+            continue
+        # Section39 adds only CIC17 KDWA and the previously missing BS seed42.
+        # This permits their presence, not changed dependencies: all group,
+        # pair, comparator, count and source checks below must still pass.
+        if cell['dataset']=='CIC-IDS-2017' and (
+                cell['method']=='aacil_kd_wa' or
+                (cell['method']=='replay_bs' and cell['seed']==42)):
+            path=summary_path.parent/'cic_ids_2017'/f"{cell['method']}_seed{cell['seed']}"/'result.json'
+            execution=read(path).get('section39_execution',{})
+            if section39_execution_matches(execution,cell['method'],cell['seed']):
+                continue
+        fail()
     groups={(g['dataset'],g['method']):g for g in current['groups']}
     cells={(c['dataset'],c['method'],c['seed']):c for c in current['cells']}
     rows={}
@@ -754,6 +782,58 @@ def retention_summary_zh(evidence, aggregate_text, followup=None):
     return lines
 
 
+SECTION39_SENTENCE = ('On CIC-IDS-2017 the retention components remove forgetting but cost 8.3 pp '
+    'final BAcc and give no gain over the same-data single classifier.')
+
+
+def section39_development_rows():
+    """Read the already aggregated five-seed development evidence; no new tests."""
+    saved=read(ROOT/'ncd/results/problem_scout/section28/forgetting_v1/result.json')
+    groups={(g['dataset'],g['method']):g for g in saved['groups']}
+    methods=[('aacil_kd_wa','AA-CIL-KD+WA'),('aacil_kd','AA-CIL-KD'),
+             ('aacil','AA-CIL'),('replay_bs','Replay-BS'),('wacb','WACB')]
+    fields=RETENTION_METRICS[:5]
+    rows=[]
+    for method,label in methods:
+        group=groups['CIC-IDS-2017',method]
+        if group['n']!=5 or group['seeds']!=SEEDS:
+            raise ValueError('Section39 presentation requires five complete CIC17 seeds')
+        if any(group['metrics'][key]['n']!=5 or group['metrics'][key]['mean'] is None
+               for key in fields):
+            raise ValueError('Section39 presentation requires all five defined metrics')
+        rows.append([label]+[f"{100*group['metrics'][key]['mean']:.1f}" for key in fields])
+    return rows
+
+
+def section39_development_outputs():
+    rows=section39_development_rows()
+    table('cic_retention_development',
+          r'CIC-IDS-2017 development results at saved stagewise $\alpha=2\%$: five-seed means.',
+          ['Method','AIA','Final BAcc','Signed forget.','ADR','Macro-F1'], rows,
+          note=r'Rates are percentages; signed forgetting is in percentage points and is not clipped. '
+          r'Seeds are 1, 2, 3, 4, 42. AA-CIL-KD+WA is the selected candidate, blind confirmation pending; '
+          r'CIC17 was not used for frozen validation selection. These are descriptive development results, '
+          r'not CSE18 confirmation. Sample SDs and per-seed values remain in the accompanying result artifacts.')
+    return {'CICRetentionDevelopmentText':SECTION39_SENTENCE+' '
+        "Here ``remove forgetting'' refers to the negative group-average signed forgetting endpoint, "
+        'not zero loss for every class or proof of a causal retention mechanism. '
+        'The 8.3 pp cost is relative to original AA-CIL; the same-data single classifier is Replay-BS, '
+        'which matches exposure but not total computation. This descriptive comparison neither '
+        'reselects the fixed candidate nor changes the failed historical protocols.'}
+
+
+def section39_summary_zh():
+    return ['### CIC-IDS-2017 开发结果（五种子，非盲确认）','',
+        '| 方法 | AIA | 最终BAcc | 有符号遗忘(pp) | ADR | Macro-F1 |',
+        '|---|---:|---:|---:|---:|---:|',
+        *['| '+' | '.join(row)+' |' for row in section39_development_rows()], '',
+        SECTION39_SENTENCE,
+        '“消除遗忘”仅指组均值有符号遗忘为负，不表示每个类别零遗忘或已证明机制。'
+        '最终BAcc相对原AA-CIL降低8.3个百分点，对同数据单分类器Replay-BS没有观察到平均准确率收益；'
+        '后者匹配曝光但不匹配总计算。KD+WA仍是待盲确认的选定候选，验证遗忘约束未满足，'
+        '不因本结果重选。CSE18仍封存。','']
+
+
 def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retention, kd_reassessment, compact):
     """One-page author summary: one formal table, no duplicate old matrices."""
     def aggregate_text(value):
@@ -791,11 +871,13 @@ def write_summary_zh(groups, comparisons, statuses, macros, sensitivity, retenti
           ['原验证选择保持协议和固定KD复评均未通过；历史五版本及CIC完整结果保留于论文和源数据。', '']),
         *kd_reassessment_summary_zh(kd_reassessment),
         *compact_summary_zh(compact, aggregate_text),
+        *section39_summary_zh(),
         '口径：每阶段用永久训练域 Normal 留出池定 α=2%；增量 BAcc 为各阶段已见类均值，'
         '遗忘为旧类此前最高 recall 减最终 recall（含 Normal、保留负值）。低遗忘须联看 BAcc，ADR 不等于家族识别。',
         '',
         '边界：不显著有害不等于等效；Replay-BS匹配曝光但不匹配G+F总计算。保持协议要求UNSW/NSL，'
-        '固定KD复评要求NSL/CIC，不能互换。未完整配对的CIC比较保持待定；解释漂移、治理及总体创新仍未闭合。',
+        '固定KD复评要求NSL/CIC，不能互换。CIC Replay-BS已补齐五种子，仅更新受影响的KD准确率配对比较；'
+        '其余历史检验未重算，原FAIL不变。解释漂移、治理及总体创新仍未闭合。',
         '',
         '[完整逐阶段指标与逐类结果](../ncd/results/problem_scout/section28/forgetting_v1/result.json)；其余 FPR/MF1、配对检验与成本见论文及源结果。',
     ]
@@ -896,6 +978,10 @@ def refresh_presentation(args, retention, kd_reassessment, compact):
     macros.update(kd_reassessment_macros(kd_reassessment))
     macros.update(retention_narrative_macros(retention,kd_reassessment))
     macros.update(compact_outputs(compact))
+    macros.update(section39_development_outputs())
+    historical_prefix='In the retained original operating-point snapshot: '
+    if not macros['CICInterpretationText'].startswith(historical_prefix):
+        macros['CICInterpretationText']=historical_prefix+macros['CICInterpretationText']
     macro_path.write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
     for name in ['registered_criteria','calibration_shift','forgetting_results','section298_comparisons']:
         path=PAPER/'generated'/f'{name}.tex'
@@ -1192,6 +1278,7 @@ def main():
     macros.update(kd_reassessment_macros(kd_reassessment))
     macros.update(retention_narrative_macros(retention,kd_reassessment))
     macros.update(compact_outputs(compact))
+    macros.update(section39_development_outputs())
     (PAPER/'generated'/'macros.tex').write_text('\n'.join('\\newcommand{\\'+k+'}{'+v+'}' for k,v in macros.items())+'\n',encoding='utf-8')
     derived={'cutoff':macros['EvidenceCutoff'],'registered_original_overall':'fail','registered_criteria_status':statuses,
              'comparisons':comparisons,'groups':[{'dataset':ds,'method':m,'n':n(ds,m),'points':{a:{k:stats(ds,m,k,a) for k in ['normal_fpr','attack_detection','macro_f1','balanced_accuracy','attack_guard_recall']} for a in ALPHAS}} for ds in DATASETS for m in METHODS],
