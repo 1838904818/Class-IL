@@ -52,6 +52,28 @@ KD+WA$^\star$ & 5 & 87.58$\pm$1.08 & 79.26$\pm$4.12 & -10.54$\pm$9.16 & 92.10$\p
 \begin{table*}[t]
 \centering\scriptsize
 \setlength{\tabcolsep}{3.3pt}
+\caption{CSE18: compact retention at stagewise $\alpha=2\%$.}\label{tab:compact-results-cse_cic_ids2018}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Method & $n$ & Mean inc. BAcc & Final BAcc & Forget (pp) & ADR & MF1 & FPR \\
+\midrule
+KD+WA$^\star$ & 5 & 82.64$\pm$1.38 & 72.69$\pm$1.96 & 5.27$\pm$0.98 & 95.44$\pm$0.11 & 66.76$\pm$0.20 & 1.95$\pm$0.06 \\
+Replay & 5 & 53.50$\pm$8.74 & 26.31$\pm$14.28 & 30.85$\pm$14.76 & 12.90$\pm$25.90 & 22.68$\pm$17.21 & 2.04$\pm$0.04 \\
+DER++ & 5 & 48.81$\pm$7.30 & 14.98$\pm$0.44 & 34.55$\pm$13.23 & 1.50$\pm$0.94 & 14.27$\pm$0.83 & 2.04$\pm$0.01 \\
+WACB & 5 & 60.51$\pm$6.30 & 51.24$\pm$20.54 & 12.58$\pm$29.74 & 54.16$\pm$33.69 & 48.66$\pm$22.33 & 2.01$\pm$0.04 \\
+Freq & 5 & 71.93$\pm$0.54 & 72.35$\pm$2.46 & 5.79$\pm$2.54 & 92.17$\pm$3.19 & 64.24$\pm$2.84 & 2.00$\pm$0.04 \\
+Replay-BS & 5 & 86.58$\pm$0.96 & 79.74$\pm$2.03 & 5.86$\pm$1.56 & 95.04$\pm$0.31 & 66.63$\pm$0.32 & 1.98$\pm$0.05 \\
+AA-CIL & 5 & 85.14$\pm$0.48 & 78.53$\pm$1.87 & 3.86$\pm$2.80 & 94.84$\pm$0.48 & 65.93$\pm$0.68 & 1.98$\pm$0.02 \\
+AA-CIL-KD & 5 & 84.31$\pm$0.71 & 73.97$\pm$1.37 & 0.58$\pm$1.16 & 95.48$\pm$0.10 & 71.17$\pm$0.23 & 1.95$\pm$0.06 \\
+Replay+LA & 5 & 53.50$\pm$8.74 & 26.31$\pm$14.28 & 30.85$\pm$14.76 & 12.90$\pm$25.90 & 22.68$\pm$17.21 & 2.04$\pm$0.04 \\
+\bottomrule
+\end{tabular}
+\par\smallskip\begin{minipage}{0.98\textwidth}\scriptsize Mean$\pm$sample SD over all five fixed formal seeds; signed forgetting is in percentage points. $\star$ identifies the validation-selected main, never a test-selected winner. External data are released only after all 35 reference cells finish. Replay+LA aliases calibrated Replay and adds no training.\end{minipage}
+\end{table*}
+
+\begin{table*}[t]
+\centering\scriptsize
+\setlength{\tabcolsep}{3.3pt}
 \caption{Compact family parameter and component counts.}\label{tab:compact-capacity}
 \begin{tabular}{llrrrr}
 \toprule
@@ -68,7 +90,25 @@ NSL & KD+CBF & 32004 & 32004 & 32004 & 0 \\
 NSL & EMA-KD & 64008 & 32004 & 32004 & 1 \\
 NSL & DUAL & 64004 & 64004 & 64004 & 1 \\
 CIC17 & KD+WA & 27399 & 27399 & 27399 & 0 \\
+CSE18 & KD+WA & 27398 & 27398 & 27398 & 0 \\
 \bottomrule
 \end{tabular}
 \par\smallskip\begin{minipage}{0.98\textwidth}\scriptsize F only; the common G is separate. Counts are fixed across stages. EMA training-resident count includes its frozen teacher; inference uses only EMA. DUAL is one F with two fixed encoders and a joint head. Sample, calibration and transient storage and separate gate/family costs remain in the generated JSON.\end{minipage}
+\end{table*}
+
+\begin{table*}[t]
+\centering\scriptsize
+\setlength{\tabcolsep}{3.3pt}
+\caption{External-dataset necessary tests for the fixed validation-selected main.}\label{tab:compact-cse-tests}
+\begin{tabular}{llrrrrl}
+\toprule
+Criterion & Reference & $n$ & $\Delta$ (pp) & $t$ $p$ & Sign-flip $p$ & Decision \\
+\midrule
+1 & Freq & 5 & -0.52$\pm$2.12 & 0.693 & 0.7188 & pass \\
+2 & Replay-BS & 5 & -7.06$\pm$1.87 & 0.9995 & 1 & fail \\
+3 & AA-CIL & 5 & -5.85$\pm$2.25 & not used & not used & fail \\
+4 & AA-CIL & 5 & 0.60$\pm$0.42 & 0.9838 & 1 & pass \\
+\bottomrule
+\end{tabular}
+\par\smallskip\begin{minipage}{0.98\textwidth}\scriptsize 1: forgetting harm is $p_{>}<.05$ against the lowest-mean external-five member. 2: final BAcc superiority over Replay-BS requires $p_{>}<.05$. 3: mean final-BAcc difference from original AA must be at least $-2$pp; no $p$-test is used. 4: ADR harm is $p_{<}<.05$ against original AA. No detected harm is not equivalence. Exact sign-flip p-values enumerate all 32 assignments as a sensitivity check. Overall numerical decision: fail.\end{minipage}
 \end{table*}
