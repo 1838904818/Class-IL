@@ -2,7 +2,9 @@
 
 Only five fixed KD+WA seeds and the missing Replay-BS seed42 are assigned here.
 Raw training/attempts use a new root; the existing Section28 analysis is not
-overwritten by training. CSE18 sources, jobs, results and release are untouched.
+overwritten by training. CSE18 jobs, model results and release are untouched.
+The legacy CIC17 cache loader validates its stored shift arrays but does not
+evaluate them; training and saved confusion matrices use CIC17 TRAIN/TEST only.
 """
 from __future__ import annotations
 
@@ -35,6 +37,29 @@ def load(name, path):
 def sha(path):
     import hashlib
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def check_cache(ref, data_root, dataset):
+    if dataset != "CIC-IDS-2017":
+        return ref.check_cache(data_root, dataset)
+    folder = data_root / "cic-ids-2017"
+    receipt = folder / "data_quality.json"
+    info = ref.read(receipt)
+    counts = (sum(info["train_counts"].values()), sum(info["id_counts"].values()))
+    if (info.get("status") != "complete" or info.get("dataset") != dataset
+            or counts != ref.FULL_COUNTS["cic17"]):
+        raise ValueError("Complete uncapped CIC17 cache required")
+    required = {f"{split}_{field}.npy" for split in ("train", "test", "shift") for field in ("x", "y")}
+    files = info.get("cache_files", [])
+    if len(files) != 6 or {row["path"] for row in files} != required:
+        raise ValueError("Legacy CIC17 receipt must identify all six arrays exactly once")
+    for row in files:
+        if (folder / row["path"]).stat().st_size != row["bytes"]:
+            raise ValueError("Prepared array is absent or has the wrong size")
+    return {"dataset": dataset, "receipt_sha256": sha(receipt),
+            "train_rows": counts[0], "test_rows": counts[1], "task_count": len(info["tasks"]),
+            "array_hash_validation": "Frozen loader validates six arrays in child; shift arrays are not evaluated",
+            "shift_role": "Legacy cache validation only, no training, inference or metrics"}
 
 
 def main():
@@ -100,9 +125,10 @@ def main():
             "method": args.child_method, "seed": args.child_seed,
             "smoke": args.local_smoke, "descriptive_development_dataset": True,
             "command": subprocess.list2cmdline([sys.executable, *sys.argv]),
-            "selection_changed": False, "CSE18_accessed": False})
+            "selection_changed": False, "CSE18_model_metrics_accessed": False,
+            "legacy_shift_cache_validation_only": not args.local_smoke})
         return
-    cache = ref.check_cache(args.data_root, args.smoke_dataset if args.local_smoke else ref.DATASET)
+    cache = check_cache(ref, args.data_root, args.smoke_dataset if args.local_smoke else ref.DATASET)
     if args.output_root.exists() and any(args.output_root.iterdir()) and not args.resume:
         parser.error("Existing output requires diagnosed explicit resume, never a duplicate launch")
     if args.protected_root.exists() and not args.resume:
@@ -119,7 +145,8 @@ def main():
         "selection_sha256": selected.SELECTION_SHA, "cache": cache,
         "smoke": args.local_smoke, "resume": args.resume,
         "planned_cells": cells, "cells": [], "current_cell": None,
-        "scope": "CIC17 descriptive fixed candidate and missing Replay-BS only; no CSE18 access"}
+        "scope": "CIC17 descriptive fixed candidate and missing Replay-BS only; no CSE18 model metrics",
+        "legacy_shift_cache_role": "Frozen CIC17 loader validates stored shift arrays; they are not evaluated"}
     ref.write_json(attempt / "job_start.json", record)
     child, cell_lock, copied, received = None, None, {}, []
 
