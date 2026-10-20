@@ -1,6 +1,6 @@
 """Publish one complete local five-method decision set; never run final tests.
 
-Only the Section64 and explicit Section66/67 local assignments are supported. HPC collection and the
+Only the Section64 and explicit Section66/67/69 local assignments are supported. HPC collection and the
 1-percent external-baseline evaluation are separate, unfinished work.
 """
 from __future__ import annotations
@@ -32,6 +32,10 @@ SECTION67 = {
     "commit": "47bc1ff48462b9862d0d15b3c10a6699467d09e1",
     "sha256": "38335c7c6b9782ce9cf057d7f0fe657bb967dcc08bb9f640491388228f1144d7",
 }
+SECTION69 = {
+    "commit": "9bb4b459e0859e87bb28958a59cf9e6b6244894d",
+    "sha256": "fd0970241de72fbd8b069eb7628c86deba6f0b8b79672924b1a202335102e54b",
+}
 
 
 def canonical_hash(value):
@@ -41,13 +45,13 @@ def canonical_hash(value):
     ).encode()).hexdigest()
 
 
-def complete_local_set(root, seed, section66=False, section67=False):
+def complete_local_set(root, seed, section66=False, section67=False, section69=False):
     """Read structural status only; reject partial sets before opening results."""
     paths = sorted((root / "attempts").glob("*/status.json"))
     require(len(paths) == 1, "Multiple attempts need explicit cost reconciliation")
     job, digest = read_shared(paths[0])
-    require(not (section66 and section67), "Choose one assignment")
-    binding = SECTION67 if section67 else SECTION66 if section66 else None
+    require(sum((section66, section67, section69)) <= 1, "Choose one assignment")
+    binding = SECTION69 if section69 else SECTION67 if section67 else SECTION66 if section66 else None
     launcher = binding["commit"] if binding else LAUNCHER
     launcher_sha = binding["sha256"] if binding else LAUNCHER_SHA
     order = DECISION if binding else ORDER
@@ -59,7 +63,7 @@ def complete_local_set(root, seed, section66=False, section67=False):
             and job["status"] in ("running", "complete"), "Assignment mismatch")
     planned = job["planned_cells"]
     seeds = list(dict.fromkeys(c[2] for c in planned))
-    expected_seed = 7 if section67 else 6 if section66 else None
+    expected_seed = 8 if section69 else 7 if section67 else 6 if section66 else None
     require(seeds in (([expected_seed],) if binding else ([5], [6], [5, 6]))
             and (seed == expected_seed if binding else seed in seeds)
             and planned == [[DATASET, m, s] for s in seeds for m in order],
@@ -83,20 +87,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--package", type=Path, required=True)
-    parser.add_argument("--seed", type=int, choices=(5, 6, 7), required=True)
+    parser.add_argument("--seed", type=int, choices=(5, 6, 7, 8), required=True)
     assignment = parser.add_mutually_exclusive_group()
     assignment.add_argument("--section66", action="store_true",
                         help="Bind the published seed6 five-decision assignment")
     assignment.add_argument("--section67", action="store_true",
                             help="Bind the published seed7 five-decision assignment")
+    assignment.add_argument("--section69", action="store_true",
+                            help="Bind the published seed8 five-decision assignment")
     args = parser.parse_args()
     root = args.source_root.resolve()
     destination = ROOT / "ncd/results/problem_scout/section64/interim_local_v1" / f"seed_{args.seed}"
     require(not destination.exists(), "Already exported; preserve original snapshot")
     job, snapshot, status_path, cells = complete_local_set(
-        root, args.seed, args.section66, args.section67)
-    section = "section67" if args.section67 else "section66" if args.section66 else "section64"
-    binding = SECTION67 if args.section67 else SECTION66 if args.section66 else None
+        root, args.seed, args.section66, args.section67, args.section69)
+    section = "section69" if args.section69 else "section67" if args.section67 else "section66" if args.section66 else "section64"
+    binding = SECTION69 if args.section69 else SECTION67 if args.section67 else SECTION66 if args.section66 else None
     launcher = binding["commit"] if binding else LAUNCHER
     launcher_sha = binding["sha256"] if binding else LAUNCHER_SHA
     invocation_name = section + "_local_invocation.json"
