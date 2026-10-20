@@ -1,7 +1,7 @@
 """Evaluate saved external checkpoints at 0.5/1% FPR; never train a model.
 
-This entry uses the established Section27 calibration bindings for the three
-development datasets. CSE18 requires a separately verified checkpoint inventory.
+This entry uses Section27 calibration bindings for the development datasets
+and the already-unsealed Section31 publication for the old CSE18 reference cells.
 Every stage is evaluated on seen TEST classes after Normal-only calibration.
 """
 from __future__ import annotations
@@ -42,6 +42,7 @@ def same_binding(saved, expected):
     """Reuse the validated CPU stages from the pre-fallback implementation."""
     saved, expected = dict(saved), dict(expected)
     allowed = {"3ed52b3c1749c663b385c43546c426f0ca3691b23a5bd3358981c79557ee8a82",
+               "720e82d9df64b265ac06eb0efb94242e897612d8d04eec547bd90b547b8cf361",
                old.digest(Path(__file__))}
     require(saved.pop("evaluation_source_sha256") in allowed
             and expected.pop("evaluation_source_sha256") in allowed, "Unrecognized evaluator source")
@@ -50,11 +51,22 @@ def same_binding(saved, expected):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", choices=old.DATASETS, required=True)
+    parser.add_argument("--dataset", choices=(*old.DATASETS, "CSE-CIC-IDS2018"), required=True)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--cse-source-root", type=Path)
+    parser.add_argument("--alphas", type=float, nargs="+", choices=ALPHAS, default=list(ALPHAS))
     args = parser.parse_args()
+    global_targets = tuple(args.alphas)
+    require(len(set(global_targets)) == len(global_targets), "Repeated alpha")
+    cal.ALPHAS = global_targets
+    protocol = dict(PROTOCOL, targets=list(global_targets))
+    cse = args.dataset == "CSE-CIC-IDS2018"
+    require(bool(args.cse_source_root) == cse, "Explicit old CSE checkpoint root required only for CSE")
+    methods = METHODS[:-1] if cse else METHODS
+    if cse:
+        old.TRAINING_SOURCE = "270121272848087e4af85ec5290eaede0102d776"
     torch.set_num_threads(2)
     torch.set_num_interop_threads(1)
     slug = args.dataset.lower().replace("-", "_")
@@ -71,27 +83,47 @@ def main():
                "analysis_source_sha256": old.digest(Path(__file__)),
                "status": "running", "training_performed": False, "cpu_threads": 2,
                "device": "cpu"}
+    if cse:
+        attempt["joint_status"] = "not_evaluated_no_permanent_training_holdout_in_existing_Section21_joint"
     attempt_file = output / f"attempt_{os.getpid()}.json"
     cache = {}
     try:
-        for method in METHODS:
+        for method in methods:
             for seed in SEEDS:
                 attempt["current"] = {"method": method, "seed": seed}
                 old.save(attempt_file, attempt)
-                published = ROOT / "ncd/results/problem_scout/section27/baseline_calibration_v2" / slug / f"{method}_seed{seed}/result.json"
-                previous = old.read(published)
-                b = previous["binding"]
-                require(previous["completed"] and previous["verification"]["all_requested_checks_passed"],
-                        "Existing calibration is incomplete")
-                source = (ROOT / b["source_result"]).resolve()
-                require(source.is_relative_to(ROOT) and old.digest(source) == b["source_result_sha256"],
-                        "Original source differs from published calibration binding")
+                if cse:
+                    published = ROOT / "ncd/results/problem_scout/section31/cse_release_v1/reference/cells" / method / f"seed_{seed}/raw/result.json"
+                    previous = old.read(published)
+                    source = args.cse_source_root.resolve() / method / f"seed_{seed}/raw/result.json"
+                    original = old.read(source)
+                    ident = previous["identity"]
+                    require(previous["completed"] and original["identity"] == ident
+                            and old.digest(source) == previous["publication_derivation"]["original_result_sha256"],
+                            "Old CSE source differs from released publication")
+                    b = {"source_result": published.relative_to(ROOT).as_posix(),
+                         "source_result_sha256": old.digest(source),
+                         "source_hashes": ident["source_hashes"], "config_sha256": ident["config_sha256"],
+                         "identity_sha256": old.canonical(ident)}
+                else:
+                    published = ROOT / "ncd/results/problem_scout/section27/baseline_calibration_v2" / slug / f"{method}_seed{seed}/result.json"
+                    previous = old.read(published)
+                    b = previous["binding"]
+                    require(previous["completed"] and previous["verification"]["all_requested_checks_passed"],
+                            "Existing calibration is incomplete")
+                    source = (ROOT / b["source_result"]).resolve()
+                    require(source.is_relative_to(ROOT) and old.digest(source) == b["source_result_sha256"],
+                            "Original source differs from published calibration binding")
                 cell = old.verify_source(source, (args.dataset, method, seed),
                                          b["source_hashes"], b["config_sha256"])
                 require(cell is not None, "Incomplete training source")
                 ident = cell["identity"]
                 require(old.canonical(ident) == b["identity_sha256"], "Canonical source identity differs")
-                data, data_seconds = old.load_data(ident, args.data_root.resolve(), cache)
+                # Prepared CSE folder has the historical CIC-IDS-2018 slug.
+                # Only the folder resolver changes; all data/receipt hashes are
+                # still verified against the original unmodified identity.
+                data_identity = dict(ident, dataset="CIC-IDS-2018") if cse else ident
+                data, data_seconds = old.load_data(data_identity, args.data_root.resolve(), cache)
                 normal, ids, pool = cal.normal_pool(ident, data)
                 names, tasks = ident["class_order"], ident["tasks"]
                 binding = {"training_result": b["source_result"],
@@ -106,7 +138,7 @@ def main():
                            "helper_hashes": {p: old.digest(ROOT / p) for p in
                                ("ncd/calibrate_aacil_baselines.py", "ncd/analyze_farq_operating_curves.py",
                                 "ncd/analyze_stagewise_forgetting.py", "ncd/model.py")},
-                           "protocol": PROTOCOL}
+                           "protocol": protocol}
                 folder = output / f"{method}_seed{seed}"
                 folder.mkdir(exist_ok=True)
                 final_path = folder / "result.json"
@@ -116,7 +148,7 @@ def main():
                             "Completed evaluation binding changed")
                     attempt["completed_cells"].append({"method": method, "seed": seed, "reused": True})
                     continue
-                trajectories = {str(a): [] for a in ALPHAS}
+                trajectories = {str(a): [] for a in global_targets}
                 costs = []
                 for cp in cell["result"]["checkpoints"]:
                     tick = time.perf_counter()
@@ -170,7 +202,7 @@ def main():
                         require(np.array_equal(confusion(0.), np.asarray(cp["id"]["confusion_matrix"])),
                                 "Saved checkpoint default prediction reproduction failed")
                         evaluated = {}
-                        for alpha in ALPHAS:
+                        for alpha in global_targets:
                             point = points[str(alpha)]
                             evaluated[str(alpha)] = {"calibration": point,
                                 "metrics": stage_metrics(confusion(point["total_tau"]), seen, names)}
@@ -184,7 +216,7 @@ def main():
                                  "test_used_for_threshold_selection": False, "training_performed": False}
                         old.save(target, stage)
                         del model, state, scores, holdout
-                    for alpha in ALPHAS:
+                    for alpha in global_targets:
                         metric = stage["operating_points"][str(alpha)]["metrics"]
                         require(stage_metrics(metric["confusion_matrix"], seen, names) == metric,
                                 "Stage CM metrics inconsistent")
@@ -198,10 +230,16 @@ def main():
                           "cost_seconds": {"data_validation_this_attempt": data_seconds,
                                            "stage_evaluation_total": sum(costs)},
                           "training_performed": False, "selection_changed": False,
-                          "limitations": ["Exposed development data; not independent confirmation.",
+                          "limitations": ["Exposed data; this re-evaluation is not independent confirmation.",
                               "Calibration target is not a test FPR guarantee.",
                               "Joint is an offline non-memory-matched reference.",
                               "Historical training and historical tests are unchanged."]}
+                if cse:
+                    result["missing_reference"] = {
+                        "method": "joint", "reason": attempt["joint_status"],
+                        "source_commit": "1f35f6587bb63aba85c43b0654d15709d46fc3d8",
+                        "evidence": "Section21 Joint trains on all seen TRAIN rows, including the later-designated Normal calibration rows; no compatible saved holdout-separated Joint exists in the released Section31 reference set.",
+                        "substituted_in_sample_calibration": False, "retraining_performed": False}
                 old.save(final_path, result)
                 attempt["completed_cells"].append({"method": method, "seed": seed, "reused": False})
                 print(json.dumps({"event": "cell_complete", "dataset": args.dataset, "method": method, "seed": seed}), flush=True)

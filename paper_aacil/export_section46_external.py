@@ -14,29 +14,35 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
-    parser.add_argument("--dataset", choices=("UNSW-NB15", "NSL-KDD", "CIC-IDS-2017"), required=True)
+    parser.add_argument("--dataset", choices=("UNSW-NB15", "NSL-KDD", "CIC-IDS-2017", "CSE-CIC-IDS2018"), required=True)
     args = parser.parse_args()
     slug = args.dataset.lower().replace("-", "_")
     source = args.source_root.resolve() / slug
+    cse = args.dataset == "CSE-CIC-IDS2018"
+    methods = METHODS[:-1] if cse else METHODS
+    expected_cells = len(methods) * len(SEEDS)
     attempts = [read(p)[0] for p in sorted(source.glob("attempt_*.json"))]
     if not attempts or any(a["status"] not in ("failed", "complete") for a in attempts):
         raise ValueError("All evaluation attempts must be terminal")
-    if not any(a["status"] == "complete" and len(a["completed_cells"]) == 25 for a in attempts):
-        raise ValueError("No complete 25-cell evaluation assignment")
+    if not any(a["status"] == "complete" and len(a["completed_cells"]) == expected_cells for a in attempts):
+        raise ValueError("No complete evaluation assignment")
     output = ROOT / "ncd/results/problem_scout/section46/external_low_fpr_v1" / slug
     prepared = []
-    for method in METHODS:
+    for method in methods:
         for seed in SEEDS:
             folder = source / f"{method}_seed{seed}"
             result, digest = read(folder / "result.json")
             if not (result["completed"] and (result["dataset"], result["method"], result["seed"]) ==
-                    (args.dataset, method, seed) and set(result["operating_points"]) == {"0.005", "0.01"}):
+                    (args.dataset, method, seed) and set(result["operating_points"]) ==
+                    ({"0.01"} if cse else {"0.005", "0.01"})):
                 raise ValueError("Incomplete or mismatched evaluated cell")
+            if cse and result.get("missing_reference", {}).get("substituted_in_sample_calibration") is not False:
+                raise ValueError("Missing Joint holdout limitation")
             for t in range(len(result["tasks"])):
                 stage, _ = read(folder / f"task_{t:03d}.json")
                 if not stage["completed"] or not stage["default_cm_reproduced"]:
                     raise ValueError("Stage reproduction incomplete")
-                for alpha in ("0.005", "0.01"):
+                for alpha in result["operating_points"]:
                     if stage["operating_points"][alpha]["metrics"] != result["operating_points"][alpha]["stages"][t]["metrics"]:
                         raise ValueError("Stage/result trajectory mismatch")
                 prepared.append((output / folder.name / f"task_{t:03d}.json", stage))
@@ -54,7 +60,7 @@ def main():
             raise ValueError("Different existing publication")
     for path, value in prepared:
         write_derived(path, value)
-    print(f"Published {args.dataset}: 25 cells, {len(prepared)} JSON files; no inference or statistics rerun")
+    print(f"Published {args.dataset}: {expected_cells} cells, {len(prepared)} JSON files; no inference or statistics rerun")
 
 
 if __name__ == "__main__":
