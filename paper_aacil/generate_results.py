@@ -444,10 +444,20 @@ def compact_evidence(selection_path, comparison_path):
     if (a.get('section')!='31' or a.get('selection_sha256')!=out['selection_sha256']
             or a.get('selection_test_metrics_used') is not False or a.get('selected_main')!=main):
         raise ValueError('Regenerate compact comparisons for the immutable selection')
-    if a.get('cse_release_guard') is not None or any(g['dataset'] not in COMPACT_DATASETS
+    if a.get('cse_release_guard') is not None or any(g['dataset'] not in COMPACT_DATASETS+['CIC-IDS-2017']
             for g in a.get('descriptive_groups',[])):
         raise ValueError('Use a development-only compact comparison for this sealed-CSE presentation')
     for g in a.get('descriptive_groups',[]):
+        if g['dataset']=='CIC-IDS-2017':
+            if (g['method']!='aacil_kd_wa' or g.get('role')!='development_dataset_descriptive'
+                    or g.get('used_for_frozen_selection') is not False
+                    or g.get('blind_confirmation') is not False
+                    or a.get('section39_append',{}).get('selection_changed') is not False):
+                raise ValueError('CIC17 must retain its Section39 descriptive-only role')
+            capacities=[r['architecture_capacity'] for r in g['resources_by_seed']]
+            if len(capacities)!=5 or any(c!=capacities[0] for c in capacities):
+                raise ValueError('CIC17 formal capacity differs across seeds')
+            out['capacity'].append({'dataset':g['dataset'],'method':g['method'],**capacities[0]})
         v=versions[g['method']]
         if (g.get('n')!=5 or sorted(g.get('seeds',[]))!=SEEDS or not g.get('complete_five_seed')
                 or g.get('selected_candidate_id')!=v['selected_candidate_id']
@@ -499,7 +509,8 @@ def compact_outputs(evidence):
         table('compact_results',r'Fixed-capacity candidates on development datasets at stagewise $\alpha=2\%$.',
             ['Data','Candidate','$n$','Mean inc. BAcc','Final BAcc','Forget (pp)','ADR','MF1','FPR'],
             rows,cols='llrrrrrrr',note=(r'Mean$\pm$sample SD over complete seeds 1/2/3/4/42. '
-            'Both UNSW and NSL were used for development; these five-seed results are not blind confirmation. '
+            'UNSW, NSL and CIC17 were used for development; these five-seed results are not blind confirmation. '
+            'CIC17 was not used in the frozen UNSW/NSL validation-only selection; only its selected candidate was added. '
             'Only complete groups are displayed. No test outcome changes the fixed selection or fallback eligibility.'))
         formal=r'\input{generated/compact_results.tex}'
     capacity=[[SHORT[r['dataset']],COMPACT_NAMES[r['method']],str(r['training_parameters']),
@@ -510,9 +521,12 @@ def compact_outputs(evidence):
         note=('F only; the common G and transient previous-task gate teacher are separate. Counts come from saved development architectures '
         'and remain fixed across tasks. EMA training-resident count includes its slow copy; only EMA is used at inference. '
         'DUAL uses two fixed encoders and one joint head within a single F.'))
-    progress=(f'{len(groups)} of ten five-seed candidate/dataset groups are complete. ' if groups else
+    development_count=sum(g['dataset'] in COMPACT_DATASETS for g in groups)
+    progress=(f'{development_count} of ten UNSW/NSL five-seed candidate/dataset groups are complete. ' if groups else
               'No compact candidate has a complete formal five-seed group at this snapshot. ')
-    progress+=('UNSW and NSL remain development datasets. CSE-CIC-IDS2018 metrics are sealed and were not read by this presentation; '
+    if any(g['dataset']=='CIC-IDS-2017' for g in groups):
+        progress+='The additional CIC17 KD+WA five-seed group is descriptive, not part of validation selection. '
+    progress+=('UNSW, NSL and CIC17 remain development datasets. CSE-CIC-IDS2018 metrics are sealed and were not read by this presentation; '
                'no external confirmation or resolved-trade-off conclusion is available.')
     return {'CompactSelectionText':text,'CompactResultsText':progress,
         'CompactValidationTable':r'\input{generated/compact_selection.tex}', 'CompactFormalTables':formal,
@@ -536,7 +550,7 @@ def compact_summary_zh(evidence, aggregate_text):
                 [aggregate_text(g['metrics'][k]) for k in RETENTION_METRICS[:4]])+' |')
     else:
         lines.append('正式五seed完整组尚未纳入；不以开发验证数字填充正式结果。')
-    lines+=['UNSW/NSL正式结果仍属开发数据集结果，不是盲确认。CSE18汇总封存、未读取；旧CBF失败与固定KD复评失败不变。', '']
+    lines+=['UNSW/NSL/CIC17正式结果仍属开发数据集结果，不是盲确认；CIC17未参与冻结的UNSW/NSL验证选型。CSE18汇总封存、未读取；旧CBF失败与固定KD复评失败不变。', '']
     return lines
 
 

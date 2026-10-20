@@ -27,13 +27,14 @@ from paper_aacil.generate_section29_comparisons import (
 
 VERSIONS = ["aacil_kd_weak", "aacil_kd_wa", "aacil_kd_cbf", "aacil_ema_kd", "aacil_dual"]
 DEVELOPMENT_DATASETS = ["UNSW-NB15", "NSL-KDD"]
+CIC = "CIC-IDS-2017"
 CSE = "CSE-CIC-IDS2018"
 PHYSICAL_REFERENCES = ["replay", "derpp", "wacb", "freq", "replay_bs", "aacil", "aacil_kd"]
 NAMES = {"aacil_kd_weak": "KD-weak", "aacil_kd_wa": "KD+WA", "aacil_kd_cbf": "KD+CBF",
          "aacil_ema_kd": "EMA-KD", "aacil_dual": "DUAL", "aacil_kd": "AA-CIL-KD",
          "aacil": "AA-CIL", "replay_bs": "Replay-BS", "replay": "Replay", "derpp": "DER++",
          "wacb": "WACB", "freq": "Freq", "replay_la": "Replay+LA"}
-DATA = {"UNSW-NB15": "UNSW", "NSL-KDD": "NSL", CSE: "CSE18"}
+DATA = {"UNSW-NB15": "UNSW", "NSL-KDD": "NSL", CIC: "CIC17", CSE: "CSE18"}
 BACC = "final_balanced_accuracy"
 METRICS = [AIA, BACC, FORGET, ADR, "final_macro_f1", "final_normal_fpr"]
 CONFIG_KEYS = {"lambda_g": "lambda_g", "der_alpha": "derpp_alpha", "der_beta": "derpp_beta",
@@ -323,7 +324,7 @@ def summarize(selection, versions, groups, rows, missing, bindings, selection_pa
 
 def render(result):
     fragments = []
-    for dataset in DEVELOPMENT_DATASETS + [CSE]:
+    for dataset in DEVELOPMENT_DATASETS + [CIC, CSE]:
         groups = [g for g in result["descriptive_groups"] if g["dataset"] == dataset]
         if not groups:
             continue
@@ -331,7 +332,10 @@ def render(result):
                 [value(g["metrics"][metric]) for metric in METRICS] for g in groups]
         note = (r"Mean$\pm$sample SD over all five fixed formal seeds; signed forgetting is in percentage points. "
                 r"$\star$ identifies the validation-selected main, never a test-selected winner. ")
-        note += ("These are exposed development-dataset results, not blind confirmation. All five candidates are retained as they complete."
+        note += ("CIC17 was previously exposed during development; this fixed selected candidate is descriptive, not blind confirmation. "
+                 "CIC17 was not used in the frozen UNSW/NSL validation selection. No CSE criterion is tested here."
+                 if dataset == CIC else
+                 "These are exposed development-dataset results, not blind confirmation. All five candidates are retained as they complete."
                  if dataset in DEVELOPMENT_DATASETS else
                  "External data are released only after all 35 reference cells finish. Replay+LA aliases calibrated Replay and adds no training.")
         fragments.append(table(escape(DATA[dataset]) + r": compact retention at stagewise $\alpha=2\%$.",
@@ -371,18 +375,109 @@ def render(result):
     return "% Generated only from complete saved metric groups; no inference or test selection.\n" + "\n".join(fragments)
 
 
+def verify_saved_bindings(bindings):
+    """Check provenance without recomputing any previously published group."""
+    for binding in bindings:
+        for label, sha in (("stagewise_result", "stagewise_sha256"), ("source_result", "source_sha256")):
+            if digest(source_path(binding[label])) != binding[sha]:
+                raise ValueError("Previously consumed source changed; no silent regeneration")
+
+
+def append_section39(args, selection, versions):
+    """Append only the authorized CIC17 candidate; preserve all prior statistics."""
+    previous = read(args.output)
+    expected = {d + "/" + m for d in DEVELOPMENT_DATASETS for m in VERSIONS}
+    key = CIC + "/aacil_kd_wa"
+    if (previous.get("selection_sha256") != digest(args.selection)
+            or previous.get("selected_main") != {k: selection["selected_main"][k] for k in
+                ("method", "selected_candidate_id", "configuration", "eligible", "selection_reason")}
+            or previous.get("selection_datasets") != DEVELOPMENT_DATASETS
+            or previous.get("selection_test_metrics_used") is not False
+            or previous.get("cse_release_guard") is not None
+            or previous.get("CSE18_necessary_tests") != []
+            or previous.get("CSE18_necessary_verdict") != "pending"
+            or previous.get("CSE18_all_required_evidence_complete") is not False
+            or set(previous.get("completed_group_keys", [])) not in (expected, expected | {key})):
+        raise ValueError("Section39 append requires the intact ten-group sealed-CSE comparison")
+    bindings = previous["source_bindings"]
+    group_keys = [(g["dataset"], g["method"]) for g in previous["descriptive_groups"]]
+    source_keys = [(b["dataset"], b["method"], b["seed"]) for b in bindings]
+    if (len(group_keys) != len(set(group_keys))
+            or {d + "/" + m for d, m in group_keys} != set(previous["completed_group_keys"])
+            or len(source_keys) != len(set(source_keys))
+            or set(source_keys) != {(d, m, s) for d, m in group_keys for s in SEEDS}):
+        raise ValueError("Previously published group/source inventory is incomplete")
+    verify_saved_bindings(bindings)
+    if key in previous["completed_group_keys"]:
+        print(json.dumps({"written": False, "reason": "Section39 already appended; no statistics recomputed"}))
+        return
+    group, cells, missing, sources = load_compact_group(
+        args.input.resolve(), CIC, "aacil_kd_wa", selection, versions["aacil_kd_wa"])
+    if missing:
+        raise ValueError("Section39 requires all five completed CIC17 candidate cells")
+    version = versions["aacil_kd_wa"]
+    if selection["selected_main"]["method"] != "aacil_kd_wa":
+        raise ValueError("Section39 cannot change the frozen selected candidate")
+    for resource, seed in zip(group["resources_by_seed"], SEEDS):
+        row = cells[CIC, "aacil_kd_wa", seed]
+        source = read(source_path(row["source_result"]))
+        execution = row.get("section39_execution", {})
+        invocation = execution.get("invocation", {})
+        frozen = execution.get("wrapper_identity", {}).get("frozen_selection", {})
+        if (execution != source.get("section39_execution") or not execution
+                or invocation.get("actual_entrypoint") != "ncd/run_section39_local.py"
+                or (invocation.get("dataset"), invocation.get("method"), invocation.get("seed")) != (CIC, "aacil_kd_wa", seed)
+                or invocation.get("smoke") is not False
+                or invocation.get("selection_changed") is not False
+                or invocation.get("descriptive_development_dataset") is not True
+                or invocation.get("CSE18_model_metrics_accessed") is not False
+                or execution.get("cell_attempt", {}).get("exit_code") != 0
+                or frozen.get("selection_sha256") != previous["selection_sha256"]
+                or frozen.get("candidate_id") != version["selected_candidate_id"]
+                or frozen.get("eligible") != version["eligible"]):
+            raise ValueError("Section39 provenance or frozen-selection identity differs")
+        resource["section39_execution"] = execution
+    group.update(role="development_dataset_descriptive", selected_main=True,
+                 development_eligible=version["eligible"], selected_candidate_id=version["selected_candidate_id"],
+                 used_for_frozen_selection=False, blind_confirmation=False)
+    result = previous | {
+        "completed_at": datetime.now().astimezone().isoformat(),
+        "descriptive_groups": previous["descriptive_groups"] + [group],
+        "source_bindings": bindings + sources,
+        "completed_group_keys": sorted(expected | {key}),
+        "section39_append": {"previous_comparison_sha256": digest(args.output),
+            "previous_completed_at": previous["completed_at"], "added_group": key,
+            "previous_groups_recomputed": False, "CSE18_metrics_read": False,
+            "new_significance_tests": False, "selection_changed": False},
+        "limitations": previous["limitations"] + [
+            "CIC17 selected-candidate results are descriptive development evidence, not blind confirmation. "
+            "CIC17 was not part of the frozen UNSW/NSL seeds5/6 selection. No CSE18 criterion is applied to CIC17."]}
+    args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+                           encoding="utf-8", newline="\n")
+    args.tex_output.write_text(render(result), encoding="utf-8", newline="\n")
+    print(json.dumps({"written": True, "added_group": key, "completed_groups": 11,
+                      "previous_groups_recomputed": False, "new_significance_tests": False,
+                      "CSE18_necessary_verdict": result["CSE18_necessary_verdict"]}))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--selection", type=Path, default=ROOT / "ncd/results/problem_scout/section31/development_v1/selection.json")
     parser.add_argument("--input", type=Path, default=ROOT / "ncd/results/problem_scout/section28/forgetting_v1")
     parser.add_argument("--include-cse", action="store_true", help="Requires all35 reference completion files and guarded release before any CSE metric read")
+    parser.add_argument("--append-section39", action="store_true", help="Append only completed CIC17 KD+WA; retain the original ten descriptive groups and all CSE decisions")
     parser.add_argument("--cse-reference-root", type=Path, help="Local retrieved protected reference tree containing cells/ and reference_summary.json")
     parser.add_argument("--output", type=Path, default=ROOT / "ncd/results/problem_scout/section31/comparisons_v1/result.json")
     parser.add_argument("--tex-output", type=Path, default=ROOT / "paper_aacil/generated/section31_comparisons.tex")
     args = parser.parse_args()
     if bool(args.cse_reference_root) != args.include_cse:
         parser.error("--include-cse and --cse-reference-root must be supplied together")
+    if args.append_section39 and args.include_cse:
+        parser.error("Section39 descriptive append cannot consume CSE metrics")
     selection, versions = load_selection(args.selection.resolve())
+    if args.append_section39:
+        append_section39(args, selection, versions)
+        return
     groups, rows, missing, bindings = {}, {}, [], []
     guard = None
     if args.include_cse:
@@ -417,6 +512,20 @@ def main():
     result = summarize(selection, versions, groups, rows, missing, bindings, args.selection.resolve(), guard)
     if args.output.is_file():
         previous = read(args.output)
+        # The normal CSE-release path must retain the independently appended
+        # CIC17 descriptive evidence, without treating it as selection data.
+        if "section39_append" in previous:
+            cic_groups = [g for g in previous["descriptive_groups"] if g["dataset"] == CIC]
+            cic_sources = [b for b in previous["source_bindings"] if b["dataset"] == CIC]
+            verify_saved_bindings(cic_sources)
+            if len(cic_groups) != 1 or len(cic_sources) != 5:
+                raise ValueError("Incomplete previously appended Section39 evidence")
+            result["descriptive_groups"] += cic_groups
+            result["source_bindings"] += cic_sources
+            result["completed_group_keys"].append(CIC + "/aacil_kd_wa")
+            result["completed_group_keys"].sort()
+            result["section39_append"] = previous["section39_append"]
+            result["limitations"] += [v for v in previous["limitations"] if v.startswith("CIC17 selected-candidate")]
         if previous.get("selection_sha256") != result["selection_sha256"]:
             raise ValueError("Existing comparison belongs to another immutable selection; use a new output namespace")
         old_keys, new_keys = set(previous.get("completed_group_keys", [])), set(result["completed_group_keys"])
