@@ -26,6 +26,13 @@ LAUNCHER_SHA = "3c44975f5a203838d0d876fb90ca007e1122310cec782151b6feea72db772055
 POLICY = "section64_interim_five_per_seed_final_25_decision_full_40"
 
 
+def canonical_hash(value):
+    """Match the frozen producer without importing any training runtime."""
+    return hashlib.sha256(json.dumps(
+        value, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()).hexdigest()
+
+
 def complete_local_set(root, seed):
     """Read structural status only; reject partial sets before opening results."""
     paths = sorted((root / "attempts").glob("*/status.json"))
@@ -105,6 +112,10 @@ def main():
                 and all(hashes.get(p) == h for p, h in ident["source_hashes"].items()),
                 "Frozen source mismatch")
         cfg = ident["effective_config"]
+        require(ident["effective_config_sha256"] == canonical_hash(cfg)
+                and ident["config_sha256"]
+                == hashes["ncd/configs/problem_scout_section21.json"],
+                "Configuration hash mismatch")
         fixed = {"section64": True, "smoke": False, "device": "cuda", "cpu_threads": 2,
                  "min_steps_per_task": 2000, "release_policy": POLICY,
                  "local_launcher_commit": LAUNCHER, "local_launcher_sha256": LAUNCHER_SHA,
@@ -133,8 +144,10 @@ def main():
             stage_path = folder / "calibrated_stages" / f"task_{index:03d}.json"
             stage, _ = read(stage_path)
             require(stage == wrapper["stages"][index] and stage["completed"] is True
-                    and stage["binding"]["checkpoint_sha256"] == cp["checkpoint_sha256"]
-                    and stage["binding"]["alpha"] == .02, "Saved stage binding mismatch")
+                    and stage["binding"] == {
+                        "checkpoint_sha256": cp["checkpoint_sha256"],
+                        "identity_sha256": canonical_hash(ident), "alpha": .02},
+                    "Saved stage binding mismatch")
             sources.append(stage_path)
         for source in sources:
             value, digest = read(source)
