@@ -128,6 +128,20 @@ def main():
                 and len(raw["checkpoints"]) == len(raw["tasks"]) == 4,
                 "Complete CSE18 trajectory required")
         exported = publication(raw, raw_hash, path, root)
+        final_point = raw["checkpoints"][-1]["operating_points"]["0.02"]
+        for target, source in (("final_attack_detection", "attack_recall"),
+                               ("final_normal_fpr", "normal_fpr")):
+            value = final_point[source]
+            require(isinstance(value, (int, float)) and 0 <= value <= 1,
+                    "Invalid saved final operating point")
+            require(target not in exported, "Do not replace original measurements")
+            exported[target] = value
+        exported["publication_derivation"]["added_measurement_aliases"] = {
+            "source": "checkpoints[3].operating_points.0.02",
+            "final_attack_detection": "attack_recall",
+            "final_normal_fpr": "normal_fpr",
+            "units": "fraction", "recomputed": False,
+        }
         exported["section82_execution"] = {
             "assignment_status_snapshot_sha256": snapshot, "assignment_attempt": paths[0].parent.name,
             "assignment_started_at": job["started_at"], "assignment_ended_at": job.get("ended_at"),
