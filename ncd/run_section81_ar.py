@@ -1,4 +1,4 @@
-"""Independent B1 fixed200 AR-TabT entry; CPU smoke until supervision is wired."""
+"""Independent B1 fixed200 AR-TabT entry; formal CUDA requires its supervisor."""
 from __future__ import annotations
 
 import argparse
@@ -20,12 +20,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"), required=True)
     parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42), required=True)
+    parser.add_argument("--memory-setting", choices=("fixed200",), default="fixed200")
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--dependency-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
-    if not args.smoke:
+    if not args.smoke and os.environ.get("NCD_SECTION81_AR_PARENT_PID") != str(os.getppid()):
         parser.error("Formal AR requires its independent resource supervisor")
     sys.path.insert(1, str(args.dependency_root.resolve(strict=True)))
     import numpy as np
@@ -45,10 +46,11 @@ def main():
     config_path = ROOT / "ncd/configs/problem_scout_section21.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config.update(problem_scout_data_root=str(args.data_root.resolve(strict=True)),
-                  device="cpu", cpu_threads=2, cpu_interop_threads=1, section81=True,
+                  device="cpu" if args.smoke else "cuda", cpu_threads=2, cpu_interop_threads=1, section81=True,
                   section27=True, section27_schema_version=1, section27_access_policy=aa.POLICY,
-                  section31=True, section31_schema_version=1, smoke=True,
-                  epochs_per_task=1, min_steps_per_task=0, batch_size=256,
+                  section31=True, section31_schema_version=1, smoke=args.smoke,
+                  epochs_per_task=1 if args.smoke else 8,
+                  min_steps_per_task=0 if args.smoke else 2000, batch_size=256,
                   learning_rate=0.001, lambda_g=0.0, derpp_alpha=1.0, derpp_beta=1.0,
                   derpp_allocation_adaptation=original.ADAPTATION,
                   derpp_coefficient_source="Section81 fixed original AR; no tuning",
@@ -61,7 +63,8 @@ def main():
                   family_parameter_constraint="Fixed TabTransformer; no original MLP size bound",
                   future_output_policy="Full attack output head; unseen rows masked")
     sources = sorted(set(original.SOURCE_PATHS) | {
-        "ncd/run_section81_ar.py", "ncd/section81_ar_cell.py", "ncd/section81_tabtransformer.py"})
+        "ncd/run_section81_ar.py", "ncd/section81_ar_cell.py", "ncd/section81_tabtransformer.py",
+        "ncd/run_section81_ar_local.py"})
     provenance = {"git_commit": source_commit(ROOT), "effective_config": config,
                   "config_sha256": digest(config_path),
                   "source_hashes": {p: digest(ROOT / p) for p in sources},
@@ -71,7 +74,7 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     start = time.perf_counter()
     attempt = {"status": "running", "started_at": aa.now(), "pid": os.getpid(),
-               "smoke": True, "scientific_result": False, "dataset": args.dataset,
+               "smoke": args.smoke, "scientific_result": not args.smoke, "dataset": args.dataset,
                "seed": args.seed, "method": "ar_tabt", "memory_setting": "fixed200",
                "command": sys.argv, "provenance": provenance}
     save_json(output / "attempt.json", attempt)
@@ -79,7 +82,8 @@ def main():
             redirect_stdout(Tee(sys.stdout, log)), redirect_stderr(Tee(sys.stderr, log)):
         try:
             data, _, _, metadata = prepare_setting(args.dataset, config)
-            data, _, _ = smoke_subset(data, None, None)
+            if args.smoke:
+                data, _, _ = smoke_subset(data, None, None)
             train, valid = section26_pools(data, args.seed)
             normal = data.class_order.index("Normal")
             rows = [aa.select_rows(train[normal], 50000, args.seed * 10000 * 10007 + normal)]
@@ -94,7 +98,7 @@ def main():
                 "section26_holdout": {str(c): {"train_count": len(train[c]),
                     "validation_count": len(valid[c]),
                     "validation_indices_sha256": hashlib.sha256(valid[c].tobytes()).hexdigest()} for c in valid}}
-            result = run_ar_cell(data, config, identity, output / "cell", torch.device("cpu"))
+            result = run_ar_cell(data, config, identity, output / "cell", torch.device(config["device"]))
             attempt.update(status="complete", checkpoint_count=len(result["checkpoints"]),
                            result_sha256=digest(output / "cell/result.json"))
         except BaseException as exc:
