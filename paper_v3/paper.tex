@@ -1,0 +1,530 @@
+% Explanation Stability under Class-Incremental Network Intrusion Detection
+% OFRA (Oracle-Free Routed Adapters) + ETG (Explanation-Trust Gate)
+% Single-document IEEEtran version, for supervisor review.
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{url}
+
+\begin{document}
+
+\title{Explanation Stability under Class-Incremental Network\\
+Intrusion Detection: An Oracle-Free Drift Protocol\\
+and a Trust-Governance Mechanism}
+
+\author{
+\IEEEauthorblockN{Liqiang}
+\IEEEauthorblockA{Faculty of Computer Science and Information Technology\\
+Universiti Malaya, Kuala Lumpur, Malaysia\\
+Supervisor: Prof. Nor Badrul Anuar \quad Co-supervisor: Assoc.\ Prof.\ Dr.\ Aznul Asraf Sabri}
+}
+
+\maketitle
+
+\begin{abstract}
+A deployed network intrusion detection system (NIDS) must keep learning new
+attack families, and analysts increasingly rely on per-decision feature
+attributions to triage, tune and audit its alerts. We study a property that
+sits between these two demands: whether the \emph{explanations} of an
+incrementally-trained NIDS stay trustworthy as new attacks are added. We find
+that accuracy-preserving models can keep classifying an old attack correctly
+while the features they rely on to do so silently change, and that for some
+attack families the model never had a faithful, concentrated rationale in the
+first place. We contribute three things. First, an \emph{oracle-free
+silent-drift protocol} that measures step-to-step attribution change without an
+all-data reference model, together with a forgetting-versus-data-shift
+decomposition and a faithfulness check. Second, \textbf{OFRA} (Oracle-Free
+Routed Adapters), a detector that learns each attack family as a small frozen
+low-rank adapter routed at inference without a task oracle; OFRA is a Pareto
+operating point that trades $8$--$16$~pp accuracy for near-zero forgetting
+($\sim\!3\times$ lower than the strongest baseline, geometric mean over five
+datasets), an order of magnitude fewer per-task parameters, and $0\%$
+attribution drift on the isolated path by construction. We show this $0\%$ is
+only partial: after the oracle-free router the shipped decision still drifts
+$2.3\%$ pooled. Third, \textbf{ETG} (Explanation-Trust Gate), a per-family
+trust state machine driven by a deletion-faithful rationale-mass test that
+governs whether each family's explanation may be trusted, routed to a human, or
+declared unexplainable---without ever changing the model weights. Across five
+IDS datasets with five seeds and Holm-corrected significance testing, ETG
+certifies $34$ of $39$ families, refuses five ill-posed ones, and suppresses two
+silent-drift alarms that a plain drift monitor would raise on families with no
+faithful rationale. An ablation shows the deletion-faithful engine is
+load-bearing: $19$ of $39$ trust decisions flip under ordinary gradient
+attribution. We report all results honestly: OFRA is a different operating
+point, not an overall winner, and ETG is at proof-of-concept maturity.
+\end{abstract}
+
+\begin{IEEEkeywords}
+intrusion detection, class-incremental learning, explainable AI, explanation
+stability, feature attribution, low-rank adaptation, trust governance.
+\end{IEEEkeywords}
+
+%% ============================================================
+\section{Introduction}
+\label{sec:intro}
+
+Network intrusion detection systems operate in a non-stationary world. New
+attack families appear continuously, and retraining a detector from scratch on
+every arrival is costly and often impossible because old traffic is unavailable
+for privacy or storage reasons. The practical setting is therefore
+\emph{class-incremental learning} (Class-IL)~\cite{masana2023class}: the model
+is updated task by task, at inference there is no oracle telling it which task a
+sample belongs to, and any memory of old data is tightly bounded. The dominant
+failure mode studied in this setting is \emph{catastrophic
+forgetting}~\cite{french1999catastrophic}: accuracy on earlier attacks collapses
+as new ones are learned.
+
+Almost all continual-learning work, in intrusion detection and elsewhere,
+optimises the same two numbers---accuracy and forgetting---and asks a single
+question of every update: \emph{did the prediction survive?} We argue that in a
+security setting this question is incomplete. Analysts do not consume raw
+predictions; they consume \emph{explanations}. A feature attribution tells an
+operator why an alert fired, drives rule tuning, and is retained for forensic
+and compliance review. If the model keeps predicting an old attack correctly but
+the features it now relies on to do so have quietly changed, the explanation an
+analyst trusted yesterday no longer describes today's model---and nothing in an
+accuracy dashboard reveals it. We call this \emph{silent explanation drift}.
+That attributions can be fragile under small perturbations is
+known~\cite{ghorbani2019interpretation}; what has not been studied is whether
+they survive the \emph{incremental updates} of a deployed detector.
+
+This paper takes explanation stability as a first-class, measurable property of
+Class-IL intrusion detection and makes three contributions.
+
+\begin{enumerate}
+\item An \textbf{oracle-free silent-drift protocol} (Section~\ref{sec:protocol}).
+A deployed detector never has an all-data ``oracle'' model to compare against, so
+we measure drift \emph{between successive increments}: for each preserved old
+class we compare its top-$k$ attribution set at update $t$ against $t{-}1$ by
+Jaccard overlap, cosine and Kendall-$\tau$, and flag silent drift when accuracy
+is preserved but the top-$15$ attribution Jaccard falls below $0.70$. We pair
+this with a forgetting-versus-data-shift decomposition and a deletion-based
+faithfulness check so that a drop in overlap cannot be dismissed as ``the data
+simply changed.''
+
+\item \textbf{OFRA} (Oracle-Free Routed Adapters, Section~\ref{sec:ofra}), a
+detector whose isolated paths are stable by construction. A frozen shared
+encoder feeds a per-attack-family rank-$8$ adapter that is frozen once learned,
+selected at inference by an oracle-free router. OFRA is deliberately reported as
+a \emph{Pareto operating point}, not a winner: it pays $8$--$16$~pp accuracy in
+exchange for near-zero forgetting, roughly $10\times$ fewer parameters per task,
+and $0\%$ attribution drift on the isolated path. We then show this headline
+$0\%$ is partial---after the oracle-free router the shipped decision still drifts
+$2.3\%$ pooled---and identify that decision-level residue as the blind spot our
+third contribution governs.
+
+\item \textbf{ETG} (Explanation-Trust Gate, Section~\ref{sec:etg}), a per-family
+trust state machine that governs the \emph{consumption} of explanations over the
+incremental stream and never touches the model weights. Its engine is a
+deletion-faithful \emph{rationale-mass} test that first asks whether a faithful,
+concentrated rationale exists at all; families that pass are certified and
+monitored for drift, families that fail are honestly declared unexplainable, and
+drifted families are routed to a human rather than silently repaired.
+\end{enumerate}
+
+We evaluate on five public IDS datasets---NSL-KDD~\cite{tavallaee2009detailed},
+UNSW-NB15~\cite{moustafa2015unsw}, CIC-IDS-2017~\cite{sharafaldin2018toward},
+CIC-IDS-2018~\cite{cicids2018} and NF-ToN-IoT-v2~\cite{sarhan2021netflow}---with
+five seeds and Holm-corrected paired tests. Throughout, we state the honest
+scope of every claim: where a number is a structural property we say so, where it
+is not significant we report it as such, and where an interpretation did not
+survive a control we decline to make it.
+
+%% ============================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Class-incremental learning}
+Continual-learning methods fall into three broad
+families~\cite{masana2023class}: regularization approaches that penalise change
+to important weights (EWC~\cite{kirkpatrick2017overcoming},
+LwF~\cite{li2017learning}); replay approaches that rehearse stored or generated
+exemplars (iCaRL~\cite{rebuffi2017icarl}, GDumb~\cite{prabhu2020gdumb},
+reservoir and gradient-based selection~\cite{aljundi2019gradient}); and
+parameter-isolation approaches that allocate separate capacity per task. Recent
+work adapts large frozen backbones with lightweight prompts or low-rank modules
+(L2P~\cite{wang2022l2p}, CODA-Prompt~\cite{smith2023coda},
+CLLoRA~\cite{liang2025cllora}), building on
+LoRA~\cite{hu2021lora}. Our detector belongs to the parameter-isolation family
+but is designed for a tabular, centralized IDS stream rather than vision.
+
+\subsection{Relation to ECCV-2024 PILoRA}
+A method named \emph{PILoRA}~\cite{guo2024pilora} was published concurrently in a
+federated, vision setting. Because the acronym collides with an earlier working
+name for our detector, we clarify the relationship explicitly and have adopted
+the distinct name OFRA. The two designs are opposite on their central axis.
+PILoRA maintains a \emph{single unified} incremental LoRA and classifies by
+nearest prototype; its authors state that their method ``does not require
+training new LoRA modules at different tasks and selecting based on similarity at
+inference,'' and position that per-module-selection strategy as the approach they
+\emph{avoid}. OFRA does exactly the avoided thing on purpose: it keeps
+\emph{separate frozen per-family} adapters and selects one at inference with an
+oracle-free router, in a centralized tabular-IDS setting, for the purpose of
+explanation stability rather than accuracy under federated heterogeneity. The
+overlap is the generic ``LoRA-for-Class-IL'' umbrella, which is now common to
+many methods; the specific mechanism is not shared.
+
+\subsection{Continual learning for intrusion detection}
+Continual NIDS work~\cite{amalapuram2022augmented,zhang2024ssf,islam2026maids}
+has concentrated on preserving detection accuracy under streaming attacks.
+Streaming evaluation is comparatively rare, and to our knowledge no prior NIDS
+study asks whether the model's \emph{explanation} of an old attack survives
+incremental updates.
+
+\subsection{Explanation stability and faithfulness}
+Feature-attribution methods such as SHAP~\cite{lundberg2017unified} are widely
+used to interpret detectors, and their fragility to input perturbation is
+documented~\cite{ghorbani2019interpretation}. Faithfulness---whether an
+attribution actually reflects the features the model uses---is typically probed
+by deletion or erasure tests~\cite{petsiuk2018rise,deyoung2020eraser}. We reuse
+this deletion idea not as a saliency-quality metric on a static model, but as the
+gating engine of a trust state machine that runs over an incremental stream. Work
+on explanation continuity that assumes a known task identifier at test time is
+the closest neighbour; our setting is oracle-free, which is the realistic
+deployment case.
+
+%% ============================================================
+\section{Problem Formulation}
+\label{sec:problem}
+
+We observe a sequence of tasks $\mathcal{T}_1,\dots,\mathcal{T}_T$, where task
+$\mathcal{T}_t$ introduces one or more new attack families. After training on
+$\mathcal{T}_t$ the model must classify all families seen so far, with no
+task identifier at inference (Class-IL) and a per-family exemplar budget of $50$.
+For a preserved old family $c$ (accuracy drop $\Delta_c > -5\%$ from its value
+when first learned) let $A_t(c)$ be the set of its top-$k$ attributed features at
+increment $t$. We define \textbf{silent drift} for $c$ at $t$ as
+\begin{equation}
+\mathrm{Acc}\text{ preserved} \;\wedge\;
+J\!\big(A_t(c), A_{t-1}(c)\big) < \tau ,
+\end{equation}
+with top-$15$ features and Jaccard threshold $\tau = 0.70$; we report robustness
+to both choices. Crucially, $A_{t}$ and $A_{t-1}$ are two \emph{deployed} models
+one increment apart---no all-data oracle is required, which matches a real NIDS
+that never has such a model.
+
+%% ============================================================
+\section{OFRA: The Detector Foundation}
+\label{sec:ofra}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{fig/arch.png}
+\caption{OFRA. A frozen shared encoder feeds a per-attack-family rank-$8$
+adapter, frozen once learned and selected at inference by an oracle-free
+DP-Means router. Drift is measured by comparing attributions at increment $t$
+against $t{-}1$, with no all-data reference model.}
+\label{fig:arch}
+\end{figure*}
+
+OFRA (Fig.~\ref{fig:arch}) has four parts.
+
+\textbf{Frozen shared encoder.} A two-layer MLP ($d\!\to\!128\!\to\!128$) is
+trained on the first task and then frozen. Because the representation never
+moves, an old family's feature space---and therefore its attribution---cannot
+drift as a side effect of later encoder updates.
+
+\textbf{Per-family adapters.} Each new attack family is learned as its own rank-$8$
+LoRA adapter~\cite{hu2021lora} on top of the frozen encoder (roughly $1.2$K
+trainable parameters), and frozen once learned. Learning a new attack therefore
+cannot overwrite an old one along its isolated path.
+
+\textbf{Oracle-free router.} At inference a DP-Means~\cite{kulis2012revisiting}
+router selects the family adapter by prototype distance, without a task
+identifier---the realistic deployment case.
+
+\textbf{Bounded exemplar memory.} Fifty raw exemplars per family support replay
+and calibration.
+
+The design gives a structural property: on the \emph{isolated path}, an old
+family's frozen adapter cannot change, so its attribution is invariant by
+construction. We stress that this is a property of the isolated path, not a
+guarantee about the deployed decision (Section~\ref{sec:results-drift}), and we
+do not claim OFRA is the most accurate detector---Section~\ref{sec:results-pareto}
+shows it is not.
+
+%% ============================================================
+\section{Oracle-Free Silent-Drift Protocol}
+\label{sec:protocol}
+
+For every preserved old family at every increment we compute attributions with
+SHAP and an input-gradient estimator, rank features, and compare the top-$15$
+sets across the two most recent increments by Jaccard, cosine and
+Kendall-$\tau$. Two safeguards keep the signal honest. A
+\emph{forgetting-versus-data-shift decomposition} separates attribution change
+caused by the model from change caused by input distribution shift, so a low
+overlap cannot be waved away as a data artefact. A \emph{deletion-based
+faithfulness check} confirms that the ranked features are the ones the model
+actually uses. The protocol needs only two consecutive deployed checkpoints; it
+never constructs the all-data reference model that continuity methods assume.
+
+%% ============================================================
+\section{ETG: Explanation-Trust Gate}
+\label{sec:etg}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{fig/etg.png}
+\caption{ETG state machine. A family is admitted only if a faithful, concentrated
+rationale exists (rationale-mass above a random null); certified families are
+monitored for drift; ill-posed families are declared unexplainable; drifted
+families are routed to a human. ETG never changes model weights.}
+\label{fig:etg}
+\end{figure*}
+
+OFRA's structural stability covers the isolated path, but not the decision the
+router ships (Section~\ref{sec:results-drift}). Rather than try to prevent that
+residual drift---which we show is hard to do without paying accuracy
+(Section~\ref{sec:results-pareto})---ETG \emph{governs} it. ETG changes no
+weights; it governs how much each family's explanation may be trusted.
+
+\subsection{Engine: rationale mass}
+Before drift can be tracked, a faithful rationale must exist. For family $c$ we
+rank features by occlusion importance (the drop in the class-$c$ softmax
+probability when a feature is zeroed) and define its \emph{rationale mass} as the
+joint deletion-gap of the top-$15$ occlusion features. A family is admitted only
+if its mass exceeds a random-$15$ null (the $95$th percentile of masses from
+random feature sets). This metric is reproducible, stable under a split-half
+check, near-zero for an anti-rationale (bottom-$15$) baseline, and
+random-controlled. Where mass is essentially zero, explanation stability is
+ill-posed and a drift alarm there would be noise.
+
+\subsection{State machine}
+Each family carries a persistent state (Fig.~\ref{fig:etg}):
+\[
+\begin{gathered}
+\textsf{UNCERTIFIED}\to\{\textsf{CERTIFIED\text{-}STABLE},\\
+\textsf{UNEXPLAINABLE}\}\to\textsf{DRIFTED}\\
+\to\{\text{re-certify},\,\textsf{UNEXPLAINABLE}\}.
+\end{gathered}
+\]
+On admission, a family whose mass clears the null becomes
+\textsf{CERTIFIED-STABLE} and its reference rationale is frozen; otherwise it is
+\textsf{UNEXPLAINABLE}. At a later increment, if accuracy is preserved but the
+top-$15$ Jaccard against the certified reference falls below $0.70$, the family
+becomes \textsf{DRIFTED}. A drifted family whose mass later recovers may return
+to \textsf{CERTIFIED-STABLE}; otherwise it is demoted.
+
+\subsection{Action policy}
+The states drive operator-facing actions. A \textsf{CERTIFIED-STABLE} explanation
+is audit-grade and eligible for auto-disposition. A \textsf{DRIFTED} alert is
+force-routed to a human and its stale rationale is withheld. An
+\textsf{UNEXPLAINABLE} family still raises its detection alert---detection is
+untouched---but its unreliable explanation is suppressed and no drift alarm is
+emitted for it. The auto-maintained per-family trust ledger (family, increment,
+mass, action) is the artefact a SOC actually consumes.
+
+%% ============================================================
+\section{Experimental Setup}
+\label{sec:setup}
+
+We use five datasets---NSL-KDD, UNSW-NB15, CIC-IDS-2017, CIC-IDS-2018 and
+NF-ToN-IoT-v2---in attack-family-incremental order, each with five seeds. We
+compare eight methods spanning the three CL families: a naive lower bound,
+EWC~\cite{kirkpatrick2017overcoming}, LwF~\cite{li2017learning},
+Replay, DP-Means Replay, iCaRL~\cite{rebuffi2017icarl}, a recent frozen-backbone
+baseline (NCM-Frozen), and OFRA. Forgetting is the mean drop of each old family's
+accuracy from its first-learned value; significance uses paired tests with
+Holm correction over the family of comparisons~\cite{cohen1988statistical,wohlin2012experimentation}.
+
+%% ============================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Silent drift: the $0\%$ is isolated-path only}
+\label{sec:results-drift}
+
+Accuracy-preserving shared-parameter baselines silently drift $3$--$100\%$
+depending on the dataset, with every baseline separated from OFRA at $p<0.001$
+and Cohen's $d\approx 6$. On the isolated path OFRA drifts $0\%$ by construction.
+This headline is real but partial: the deployed decision is produced \emph{after}
+the oracle-free router, which can re-route old-attack inputs as new families are
+added. Measuring drift at the decision level (Table~\ref{tab:drift},
+Fig.~\ref{fig:bridge}) gives $2.3\%$ pooled over $26$ runs---$6.7\%$ on NSL-KDD
+and $6.2\%$ on CIC-IDS-2017, $0\%$ on UNSW-NB15 and CIC-IDS-2018. This residual is
+exactly the blind spot ETG governs.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.9\textwidth]{fig/bridge.png}
+\caption{OFRA's $0\%$ is a structural property of the isolated path; after the
+oracle-free router the shipped decision still drifts $2.3\%$ pooled (up to
+$6.7\%$). ETG governs the trustworthiness of that decision.}
+\label{fig:bridge}
+\end{figure*}
+
+\begin{table}[t]
+\caption{Silent-drift rate (\%). Baselines are shared-parameter models; the OFRA
+column is the honest \emph{deployed} (decision-level) drift. OFRA's isolated path
+is $0\%$ by construction.}
+\label{tab:drift}
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Dataset & Naive & Replay & DP-Means & \textbf{OFRA} \\
+\midrule
+NSL-KDD        & 53 & 15 & 28 & \textbf{6.7} \\
+UNSW-NB15      & 61 & 37 & 43 & \textbf{0.0} \\
+CIC-IDS-2017   & 79 & 82 & 85 & \textbf{6.2} \\
+CIC-IDS-2018   & 100 & 81 & 92 & \textbf{0.0} \\
+NF-ToN-IoT-v2  & 17 & 3 & 6 & \textbf{1.2} \\
+\midrule
+\multicolumn{4}{l}{OFRA pooled (decision-level)} & \textbf{2.3} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Forgetting and the accuracy trade-off}
+\label{sec:results-pareto}
+
+OFRA lowers forgetting by a geometric-mean factor of $3.1\times$ against the
+strongest baseline (Table~\ref{tab:forget}), significant on four of five datasets
+after Holm correction. We report CIC-IDS-2018's $1.3\times$ as not significant
+($p=0.10$) rather than hiding it. This comes at an honest accuracy cost of
+$8$--$16$~pp and with roughly an order of magnitude fewer trainable parameters
+per family. We do \emph{not} claim state-of-the-art accuracy: OFRA is a different
+operating point on the accuracy--stability plane, not an overall winner.
+
+We also asked whether a new training-time mechanism could simply \emph{prevent}
+the decision-level drift. Across our five datasets and an eight-angle search over
+three custom regularisers, frozen isolation empirically Pareto-dominated every
+prevention configuration we tried---it reached $0\%$ isolated-path drift at no
+worse accuracy and lower forgetting than any constrained alternative. We treat
+this as an empirical observation on our benchmark, not a proof of impossibility;
+it is why we chose to \emph{govern} the residual drift rather than fight it.
+
+\begin{table}[t]
+\caption{Forgetting reduction of OFRA versus the strongest baseline
+(five seeds, Holm-corrected), and OFRA's accuracy cost.}
+\label{tab:forget}
+\centering\small\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lccc}
+\toprule
+Dataset & Forgetting reduction & $p_{\mathrm{Holm}}$ & Acc.\ cost \\
+\midrule
+NSL-KDD        & $6.6\times$ & $0.009$   & $-16.0$~pp \\
+UNSW-NB15      & $3.5\times$ & $8.4\!\times\!10^{-6}$ & $-7.7$~pp \\
+CIC-IDS-2017   & $2.9\times$ & $0.027$   & $-10.6$~pp \\
+CIC-IDS-2018   & $1.3\times$ & $0.10$ (n.s.) & $-7.8$~pp \\
+NF-ToN-IoT-v2  & $2.3\times$ & ---       & --- \\
+\midrule
+Geometric mean & $\mathbf{3.1\times}$ & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ETG: the trust ledger}
+\label{sec:results-etg}
+
+Table~\ref{tab:etg} is the artefact ETG produces. Across the five datasets it
+certifies $34$ of $39$ families, refuses five as unexplainable, suppresses two
+silent-drift alarms on families with no faithful rationale, and routes ten real
+drifts to a human (with three later re-certified). The refusals and suppressions
+are work a plain accuracy monitor or drift monitor cannot do: they are the cases
+where an alarm would be noise, or where a certificate would be dishonest.
+
+\begin{table}[t]
+\caption{ETG per-family trust ledger (five datasets, five seeds). ETG never
+changes model weights.}
+\label{tab:etg}
+\centering\scriptsize\setlength{\tabcolsep}{2pt}
+\begin{tabular}{lcccc}
+\toprule
+Dataset & Certified & Refused & Alarms supp. & Drifts$\to$human \\
+\midrule
+NSL-KDD        & 5/5  & 0 & 0 & 2 \\
+UNSW-NB15      & 9/10 & 1 & 1 & 1 \\
+CIC-IDS-2017   & 6/7  & 1 & 0 & 2 \\
+CIC-IDS-2018   & 7/7  & 0 & 0 & 4 \\
+NF-ToN-IoT-v2  & 7/10 & 3 & 1 & 1 \\
+\midrule
+\textbf{Total} & \textbf{34/39} & \textbf{5} & \textbf{2} & \textbf{10} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{The engine is load-bearing.} Replacing the deletion-faithful engine with
+ordinary input-gradient attribution changes $19$ of $39$ admission decisions
+(occlusion admits $34/39$; input-gradient admits $19/39$). The faithfulness of
+the attribution is not an implementation detail---it decides half the ledger.
+
+\textbf{Stability across seeds.} The admission partition is stable: NSL-KDD,
+CIC-IDS-2018 and NF-ToN-IoT-v2 have zero standard deviation across five seeds,
+while UNSW-NB15 ($9.2\pm0.4$) and CIC-IDS-2017 ($6.2\pm0.8$) wobble only on
+families whose mass sits near the null.
+
+\textbf{Why govern, not auto-repair.} A natural alternative is to penalise the
+model to restore a drifted family's rationale. We implemented a triggered,
+family-local, occlusion-anchored repair. Globally it looks almost free---accuracy
+barely moves---but a per-family audit shows it silently destroys a rare attack
+family: repairing UNSW-NB15 Fuzzers/Reconnaissance drops Shellcode accuracy by
+$\sim\!45$~pp, and CIC-IDS-2017 repairs cost Infiltration $\sim\!14$~pp.
+Auto-repair is therefore unsafe on this data; ETG routes drift to a human
+instead.
+
+%% ============================================================
+\section{Discussion}
+\label{sec:discussion}
+
+The positioning of this work is narrow on purpose. OFRA is oracle-free, unlike
+explanation-continuity methods that assume a known task identifier. ETG carries
+\emph{per-family persistent state} over the incremental stream, unlike stateless
+per-alert trust triage on a static model, and it is gated by a faithfulness test
+so that it declares ``unexplainable'' rather than certifying an ill-posed family.
+It is a governance layer on top of the detector, not a drift-prevention
+algorithm, and it targets exactly the decision-level residue that frozen
+isolation leaves uncovered.
+
+%% ============================================================
+\section{Supplemental prediction--retention trade-off}
+This later, bounded RQ2 study compares a refreshed benign--attack gate with an attack-family learner. AR removes gate distillation while retaining DER-style family replay and weight alignment; it is distinct from frozen OFRA isolation and from ETG. Tables~\ref{tab:cse-new-seed-tradeoff}--\ref{tab:cse-new-seed-tests} reproduce the lead's rounded CSE18 follow-up computation. AR is not confirmed as a final-accuracy improvement over Replay-BS: lower forgetting costs about 4--5 percentage points of mean incremental BAcc. Non-significance is not equivalence. These new-seed results do not replace the historical OFRA tests, establish an explanation-drift or governance benefit, or close the locked RQ1/RQ3 and substantive-innovation requirements. Full remaining-method reporting and an independent final-result consumer remain pending.
+\input{../paper_aacil/generated/cse_new_seed_tradeoff.tex}
+
+\section{Limitations}
+\label{sec:limits}
+
+We state the boundaries plainly. ETG governs explanation \emph{consumption}; it
+does not improve detection accuracy, and its value assumes explanations are
+actually used and must be trustworthy. Its cost is not zero: drifted and
+unexplainable families are routed to humans, a coverage/analyst-load cost that
+should be measured over a live stream. Rationale mass is computed on class-mean
+probes; per-sample governance is future work. The evidence for ETG is at
+proof-of-concept maturity---a small number of alarms per dataset---and we
+deliberately do \emph{not} claim that a drift alarm localises which feature the
+model migrated to, because that reliance-migration interpretation did not survive
+a random-controlled test; a \textsf{DRIFTED} verdict is only a conservative
+``stop auto-trusting'' signal. Finally, a sixth dataset (CIC-IoT-2023) is not yet
+included.
+
+%% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We treated explanation stability as a measurable property of class-incremental
+intrusion detection. An oracle-free protocol makes silent explanation drift
+visible without an all-data reference model; OFRA is an oracle-free detector
+whose isolated paths are stable by construction, offered as a Pareto operating
+point rather than an accuracy winner; and ETG governs the trustworthiness of the
+deployed decision that OFRA's structural $0\%$ does not cover, certifying
+families whose rationale is faithful, refusing those whose rationale is ill-posed,
+and routing drift to a human rather than silently retraining. Future work will
+formalise the certificate and its thresholds, lift certification from the isolated
+path to the routed decision, and evaluate alarm latency and false-alarm rate on a
+streaming deployment.
+
+\par\vspace{5pt}\noindent\textit{Code, results, and the source of this paper are
+available at} \url{https://github.com/1838904818/Class-IL}.
+
+%% ============================================================
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
