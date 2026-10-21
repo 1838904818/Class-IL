@@ -26,7 +26,18 @@ def canonical_hash(value):
     ).encode()).hexdigest()
 
 
-def complete_local_cell(root, seed, method):
+def complete_local_cell(root, seed, method, section64_seed5=False):
+    if section64_seed5:
+        from export_section64_interim import complete_local_set, ORDER
+        require(seed == 5, "Section64 adapter is seed5 only")
+        job, digest, path, _ = complete_local_set(root, seed)
+        require(job["status"] == "complete" and not job.get("current_cell")
+                and len(job["cells"]) == 8
+                and job["planned_cells"] == [[DATASET, m, 5] for m in ORDER],
+                "Original seed5 assignment must be fully complete")
+        selected = [c for c in job["cells"] if c["method"] == method and c["seed"] == 5]
+        require(len(selected) == 1, "Missing completed seed5 cell")
+        return job, digest, path, selected
     paths = sorted((root / "attempts").glob("*/status.json"))
     require(len(paths) == 1, "Multiple attempts require cost reconciliation")
     job, digest = read_shared(paths[0])
@@ -53,16 +64,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--package", type=Path, required=True)
-    parser.add_argument("--seed", type=int, choices=(6, 7, 8, 9), required=True)
+    parser.add_argument("--seed", type=int, choices=(5, 6, 7, 8, 9), required=True)
+    parser.add_argument("--section64-seed5", action="store_true",
+                        help="Publish the original completed seed5 non-decision cells")
     parser.add_argument("--method", choices=("aacil_kd_wa", "replay", "derpp"), required=True)
     args = parser.parse_args()
     root = args.source_root.resolve()
     destination = ROOT / "ncd/results/problem_scout/section74/descriptive_v1" / f"{args.method}_seed{args.seed}"
     require(not destination.exists(), "Already exported; preserve original snapshot")
-    job, snapshot, status_path, cells = complete_local_cell(root, args.seed, args.method)
+    require(args.section64_seed5 == (args.seed == 5), "Seed5 requires its explicit source adapter")
+    job, snapshot, status_path, cells = complete_local_cell(root, args.seed, args.method, args.section64_seed5)
     section = "section74"
     launcher, launcher_sha = LAUNCHER, LAUNCHER_SHA
     invocation_name = "section74_local_invocation.json"
+    if args.section64_seed5:
+        from export_section64_interim import LAUNCHER as ORIGINAL, LAUNCHER_SHA as ORIGINAL_SHA
+        section, launcher, launcher_sha = "section64", ORIGINAL, ORIGINAL_SHA
+        invocation_name = "section64_local_invocation.json"
     require(hashlib.sha256(args.package.read_bytes()).hexdigest() == PACKAGE_SHA,
             "Original frozen package required")
     with tarfile.open(args.package, "r") as archive:
@@ -110,8 +128,9 @@ def main():
                  "local_launcher_commit": launcher, "local_launcher_sha256": launcher_sha,
                  "original_selection_changed": False, "tuning_permitted": False}
         require(all(cfg.get(k) == v for k, v in fixed.items()), "Fixed execution mismatch")
-        require(cfg.get("section74") is True and cfg.get("descriptive_only") is True
-                and cfg.get("assignment") == "seeds6_to9_remaining_three", "Configuration mismatch")
+        if not args.section64_seed5:
+            require(cfg.get("section74") is True and cfg.get("descriptive_only") is True
+                    and cfg.get("assignment") == "seeds6_to9_remaining_three", "Configuration mismatch")
         for split, count in (("train", 12882081), ("test", 3255102)):
             require(ident["data_binding"]["x_" + split]["shape"] == [count, 78]
                     and ident["data_binding"]["y_" + split]["shape"] == [count],
