@@ -52,6 +52,14 @@ The following source differences must be explicit in the implementation:
    explicit published ER schedule takes precedence: AdamW 5e-4, weight decay
    1e-5, batch 256, ReduceLROnPlateau factor 0.1/patience 5, validation-loss
    early stopping patience 10 and at most 100 epochs. No TEST-based stopping.
+   For ER stopping, reserve a seed-fixed 10% of non-calibration benign TRAIN
+   rows; intersect this fixed role assignment with each original 50,000-row
+   AR benign stream. Its optimization/stopping union is the identical stream,
+   but optimization counts are not identical to AR. Stable roles prevent an
+   earlier optimized benign row from later becoming a stopping row. Attack
+   validation uses the existing TRAIN split; old validation rows must fit in
+   the bounded buffer. The permanent Normal calibration pool is never used
+   for early stopping. This is a schedule adaptation, not compute matching.
 5. Retain the registered TabTransformer dimensions (32, six blocks, ten
    heads, dropout 0.1, GELU head). AR-TabT uses that backbone in both G and F;
    it remains AR, with its registered loss and retention behavior, not ER.
