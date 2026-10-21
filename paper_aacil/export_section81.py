@@ -1,4 +1,4 @@
-"""Export one completed B1 ER cell; no inference or aggregate recomputation."""
+"""Export one completed B1 cell; no inference or aggregate recomputation."""
 from __future__ import annotations
 
 import argparse
@@ -18,10 +18,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def public(value, digest, relative):
     changes = []
-    result = sanitize({k: v for k, v in value.items() if k != "identity"}, changed=changes)
+    body = {k: v for k, v in value.items() if k != "identity"}
+    if isinstance(body.get("command"), list):
+        body["command"] = subprocess.list2cmdline(body["command"])
+        changes.append("command_representation_list_to_string")
+    result = sanitize(body, changed=changes)
     if "identity" in value:
         identity_changes = []
-        result["identity"] = sanitize(value["identity"], changed=identity_changes)
+        identity = dict(value["identity"])
+        if isinstance(identity.get("command"), list):
+            identity["command"] = subprocess.list2cmdline(identity["command"])
+            identity_changes.append("command_representation_list_to_string")
+        result["identity"] = sanitize(identity, changed=identity_changes)
         changes.extend("identity." + k for k in identity_changes)
     result["publication_derivation"] = {
         "original_json": "section81/" + relative,
@@ -51,18 +59,28 @@ def main():
             == attempt["result_sha256"], "Result completion mismatch")
     identity = raw["identity"]
     cfg = identity["effective_config"]
-    require(identity["section"] == 81 and identity["scientific_result"] is True
-            and identity["method"] == job["method"] == "er_bal_tabt"
+    method = identity["method"]
+    require(identity["section"] == 81 and attempt["scientific_result"] is True
+            and method == job["method"] and method in ("er_bal_tabt", "ar_tabt")
             and identity["dataset"] == job["dataset"] == attempt["dataset"]
             and identity["seed"] == job["seed"] == attempt["seed"]
             and identity["memory_setting"] == job["memory_setting"] == attempt["memory_setting"],
             "B1 identity mismatch")
     require(identity["dataset"] in ("UNSW-NB15", "CIC-IDS-2017")
             and identity["seed"] in (1, 2, 3, 4, 42), "Unregistered cell")
+    if method == "er_bal_tabt":
+        require(identity["scientific_result"] is True, "ER scientific identity required")
+    else:
+        require(identity["memory_setting"] == "fixed200" and raw["selection_only"] is False,
+                "AR fixed-budget non-selection cell required")
     fixed = dict(device="cuda", smoke=False, epochs_per_task=100, batch_size=256,
                  optimizer="AdamW", learning_rate=5e-4, weight_decay=1e-5,
                  normal_training_rows=50000, cpu_threads=2)
-    require(all(cfg.get(k) == v for k, v in fixed.items()), "ER schedule mismatch")
+    if method == "ar_tabt":
+        fixed = dict(device="cuda", smoke=False, epochs_per_task=8, batch_size=256,
+                     learning_rate=0.001, lambda_g=0.0, derpp_alpha=1.0, derpp_beta=1.0,
+                     min_steps_per_task=2000, normal_training_rows=50000, cpu_threads=2)
+    require(all(cfg.get(k) == v for k, v in fixed.items()), "Registered schedule mismatch")
     require(attempt["provenance"]["effective_config"] == cfg
             and attempt["provenance"]["source_hashes"] == identity["source_hashes"],
             "Attempt source mismatch")
@@ -74,7 +92,7 @@ def main():
                 or hashlib.sha256(blob.replace(b"\n", b"\r\n")).hexdigest() == expected,
                 "Published source mismatch: " + name)
     slug = identity["dataset"].lower().replace("-", "_")
-    destination = ROOT / "ncd/results/problem_scout/section81/publication_v1" / slug / identity["memory_setting"] / f"er_bal_tabt_seed{identity['seed']}"
+    destination = ROOT / "ncd/results/problem_scout/section81/publication_v1" / slug / identity["memory_setting"] / f"{method}_seed{identity['seed']}"
     require(not destination.exists(), "Cell already exported")
     prepared = []
     require(len(raw["checkpoints"]) == len(identity["tasks"]), "Incomplete trajectory")
