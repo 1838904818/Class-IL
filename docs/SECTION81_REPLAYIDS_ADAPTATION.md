@@ -35,6 +35,10 @@ The following source differences must be explicit in the implementation:
    sample, and never rebuild it by rereading discarded old-class pools.
    Preserve benign replay. Record actual per-class counts, retained validation
    rows and bytes rather than claiming identical upstream buffering.
+   Thus B1 evaluates ER-Bal-TabT under the same no-revisit constraint as all
+   baselines, not the upstream code's experience-rebuilding implementation.
+   The paper describes reservoir sampling; that description is consistent
+   with retaining samples without revisiting discarded experiences.
 2. The fixed-budget setting is our existing 200-times-seen-class budget with
    existing AR accounting; the new setting is 1% per class's training flows.
    Keep AR's existing allocation semantics explicit, including its separate
