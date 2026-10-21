@@ -49,7 +49,8 @@ def main():
         "scope": "Single-cell descriptive reporting only; S1-S3 await five seeds.",
         "epoch_interpretation": "ER reports completed and restored-best epochs. AR reports actual G/F schedules separately: requested eight epochs is a lower bound with minimum 2000 optimizer steps, not necessarily eight executed epochs. Partial epochs remain explicit.",
     }
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    with path.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
 
 
 if __name__ == "__main__":
