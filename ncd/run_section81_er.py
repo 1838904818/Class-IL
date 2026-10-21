@@ -1,7 +1,4 @@
-"""B1 ER executable integration. Formal execution awaits the resource supervisor.
-
-Only the explicit CPU smoke is currently enabled; this is not a GPU launcher.
-"""
+"""B1 ER executable; formal CUDA execution requires its local supervisor."""
 from __future__ import annotations
 
 import argparse
@@ -32,8 +29,10 @@ def main():
     parser.add_argument("--recover-smoke-from", type=Path,
                         help="Diagnosed failed CPU smoke: reuse Task 0, preserve original output")
     args = parser.parse_args()
-    if not args.smoke:
-        parser.error("Formal B1 execution is disabled until the CUDA/resource supervisor is integrated")
+    if not args.smoke and os.environ.get("NCD_SECTION81_PARENT_PID") != str(os.getppid()):
+        parser.error("Formal B1 execution requires the guarded local supervisor")
+    if args.recover_smoke_from and not args.smoke:
+        parser.error("Smoke recovery cannot supply formal weights")
     # Isolated pinned dependencies, without modifying the research environment.
     dependency_root = args.dependency_root.resolve(strict=True)
     sys.path.insert(1, str(dependency_root))
@@ -53,8 +52,8 @@ def main():
     config_path = ROOT / "ncd/configs/problem_scout_section21.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config.update(problem_scout_data_root=str(args.data_root.resolve(strict=True)),
-                  device="cpu", cpu_threads=2, cpu_interop_threads=1,
-                  section81=True, smoke=True, epochs_per_task=1,
+                  device="cpu" if args.smoke else "cuda", cpu_threads=2, cpu_interop_threads=1,
+                  section81=True, smoke=args.smoke, epochs_per_task=1 if args.smoke else 100,
                   min_steps_per_task=0, deadline_iso=None,
                   batch_size=256, eval_batch_size=256,
                   optimizer="AdamW", learning_rate=5e-4, weight_decay=1e-5,
@@ -66,6 +65,7 @@ def main():
         "ncd/section81_er_cell.py", "ncd/section81_er_training.py",
         "ncd/section81_exposure.py", "ncd/section81_memory.py",
         "ncd/section81_tabtransformer.py",
+        "ncd/run_section81_local.py",
     })
     provenance = {"git_commit": source_commit(ROOT), "effective_config": config,
                   "config_sha256": digest(config_path),
@@ -94,8 +94,8 @@ def main():
     # No implicit retry or overwrite. Failed attempt output remains for diagnosis.
     output.mkdir(parents=True, exist_ok=False)
     started = time.perf_counter()
-    attempt = {"status": "running", "started_at": aa.now(), "smoke": True,
-               "scientific_result": False, "pid": os.getpid(), "provenance": provenance,
+    attempt = {"status": "running", "started_at": aa.now(), "smoke": args.smoke,
+               "scientific_result": not args.smoke, "pid": os.getpid(), "provenance": provenance,
                "dataset": args.dataset, "seed": args.seed,
                "memory_setting": args.memory_setting, "command": sys.argv}
     if recovery:
@@ -110,7 +110,8 @@ def main():
                 # population prior required by the unchanged monotone calibrator.
                 population_counts = {c: int(np.count_nonzero(data.y_train == c))
                                      for c in range(len(data.class_order))}
-                data, _, _ = smoke_subset(data, None, None, limit=64)
+                if args.smoke:
+                    data, _, _ = smoke_subset(data, None, None, limit=64)
                 exposure = ERExposure(data, args.seed)
                 identity = provenance | {
                     "section": 81, "method": "er_bal_tabt", "dataset": args.dataset,
@@ -124,10 +125,10 @@ def main():
                     "admission_training_counts": {str(c): n for c, n in exposure.admission_training_counts.items()},
                     "calibration_prior_counts": {str(c): n for c, n in population_counts.items()},
                     "calibration_prior_scope": "Full TRAIN labels before non-scientific smoke subsampling; no TEST",
-                    "scientific_result": False,
+                    "scientific_result": not args.smoke,
                 }
                 result = run_er_cell(
-                    data, config, identity, output / "cell", torch.device("cpu"),
+                    data, config, identity, output / "cell", torch.device(config["device"]),
                     calibration_ids=exposure.calibration_ids,
                     original_counts=population_counts,
                     admission_training_counts=exposure.admission_training_counts,
