@@ -87,7 +87,12 @@ def main():
             write(output / "status.json", record)
             previous_cpu, previous_time = None, None
             while child.poll() is None:
-                sample = snapshot(child.pid)
+                try:
+                    sample = snapshot(child.pid)
+                except subprocess.CalledProcessError:
+                    if child.poll() is not None:
+                        break
+                    raise
                 now = time.monotonic()
                 cpu, rss = sample["cpu"], sample["rss"]
                 utilization = None if previous_cpu is None else (cpu - previous_cpu) / max(now - previous_time, .001) * 25
