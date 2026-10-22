@@ -47,6 +47,7 @@ def public(value, digest, relative):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument("--confirmation", action="store_true", help="Export registered section123 fresh-seed ER confirmation separately")
     args = parser.parse_args()
     source = args.source_root.resolve()
     job, job_hash = read(source / "job_exit.json")
@@ -67,7 +68,12 @@ def main():
             and identity["memory_setting"] == job["memory_setting"] == attempt["memory_setting"],
             "B1 identity mismatch")
     require(identity["dataset"] in ("UNSW-NB15", "CIC-IDS-2017")
-            and identity["seed"] in (1, 2, 3, 4, 42), "Unregistered cell")
+            and identity["seed"] in ((10, 11, 12, 13, 14) if args.confirmation else (1, 2, 3, 4, 42)), "Unregistered cell")
+    require(bool(cfg.get("section123_confirmation", False)) == args.confirmation,
+            "Confirmation identity mismatch")
+    if args.confirmation:
+        require(method == "er_bal_tabt" and identity["memory_setting"] == "fixed200",
+                "Only registered fixed200 ER confirmation supported")
     if method == "er_bal_tabt":
         require(identity["scientific_result"] is True, "ER scientific identity required")
     else:
@@ -92,7 +98,8 @@ def main():
                 or hashlib.sha256(blob.replace(b"\n", b"\r\n")).hexdigest() == expected,
                 "Published source mismatch: " + name)
     slug = identity["dataset"].lower().replace("-", "_")
-    destination = ROOT / "ncd/results/problem_scout/section81/publication_v1" / slug / identity["memory_setting"] / f"{method}_seed{identity['seed']}"
+    section = "section123" if args.confirmation else "section81"
+    destination = ROOT / "ncd/results/problem_scout" / section / "publication_v1" / slug / identity["memory_setting"] / f"{method}_seed{identity['seed']}"
     require(not destination.exists(), "Cell already exported")
     prepared = []
     require(len(raw["checkpoints"]) == len(identity["tasks"]), "Incomplete trajectory")
@@ -114,6 +121,12 @@ def main():
         "single_seed_descriptive_only": True, "five_seed_inference_performed": False,
     }
     prepared.append((destination / "result.json", result))
+    if args.confirmation:
+        for _, value in prepared:
+            derivation = value["publication_derivation"]
+            derivation["original_json"] = derivation["original_json"].replace("section81/", "section123/", 1)
+            value["section123_confirmation"] = {"fresh_seed": identity["seed"],
+                "single_seed_descriptive_only": True, "confirmation_tests_performed": False}
     require(all(not list(private_fields(v)) for _, v in prepared), "Private output metadata")
     for path, value in prepared:
         write_derived(path, value)
