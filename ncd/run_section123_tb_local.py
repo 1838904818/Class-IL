@@ -85,12 +85,12 @@ def main():
                                      creationflags=subprocess.CREATE_NO_WINDOW)
             record.update(status="running", child_pid=child.pid, command=command)
             write(output / "status.json", record)
-            previous_cpu, previous_time, low = 0., time.monotonic(), []
+            previous_cpu, previous_time = None, None
             while child.poll() is None:
-                now = time.monotonic()
                 sample = snapshot(child.pid)
+                now = time.monotonic()
                 cpu, rss = sample["cpu"], sample["rss"]
-                utilization = (cpu - previous_cpu) / max(now - previous_time, .001) * 25
+                utilization = None if previous_cpu is None else (cpu - previous_cpu) / max(now - previous_time, .001) * 25
                 available = sample["available"]
                 guard = None
                 if available < 2 * 2**30 or rss > 8 * 2**30:
@@ -99,10 +99,8 @@ def main():
                     guard = "Disk free below 10 GiB"
                 if (output / "STOP_REQUESTED").exists():
                     guard = "Stop requested"
-                if now - started > 120:
-                    low = low + [now] if utilization < 10 else []
-                    if len(low) >= 3 and low[-1] - low[0] >= (now - started) / 3:
-                        guard = "Sustained CPU utilization below project boundary"
+                # Section126.2: local CPU utilization is telemetry only.
+                # DICC utilization guards and the independent CUDA lane are unchanged.
                 sample = dict(utc=datetime.now(timezone.utc).isoformat(), elapsed_seconds=now-started,
                               cpu_allocation_percent=utilization, rss_bytes=rss,
                               available_memory_bytes=available, guard_trigger=guard)
