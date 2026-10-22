@@ -14,9 +14,15 @@ cluster-info
 association="$(sacctmgr -nP show assoc where user="$USER" format=User,Account,Partition,QOS,MaxTRES)"
 printf '%s\n' "$association"
 test "$association" = "$USER|free||long,normal,short|gres/gpu=2"
-limits="$(sacctmgr -nP show qos short format=Name,MaxWall,MaxTRESPU,MaxJobsPU,MaxSubmitPU)"
+qos="$(sed -n 's/^#SBATCH --qos=//p' "$job")"
+case "$qos" in
+  short) expected_limits='short|01:00:00|gres/gpu=2||10' ;;
+  normal) expected_limits='normal|08:00:00|gres/gpu=2||10' ;;
+  *) exit 78 ;;
+esac
+limits="$(sacctmgr -nP show qos "$qos" format=Name,MaxWall,MaxTRESPU,MaxJobsPU,MaxSubmitPU)"
 printf '%s\n' "$limits"
-test "$limits" = 'short|01:00:00|gres/gpu=2||10'
+test "$limits" = "$expected_limits"
 queue="$(squeue --me -h -o '%i|%j|%T')"
 printf '%s\n' "$queue"
 # This initial twenty-cell matrix must not overlap any owned job.
