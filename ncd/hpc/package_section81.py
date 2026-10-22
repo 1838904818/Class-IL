@@ -17,7 +17,7 @@ def main():
     selected = [path for path in paths if
         (path.endswith(".py") and not path.startswith("ncd/results/")) or path in
         ("ncd/configs/problem_scout_section21.json", "ncd/hpc/run_section81_capacity.sbatch", "ncd/hpc/submit_checked.sh")]
-    required = {"src/methods/replay_dpmeans.py", "src/config.py", "src/methods/base.py", "src/metrics.py"}
+    required = {"src/methods/replay_dpmeans.py", "src/config.py", "src/methods/base.py", "src/metrics/__init__.py"}
     if not required.issubset(selected):
         raise RuntimeError("Missing transitive source dependencies")
     subprocess.run(["git", "-c", "core.autocrlf=false", "archive", "--format=tar",
