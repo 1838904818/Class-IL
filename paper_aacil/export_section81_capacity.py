@@ -19,13 +19,19 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     master = read(args.input / "summary.json")
-    assert master["completed"] and master["cell_count"] == 20
-    assert master["job_id"] == "490920" and not master["smoke"]
-    expected = {(m, s) for m in ("ar", "replay_bs", "freq", "wacb") for s in (1, 2, 3, 4, 42)}
-    assert {(c["method"], c["seed"]) for c in master["cells"]} == expected
+    assert master["completed"] and not master["smoke"]
+    assert master["job_id"] in ("490920", "491011")
+    remaining = master["job_id"] == "491011"
+    matrix = [("UNSW-NB15", 1024), ("CIC-IDS-2017", 512), ("CIC-IDS-2017", 1024)] if remaining else [("UNSW-NB15", 512)]
+    expected = {(d, w, m, s) for d, w in matrix for m in ("ar", "replay_bs", "freq", "wacb") for s in (1, 2, 3, 4, 42)}
+    assert len(master["cells"]) == master["cell_count"] == len(expected)
+    assert {(c.get("dataset", master["dataset"]), c.get("width", master["width"]), c["method"], c["seed"]) for c in master["cells"]} == expected
     outputs = {}
     for cell in master["cells"]:
         name = f'{cell["method"]}_seed{cell["seed"]}'
+        dataset, width = cell.get("dataset", master["dataset"]), cell.get("width", master["width"])
+        if remaining:
+            name = f'{dataset.lower()}_w{width}_{name}'
         root = args.input / name
         raw = root / "cell/result.json"
         result = read(raw)
@@ -33,7 +39,11 @@ def main():
         assert cell["exit_code"] == 0 and summary == cell["summary"]
         assert result["completed"] and summary["scientific_result"]
         assert not summary["profile"] and not summary["smoke"]
-        assert len(result["checkpoints"]) == 5
+        assert len(result["checkpoints"]) == len(result["tasks"])
+        assert summary["dataset"] == dataset and summary["width"] == width
+        assert summary["job_id"] == master["job_id"]
+        if remaining:
+            assert summary["source_commit"] == "c339d49a7014cc264c3b2990a24e9d4ee75b00d5"
         external = cell["method"] in ("freq", "wacb")
         stage_path = root / "calibrated_stages.json" if external else raw
         stages = read(stage_path) if external else result["checkpoints"]
@@ -51,7 +61,7 @@ def main():
                         "checkpoint_sha256": result["checkpoints"][i]["checkpoint_sha256"],
                         "operating_points": cp["operating_points"]}
                        for i, cp in enumerate(stages)],
-            "scope": "UNSW-NB15 three-hidden-layer width-512 capacity sensitivity; fixed-FPR view, not default decision.",
+            "scope": f"{dataset} three-hidden-layer width-{width} capacity sensitivity; fixed-FPR view, not default decision.",
         }
         text = json.dumps(exported, indent=2, sort_keys=True, allow_nan=False) + "\n"
         for forbidden in ("/home/", "/scr/", "C:\\", "row_ids", "leon12138"):
