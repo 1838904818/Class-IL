@@ -34,10 +34,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"), required=True)
     parser.add_argument("--memory-setting", choices=("fixed200", "percent1"), required=True)
-    parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42), required=True)
+    parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42, 10, 11, 12, 13, 14), required=True)
+    parser.add_argument("--confirmation", action="store_true", help="Section123 fresh fixed200 confirmation")
     for name in ("data-root", "dependency-root", "output-root", "protected-root"):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
+    if args.confirmation != (args.seed in (10, 11, 12, 13, 14)):
+        parser.error("Fresh confirmation seeds require --confirmation; original seeds must not use it")
+    if args.confirmation and args.memory_setting != "fixed200":
+        parser.error("Section123 confirmation uses fixed200")
     if os.name != "nt" or os.environ.get("SLURM_JOB_ID"):
         parser.error("Windows local execution only; not an HPC launcher")
     for name in ("data_root", "dependency_root", "output_root", "protected_root"):
@@ -65,6 +70,8 @@ def main():
                "--dataset", args.dataset, "--memory-setting", args.memory_setting,
                "--seed", str(args.seed), "--data-root", str(args.data_root),
                "--dependency-root", str(args.dependency_root), "--output-dir", str(output / "run")]
+    if args.confirmation:
+        command.append("--confirmation")
     output.mkdir(parents=True)
     protected.mkdir(parents=True)
     record = {"status": "starting", "started_at": ref.utc(), "pid": os.getpid(),

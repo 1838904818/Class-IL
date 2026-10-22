@@ -21,7 +21,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"), required=True)
     parser.add_argument("--memory-setting", choices=("fixed200", "percent1"), required=True)
-    parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42), required=True)
+    parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42, 10, 11, 12, 13, 14), required=True)
+    parser.add_argument("--confirmation", action="store_true", help="Section123 fresh seeds10-14, fixed200 only")
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--dependency-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -29,6 +30,10 @@ def main():
     parser.add_argument("--recover-smoke-from", type=Path,
                         help="Diagnosed failed CPU smoke: reuse Task 0, preserve original output")
     args = parser.parse_args()
+    if args.confirmation != (args.seed in (10, 11, 12, 13, 14)):
+        parser.error("Fresh confirmation seeds require --confirmation; original seeds must not use it")
+    if args.confirmation and args.memory_setting != "fixed200":
+        parser.error("Section123 confirmation uses fixed200")
     if not args.smoke and os.environ.get("NCD_SECTION81_PARENT_PID") != str(os.getppid()):
         parser.error("Formal B1 execution requires the guarded local supervisor")
     if args.recover_smoke_from and not args.smoke:
@@ -53,7 +58,8 @@ def main():
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config.update(problem_scout_data_root=str(args.data_root.resolve(strict=True)),
                   device="cpu" if args.smoke else "cuda", cpu_threads=2, cpu_interop_threads=1,
-                  section81=True, smoke=args.smoke, epochs_per_task=1 if args.smoke else 100,
+                  section81=True, section123_confirmation=args.confirmation,
+                  smoke=args.smoke, epochs_per_task=1 if args.smoke else 100,
                   min_steps_per_task=0, deadline_iso=None,
                   batch_size=256, eval_batch_size=256,
                   optimizer="AdamW", learning_rate=5e-4, weight_decay=1e-5,
