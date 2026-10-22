@@ -85,10 +85,35 @@ The following source differences must be explicit in the implementation:
 
 ## Execution status and interpretation
 
-The source inspection above is complete; the B1 adapter and same-entry smoke
-are not yet implemented. No B1 training, result or comparative advantage is
-claimed by this record. Existing CSE45 results, historical FAIL decisions and
-AR selection remain unchanged. B1 is a bounded RQ2 comparison and does not
-close RQ1, RQ3 or the substantive-innovation requirement. Continue in the
-registered order B1, capacity A, B2, then Malaya; publish completed cells with
-their actual configuration, source, seed, command and execution costs.
+As of 22 October 2026, both fixed200 TabTransformer methods have completed
+all five formal seeds on UNSW-NB15 and CIC-IDS-2017 (20 cells). Their local
+execution records and saved operating points are published under
+`ncd/results/problem_scout/section81/publication_v1/`. The same-entry smoke
+and adapters are implemented for fixed200; AR percent1 remains pending.
+
+CIC-IDS-2017 fixed200 S3 uses final checkpoint alpha=0.01 operating points,
+not the top-level AR metric summary (which uses alpha=0.02). Paired results:
+
+| Seed | AR-TabT final BAcc (%) | ER-Bal-TabT final BAcc (%) | AR minus ER (pp) |
+|---|---:|---:|---:|
+| 1 | 89.9788 | 94.9962 | -5.0175 |
+| 2 | 80.6051 | 93.1697 | -12.5646 |
+| 3 | 89.7893 | 90.3642 | -0.5749 |
+| 4 | 89.9304 | 94.8085 | -4.8780 |
+| 42 | 91.5792 | 87.9333 | +3.6459 |
+| Mean | 88.3766 | 92.2544 | -3.8778 |
+
+The registered superiority test **fails**: paired one-sided t=-1.438814,
+df=4, p=0.888200; exact sign-flip sensitivity p=0.9375 (32 assignments).
+This is not an equivalence claim or a test of ER superiority. Each saved
+BAcc was checked against its saved confusion matrix. The reproducible
+consumer is `paper_aacil/compare_section81_cic_s3.py`; its full-precision
+output and input hashes are in `paper_aacil/results/section81_cic_fixed200_s3.json`.
+No training, inference, recalibration or cell re-export was performed.
+S1/S2 remain the lead's Section 113 results and were not recomputed here.
+
+Existing CSE45 results, historical FAIL decisions and AR selection remain
+unchanged. B1 is a bounded RQ2 comparison and does not close RQ1, RQ3 or
+the substantive-innovation requirement. Next is memory setting (ii), with
+capacity A in parallel under Section 110 once its implementation, same-entry
+smoke and measured resources are ready. No capacity HPC job has been submitted.
