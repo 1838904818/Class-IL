@@ -4,11 +4,32 @@ import unittest
 import numpy as np
 import torch
 
-from ncd.default_decision import (metrics_from_predictions, predict_gate_family,
+from ncd.default_decision import (evaluate_models, metrics_from_predictions, predict_gate_family,
                                   predict_single, summarize)
 
 
 class DefaultDecisionTests(unittest.TestCase):
+    def test_cpu_forward_batches_filter_future_without_training(self):
+        model = torch.nn.Linear(2, 3, bias=False)
+        with torch.no_grad():
+            model.weight.copy_(torch.tensor([[1., 0.], [0., 1.], [100., 100.]]))
+        original = model.weight.detach().clone()
+        result = evaluate_models(np.array([[2., 0.], [0., 2.], [9., 9.]]),
+                                 np.array([0, 1, 2]), [0, 1],
+                                 ["Normal", "a", "future"], model, batch_size=1)
+        self.assertEqual(result["accuracy"], 1.)
+        self.assertEqual(result["evaluated_test_rows"], 2)
+        self.assertFalse(model.training)
+        self.assertIsNone(model.weight.grad)
+        self.assertTrue(torch.equal(original, model.weight))
+
+    def test_cpu_gate_forward_uses_saved_mapping(self):
+        result = evaluate_models(np.array([[0., 0.], [0., 1.]]), np.array([0, 2]),
+                                 [0, 2], ["Normal", "future", "attack"],
+                                 torch.nn.Identity(), family=torch.nn.Identity(),
+                                 attack_ids=[1, 2], batch_size=1)
+        self.assertEqual(result["accuracy"], 1.)
+
     def test_single_masks_future_and_preserves_global_ids(self):
         out = predict_single(torch.tensor([[1., 999., 2.]]), [2, 0])
         self.assertEqual(out.tolist(), [2])

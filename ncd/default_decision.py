@@ -10,6 +10,42 @@ import numpy as np
 import torch
 
 
+def evaluate_models(x_test, y_test, seen, names, model, *, family=None,
+                    attack_ids=None, batch_size=4096):
+    """Bounded CPU TEST-only forward using already restored inference models.
+
+    Feature arrays may be memory mapped. Models are switched to evaluation
+    mode; no optimizer, TRAIN arrays, calibration pool or thresholds are used.
+    Architecture restoration and source binding remain the caller's duty.
+    """
+    if batch_size <= 0 or len(x_test) != len(y_test):
+        raise ValueError("Invalid TEST arrays or batch size")
+    models = [model] if family is None else [model, family]
+    for component in models:
+        if any(p.device.type != "cpu" for p in component.parameters()):
+            raise ValueError("Default-decision worker requires CPU models")
+        component.eval()
+    rows = np.flatnonzero(np.isin(y_test, seen))
+    predicted = []
+    with torch.inference_mode():
+        for start in range(0, len(rows), batch_size):
+            ids = rows[start:start+batch_size]
+            x = torch.from_numpy(np.array(x_test[ids], dtype=np.float32, copy=True))
+            values = model(x)
+            if family is None:
+                labels = predict_single(values, seen)
+            else:
+                if attack_ids is None:
+                    raise ValueError("Gate-family evaluation requires saved attack mapping")
+                labels = predict_gate_family(values, family(x), attack_ids, seen,
+                                             names.index("Normal"))
+            predicted.append(labels.cpu().numpy())
+    if not predicted:
+        raise ValueError("No seen-class TEST rows")
+    return metrics_from_predictions(np.asarray(y_test)[rows],
+                                    np.concatenate(predicted), seen, names)
+
+
 def predict_single(logits, seen):
     """Argmax in the explicitly ordered seen-class columns of a global head."""
     if logits.ndim != 2 or not seen or len(set(seen)) != len(seen):

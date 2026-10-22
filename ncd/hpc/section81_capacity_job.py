@@ -1,10 +1,11 @@
-"""Bounded four-worker CPU capacity matrix; no scheduler submission or retry."""
+"""Bounded CPU capacity matrices; no scheduler submission or automatic retry."""
 from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
 import json
 import hashlib
+import math
 import os
 from pathlib import Path
 import shutil
@@ -76,8 +77,11 @@ def protect(source, target):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", required=True, choices=("UNSW-NB15", "CIC-IDS-2017"))
-    parser.add_argument("--width", required=True, type=int, choices=(512, 1024))
+    parser.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"))
+    parser.add_argument("--width", type=int, choices=(512, 1024))
+    parser.add_argument("--remaining", action="store_true", help="Only UNSW1024, CIC512 and CIC1024; excludes completed UNSW512")
+    parser.add_argument("--workers", type=int, default=4, choices=(4, 16))
+    parser.add_argument("--memory-limit-gib", type=float, default=30.)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--protected-dir", type=Path, required=True)
@@ -85,9 +89,16 @@ def main():
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
+    if args.remaining == (args.dataset is not None or args.width is not None):
+        parser.error("Choose --remaining or both --dataset and --width")
+    if not args.remaining and (args.dataset is None or args.width is None):
+        parser.error("Single matrix requires dataset and width")
+    if not math.isfinite(args.memory_limit_gib) or args.memory_limit_gib <= 0:
+        parser.error("Memory guard must be positive and based on measurement")
+    allocated_cpus = args.workers * 4
     if not args.smoke:
-        if not os.environ.get("SLURM_JOB_ID") or int(os.environ.get("SLURM_CPUS_PER_TASK", "0")) != 16:
-            parser.error("Formal matrix requires a 16-CPU Slurm allocation")
+        if not os.environ.get("SLURM_JOB_ID") or int(os.environ.get("SLURM_CPUS_PER_TASK", "0")) != allocated_cpus:
+            parser.error("Formal matrix requires exactly four allocated CPUs per worker")
         if os.environ.get("SLURM_JOB_PARTITION") not in ("cpu-epyc-genoa", "cpu-epyc"):
             parser.error("CPU partition required")
     output, protected = args.output_dir.resolve(), args.protected_dir.resolve()
@@ -95,7 +106,9 @@ def main():
         parser.error("Active and protected roots must be separate")
     output.mkdir(parents=True, exist_ok=args.resume)
     protected.mkdir(parents=True, exist_ok=args.resume)
-    queue = [(method, seed) for seed in ((1,) if args.smoke else SEEDS) for method in METHODS]
+    pairs = [("UNSW-NB15", 1024), ("CIC-IDS-2017", 512), ("CIC-IDS-2017", 1024)] if args.remaining else [(args.dataset, args.width)]
+    queue = [(dataset, width, method, seed) for dataset, width in pairs
+             for seed in ((1,) if args.smoke else SEEDS) for method in METHODS]
     live, finished = {}, []
     start = time.monotonic()
     stopping = False
@@ -105,8 +118,8 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     affinity = list(range(os.cpu_count())) if os.name == "nt" else sorted(os.sched_getaffinity(0))
-    if not args.smoke and len(affinity) < 16:
-        raise RuntimeError("Slurm CPU affinity has fewer than sixteen CPUs")
+    if not args.smoke and len(affinity) < allocated_cpus:
+        raise RuntimeError("Slurm CPU affinity is smaller than the worker allocation")
     low_since = None
     error = None
     try:
@@ -114,26 +127,30 @@ def main():
             elapsed = time.monotonic() - start
             if stopping or elapsed >= args.wall_seconds - (5 if args.smoke else 120):
                 raise RuntimeError("Termination signal or walltime checkpoint margin reached")
-            for slot in range(4):
+            for slot in range(args.workers):
                 if slot in live or not queue:
                     continue
-                method, seed = queue.pop(0)
-                cell = output / f"{method}_seed{seed}"
+                dataset, width, method, seed = queue.pop(0)
+                stem = f"{dataset.lower()}_w{width}_{method}_seed{seed}" if args.remaining else f"{method}_seed{seed}"
+                cell = output / stem
                 if args.resume and (cell / "summary.json").exists():
                     summary = json.loads((cell / "summary.json").read_text(encoding="utf-8"))
                     entry_sha = hashlib.sha256((ROOT / "ncd/run_section81_capacity.py").read_bytes()).hexdigest()
-                    if not summary.get("completed") or summary["entry_sha256"] != entry_sha:
+                    expected = dict(dataset=dataset, width=width, method=method, seed=seed,
+                                    smoke=args.smoke, scientific_result=not args.smoke)
+                    if (not summary.get("completed") or summary["entry_sha256"] != entry_sha
+                            or any(summary.get(k) != v for k, v in expected.items())):
                         raise RuntimeError("Resume summary incomplete or entry source changed")
-                    finished.append(dict(method=method, seed=seed, exit_code=0, resumed_completed=True, summary=summary))
+                    finished.append(dict(dataset=dataset, width=width, method=method, seed=seed, exit_code=0, resumed_completed=True, summary=summary))
                     continue
                 cmd = [sys.executable, "-I", "-B", str(ROOT / "ncd/run_section81_capacity.py"),
-                    "--dataset", args.dataset, "--width", str(args.width), "--seed", str(seed),
+                    "--dataset", dataset, "--width", str(width), "--seed", str(seed),
                     "--method", method, "--data-root", str(args.data_root.resolve()),
                     "--output-dir", str(cell), "--smoke" if args.smoke else "--formal"]
                 if args.resume and cell.exists():
                     cmd.append("--resume")
-                out = (output / f"{method}_seed{seed}.stdout.log").open("a", encoding="utf-8")
-                err = (output / f"{method}_seed{seed}.stderr.log").open("a", encoding="utf-8")
+                out = (output / f"{stem}.stdout.log").open("a", encoding="utf-8")
+                err = (output / f"{stem}.stderr.log").open("a", encoding="utf-8")
                 env = dict(os.environ, OMP_NUM_THREADS="4", MKL_NUM_THREADS="4", OPENBLAS_NUM_THREADS="4",
                     NUMEXPR_NUM_THREADS="4", CUDA_VISIBLE_DEVICES="", PYTHONUNBUFFERED="1")
                 process = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
@@ -141,7 +158,7 @@ def main():
                 if not args.smoke:
                     monitor.cpu_affinity(affinity[slot * 4:(slot + 1) * 4])
                 monitor.sample()
-                live[slot] = dict(process=process, monitor=monitor, method=method, seed=seed,
+                live[slot] = dict(process=process, monitor=monitor, dataset=dataset, width=width, method=method, seed=seed,
                     start=time.monotonic(), out=out, err=err, cell=cell)
             time.sleep(1 if args.smoke else 10)
             cpu, rss, rows = 0., 0, []
@@ -155,7 +172,7 @@ def main():
                     summary = json.loads(summary_path.read_text(encoding="utf-8"))
                     if not summary.get("completed"):
                         raise RuntimeError("Cell summary is incomplete")
-                    finished.append(dict(method=row["method"], seed=row["seed"], exit_code=code,
+                    finished.append(dict(dataset=row["dataset"], width=row["width"], method=row["method"], seed=row["seed"], exit_code=code,
                         elapsed_seconds=time.monotonic()-row["start"], summary=summary))
                     del live[slot]
                 else:
@@ -164,18 +181,18 @@ def main():
                     except (ProcessLookupError, FileNotFoundError):
                         continue
                     cpu += usage; rss += memory
-                    rows.append(dict(method=row["method"], seed=row["seed"], pid=row["process"].pid,
+                    rows.append(dict(dataset=row["dataset"], width=row["width"], method=row["method"], seed=row["seed"], pid=row["process"].pid,
                         cpu_percent_one_core=usage, rss_bytes=memory))
             now = time.monotonic()
-            utilization = cpu / 16
+            utilization = cpu / allocated_cpus
             if live and utilization < 10 and not args.smoke:
                 low_since = now if low_since is None else low_since
             else:
                 low_since = None
             if low_since is not None and now-low_since >= args.wall_seconds/3:
                 raise RuntimeError("Project CPU utilization guard: below 10% for one third of walltime")
-            if rss > 30 * 1024**3:
-                raise RuntimeError("Memory guard: child RSS exceeds 30 GiB")
+            if rss > args.memory_limit_gib * 1024**3:
+                raise RuntimeError("Memory guard: child RSS exceeds configured measured limit")
             status = dict(state="running", utc=datetime.now(timezone.utc).isoformat(),
                 job_id=os.environ.get("SLURM_JOB_ID"), partition=os.environ.get("SLURM_JOB_PARTITION"),
                 node=os.environ.get("SLURMD_NODENAME"), elapsed_seconds=now-start,
@@ -186,7 +203,8 @@ def main():
                 stream.write(json.dumps(status)+"\n")
             protect(output, protected)
         write(output / "summary.json", dict(completed=True, smoke=args.smoke,
-            dataset=args.dataset, width=args.width, hidden_layers=3, cell_count=len(finished),
+            dataset=args.dataset, width=args.width, matrix=pairs, workers=args.workers,
+            hidden_layers=3, cell_count=len(finished),
             job_id=os.environ.get("SLURM_JOB_ID"), partition=os.environ.get("SLURM_JOB_PARTITION"),
             node=os.environ.get("SLURMD_NODENAME"), elapsed_seconds=time.monotonic()-start, cells=finished))
     except BaseException as exc:
