@@ -46,6 +46,7 @@ def main():
     result["publication"] = dict(raw_result_sha256=sha(raw_path), summary=summary,
         completed_attempt_elapsed_seconds=job["elapsed_seconds"],
         scope="Single TB cell; no schedule-selection rule or five-seed test applied.",
+        forgetting_definition="Both views use equal-weight mean over all old classes including Normal of best pre-final recall minus final recall, signed and unclipped; values are fractions (multiply by 100 for percentage points). Default uses uncalibrated decisions; operating points use calibrated fixed-FPR decisions, so values differ.",
         cost_scope="Stage and completed-attempt times are nested; prior failed attempts are separate costs.")
     if a.previous_attempt:
         prior = read(a.previous_attempt / "job_exit.json")
