@@ -4,7 +4,7 @@ import copy
 import torch
 from torch import nn
 
-from ncd.section81_tabtransformer import TabularClassifier
+from ncd.section81_tabtransformer import TabularClassifier, TabularFamily
 
 
 class EmbeddedFeatures(nn.Module):
@@ -51,3 +51,39 @@ class Classifier(nn.Module):
 
     def forward(self, x):
         return self.head(self.features(x))
+
+
+class Family(TabularFamily):
+    """Fixed attack output mask and DER interface with an independent MLP."""
+    def __init__(self, inputs, outputs, hidden=128, layers=2, *, spec=None):
+        nn.Module.__init__(self)
+        self.method = "aacil_kd_wa"  # DER dispatch only; postprocessing is explicit.
+        self.student = Classifier(inputs, outputs, hidden, layers, spec=spec)
+        self.register_buffer("seen_mask", torch.zeros(outputs, dtype=torch.bool))
+        self.initial_parameter_count = sum(p.numel() for p in self.parameters())
+
+    def metadata(self):
+        return dict(family_type="section138_mlp", total_parameters=self.assert_capacity(),
+                    output_attack_classes=self.head.out_features,
+                    seen_attack_columns=torch.where(self.seen_mask)[0].cpu().tolist(),
+                    constant_across_tasks=True, extra_components=0,
+                    head_policy="fixed full attack head; unseen columns masked")
+
+
+def last_layer_cbf(model, memory, mapping, config, seed, device):
+    """Section138 D3: call after WA; exactly one retained-memory epoch, head only."""
+    from ncd.aacil_compact import compact_balanced_finetune
+    parameters = list(model.parameters())
+    original_flags = [p.requires_grad for p in parameters]
+    head_ids = {id(p) for p in model.head.parameters()}
+    try:
+        for p in parameters:
+            p.grad = None
+            p.requires_grad_(id(p) in head_ids)
+        elapsed, stats = compact_balanced_finetune(model, memory, mapping, config, seed, device)
+        stats.update(trainable_scope="last_layer_only", required_order="after_weight_alignment")
+        return elapsed, stats
+    finally:
+        for p, flag in zip(parameters, original_flags):
+            p.grad = None
+            p.requires_grad_(flag)
