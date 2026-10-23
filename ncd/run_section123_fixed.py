@@ -24,8 +24,7 @@ from ncd.source_commit import source_commit
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"), required=True)
-    # Other adapters remain unavailable until their end-to-end checks are complete.
-    p.add_argument("--method", choices=("ar",), required=True)
+    p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb"), required=True)
     p.add_argument("--seed", type=int, choices=range(10, 15), required=True)
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
@@ -80,7 +79,7 @@ def main():
         result = bs.run_cell(data, counts, config, identity, cell, device)
     else:
         result = ps.run_cell(data, None, None, metadata, config, identity, cell, device)
-    defaults = []
+    defaults, calibrated = [], []
     for cp in result["checkpoints"]:
         state = ps.checkpoint_load(cell / cp["checkpoint_file"], identity)
         family, attacks = None, None
@@ -93,10 +92,18 @@ def main():
             family.assert_capacity()
         else:
             model.load_state_dict(state["model_state"], strict=True)
+        if a.method in ("freq", "wacb"):
+            calibration, points, cal_seconds, eval_seconds = bs.evaluate(
+                model, data, cp["seen_classes"], valid[data.class_order.index("Normal")], counts, config, device)
+            calibrated.append(dict(task_index=cp["task_index"], calibration=calibration,
+                operating_points=points, calibration_seconds=cal_seconds,
+                evaluation_seconds=eval_seconds, checkpoint_sha256=cp["checkpoint_sha256"]))
         defaults.append(dict(task_index=cp["task_index"], checkpoint_sha256=cp["checkpoint_sha256"],
             metrics=evaluate_models(data.x_test, data.y_test, cp["seen_classes"], data.class_order,
                 model, family=family, attack_ids=attacks)))
     ps.save_json(output / "default_stages.json", defaults)
+    if calibrated:
+        ps.save_json(output / "calibrated_stages.json", calibrated)
     assert result["completed"] and len(defaults) == len(data.tasks)
     ps.save_json(output / "summary.json", dict(completed=True, scientific_result=not a.smoke,
         smoke=a.smoke, dataset=a.dataset, method=a.method, seed=a.seed,
