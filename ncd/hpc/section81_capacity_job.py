@@ -80,7 +80,8 @@ def main():
     parser.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"))
     parser.add_argument("--width", type=int, choices=(512, 1024))
     parser.add_argument("--remaining", action="store_true", help="Only UNSW1024, CIC512 and CIC1024; excludes completed UNSW512")
-    parser.add_argument("--workers", type=int, default=4, choices=(4, 16))
+    parser.add_argument("--workers", type=int, default=4, choices=(1, 2, 4, 16))
+    parser.add_argument("--local", action="store_true", help="Bounded Windows confirmation queue")
     parser.add_argument("--memory-limit-gib", type=float, default=30.)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -98,7 +99,15 @@ def main():
     if not math.isfinite(args.memory_limit_gib) or args.memory_limit_gib <= 0:
         parser.error("Memory guard must be positive and based on measurement")
     allocated_cpus = args.workers * 4
-    if not args.smoke:
+    if args.local:
+        if os.name != "nt" or not args.confirmation or os.environ.get("SLURM_JOB_ID"):
+            parser.error("Local mode requires Windows confirmation")
+        sys.path.insert(0, str(ROOT))
+        from ncd.run_section123_tb_local import snapshot
+        machine = snapshot()
+        if allocated_cpus + 2 > machine["cores"] or machine["available"] < 6 * 2**30:
+            parser.error("Reserve two physical cores for CUDA and require 6 GiB free RAM")
+    if not args.smoke and not args.local:
         if not os.environ.get("SLURM_JOB_ID") or int(os.environ.get("SLURM_CPUS_PER_TASK", "0")) != allocated_cpus:
             parser.error("Formal matrix requires exactly four allocated CPUs per worker")
         if os.environ.get("SLURM_JOB_PARTITION") not in ("cpu-epyc-genoa", "cpu-epyc"):
@@ -108,6 +117,10 @@ def main():
         parser.error("Active and protected roots must be separate")
     output.mkdir(parents=True, exist_ok=args.resume)
     protected.mkdir(parents=True, exist_ok=args.resume)
+    local_lock = ROOT.parent / ".section123_local_cpu.lock" if args.local else None
+    if local_lock is not None:
+        with local_lock.open("x") as stream:
+            json.dump(dict(pid=os.getpid(), output=str(output)), stream)
     pairs = [("UNSW-NB15", 1024), ("CIC-IDS-2017", 512), ("CIC-IDS-2017", 1024)] if args.remaining else [(args.dataset, args.width)]
     queue = [(dataset, width, method, seed) for dataset, width in pairs
              for seed in ((1,) if args.smoke else SEEDS) for method in METHODS]
@@ -185,7 +198,7 @@ def main():
                     NUMEXPR_NUM_THREADS="4", CUDA_VISIBLE_DEVICES="", PYTHONUNBUFFERED="1")
                 process = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=out, stderr=err)
                 monitor = ProcessSample(process.pid)
-                if not args.smoke:
+                if not args.smoke and not args.local:
                     monitor.cpu_affinity(affinity[slot * 4:(slot + 1) * 4])
                 monitor.sample()
                 live[slot] = dict(process=process, monitor=monitor, dataset=dataset, width=width, method=method, seed=seed,
@@ -215,7 +228,7 @@ def main():
                         cpu_percent_one_core=usage, rss_bytes=memory))
             now = time.monotonic()
             utilization = cpu / allocated_cpus
-            if live and utilization < 10 and not args.smoke:
+            if live and utilization < 10 and not args.smoke and not args.local:
                 low_since = now if low_since is None else low_since
             else:
                 low_since = None
@@ -223,6 +236,8 @@ def main():
                 raise RuntimeError("Project CPU utilization guard: below 10% for one third of walltime")
             if rss > args.memory_limit_gib * 1024**3:
                 raise RuntimeError("Memory guard: child RSS exceeds configured measured limit")
+            if args.local and (snapshot()["available"] < 2 * 2**30 or shutil.disk_usage(output).free < 10 * 2**30):
+                raise RuntimeError("Local available RAM or disk boundary")
             status = dict(state="running", utc=datetime.now(timezone.utc).isoformat(),
                 job_id=os.environ.get("SLURM_JOB_ID"), partition=os.environ.get("SLURM_JOB_PARTITION"),
                 node=os.environ.get("SLURMD_NODENAME"), elapsed_seconds=now-start,
@@ -253,6 +268,8 @@ def main():
         write(output / "job_exit.json", dict(completed=error is None, error=error,
             elapsed_seconds=time.monotonic()-start, completed_cells=len(finished)))
         protect(output, protected)
+        if local_lock is not None:
+            local_lock.unlink()
 
 
 if __name__ == "__main__":
