@@ -43,7 +43,9 @@ def main():
             raise RuntimeError("Empty source export")
         for name in names:
             blob = subprocess.check_output(["git", "show", f"{commit}:{name}"], cwd=ROOT)
-            if (training_root / name).read_bytes() != blob:
+            exported = (training_root / name).read_bytes()
+            if exported != blob and not (b"\0" not in blob and
+                    exported.replace(b"\r\n", b"\n") == blob.replace(b"\r\n", b"\n")):
                 raise RuntimeError("Exported source differs: " + name)
     child_env = dict(os.environ, NCD_SOURCE_COMMIT=commit)
     queue = [(cfg.identifier, seed) for cfg in configurations() for seed in (1, 2)]
