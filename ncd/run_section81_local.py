@@ -36,6 +36,8 @@ def main():
     parser.add_argument("--memory-setting", choices=("fixed200", "percent1"), required=True)
     parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42, 10, 11, 12, 13, 14), required=True)
     parser.add_argument("--confirmation", action="store_true", help="Section123 fresh fixed200 confirmation")
+    parser.add_argument("--default-source-root", type=Path,
+                        help="Inference-only default view of an existing completed ER cell")
     for name in ("data-root", "dependency-root", "output-root", "protected-root"):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
@@ -72,6 +74,17 @@ def main():
                "--dependency-root", str(args.dependency_root), "--output-dir", str(output / "run")]
     if args.confirmation:
         command.append("--confirmation")
+    if args.default_source_root is not None:
+        source = args.default_source_root.resolve(strict=True)
+        source_result = json.loads((source / "run/cell/result.json").read_text())
+        source_identity = source_result["identity"]
+        if (not source_result["completed"] or source_identity["dataset"] != args.dataset
+                or source_identity["seed"] != args.seed
+                or source_identity["memory_setting"] != args.memory_setting):
+            parser.error("Default evaluation source differs from requested cell")
+        command = [sys.executable, "-I", "-B", "-u", str(ROOT / "ncd/evaluate_section137_er.py"),
+                   "--source-root", str(source), "--dependency-root", str(args.dependency_root),
+                   "--output", str(output / "default_result.json"), "--device", "cuda"]
     output.mkdir(parents=True)
     protected.mkdir(parents=True)
     record = {"status": "starting", "started_at": ref.utc(), "pid": os.getpid(),
@@ -125,10 +138,18 @@ def main():
                     pass
             if child.returncode != 0:
                 raise RuntimeError("B1 cell failed; inspect preserved logs before retry")
-            attempt = json.loads((output / "run/attempt.json").read_text())
-            if attempt["status"] != "complete" or attempt["smoke"]:
-                raise RuntimeError("Missing formal cell completion")
-            record.update(status="complete", result_sha256=attempt["result_sha256"])
+            if args.default_source_root is not None:
+                result_path = output / "default_result.json"
+                result = json.loads(result_path.read_text())
+                if not result["completed"] or not result["inference_only"]:
+                    raise RuntimeError("Missing default evaluation completion")
+                record.update(status="complete", inference_only=True,
+                              result_sha256=hashlib.sha256(result_path.read_bytes()).hexdigest())
+            else:
+                attempt = json.loads((output / "run/attempt.json").read_text())
+                if attempt["status"] != "complete" or attempt["smoke"]:
+                    raise RuntimeError("Missing formal cell completion")
+                record.update(status="complete", result_sha256=attempt["result_sha256"])
     except BaseException as error:
         record.update(status="failed", error_type=type(error).__name__, error=str(error))
         raise
