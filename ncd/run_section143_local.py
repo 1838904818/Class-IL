@@ -1,4 +1,4 @@
-"""One bounded four-thread worker of the disjoint CIC screening lane."""
+"""One bounded four-thread worker of the section145 local screening lane."""
 import argparse
 import json
 import os
@@ -20,6 +20,7 @@ from ncd.source_commit import source_commit
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--data-root", type=Path, required=True)
+    p.add_argument("--dataset", choices=("CIC-IDS-2017", "UNSW-NB15"), default="CIC-IDS-2017")
     p.add_argument("--output-root", type=Path, required=True)
     p.add_argument("--worker", type=int, required=True)
     p.add_argument("--workers", type=int, required=True)
@@ -68,7 +69,7 @@ def main():
             raise RuntimeError("Source changed: stop before the next cell")
         if psutil.virtual_memory().available < 6*1024**3 or shutil.disk_usage(root).free < 20*1024**3:
             raise RuntimeError("Insufficient RAM or disk for next cell")
-        cell = root / "screen/cic-ids-2017" / configuration / f"seed{seed}"
+        cell = root / "screen" / a.dataset.lower() / configuration / f"seed{seed}"
         if (cell / "summary.json").exists():
             done = json.loads((cell / "summary.json").read_text())
             if not (done["completed"] and done["source_commit"] == commit and
@@ -77,7 +78,7 @@ def main():
                 raise RuntimeError("Completed cell identity differs")
             continue
         command = [sys.executable, "-I", "-B", "-u", str(training_root / "ncd/run_section138.py"),
-            "--configuration", configuration, "--dataset", "CIC-IDS-2017", "--seed", str(seed),
+            "--configuration", configuration, "--dataset", a.dataset, "--seed", str(seed),
             "--data-root", str(a.data_root.resolve(strict=True)), "--output-root", str(root), "--lane", "local"]
         if cell.exists():
             command.append("--resume")
@@ -108,7 +109,7 @@ def main():
                         break
                     time.sleep(1)
             code = child.wait()
-        receipt = dict(command=command, git_commit=commit, runner_commit=runner_commit, seed=seed, configuration=configuration,
+        receipt = dict(command=command, git_commit=commit, runner_commit=runner_commit, dataset=a.dataset, seed=seed, configuration=configuration,
             worker=a.worker, workers=a.workers, exit_code=code, guard_reason=reason,
             elapsed_seconds=time.perf_counter()-started, sampled_peak_rss_bytes=peak,
             stdout_log="stdout.log", stderr_log="stderr.log", resource_log="resources.jsonl")

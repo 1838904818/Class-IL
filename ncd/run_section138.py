@@ -27,9 +27,9 @@ def main():
     p.add_argument("--lane", default="local")
     a = p.parse_args()
     if not a.smoke:
-        local_cell = a.dataset == "CIC-IDS-2017" and a.seed in (1, 2)
+        local_cell = a.seed in (1, 2)
         if a.lane not in ("local", "dicc") or local_cell != (a.lane == "local"):
-            p.error("Cell is outside the fixed section143 lane partition")
+            p.error("Cell is outside the fixed section145 lane partition (local screen, DICC sealed)")
         if a.claim_root is not None:
             p.error("Section143 uses disjoint lanes, not cross-machine claims")
     if a.resume and a.claim_root is not None:
