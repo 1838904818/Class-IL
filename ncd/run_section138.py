@@ -1,5 +1,6 @@
 """One explicit section138 MLP cell; confirmation output is sealed."""
 import argparse
+import atexit
 import json
 import os
 from pathlib import Path
@@ -21,6 +22,7 @@ def main():
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-root", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
+    p.add_argument("--resume", action="store_true", help="Resume only an identity-matched existing cell")
     a = p.parse_args()
     import torch
     from ncd.prepare_problem_scout_data import prepare_setting
@@ -39,7 +41,19 @@ def main():
         ema_decay=.999, ema_consistency=1., hidden=128, section138=cfg.switches())
     role = "screen" if a.seed in (1, 2) else "s138_sealed"
     output = a.output_root.resolve() / role / a.dataset.lower() / cfg.identifier / f"seed{a.seed}"
-    output.mkdir(parents=True, exist_ok=False)
+    if a.resume:
+        if not output.is_dir():
+            raise ValueError("Resume requires an existing cell directory")
+    else:
+        output.mkdir(parents=True, exist_ok=False)
+    # Exclusive on this filesystem. A killed worker leaves the marker in place;
+    # recovery must verify it is no longer running before removing that marker.
+    # This does not coordinate independent local and HPC filesystems.
+    lock = output / "worker.lock"
+    descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(descriptor, "w") as handle:
+        json.dump({"pid": os.getpid(), "started": time.time()}, handle)
+    atexit.register(lock.unlink)
     started = time.perf_counter()
     data, _, _, _ = prepare_setting(a.dataset, config)
     if a.smoke:
@@ -47,8 +61,25 @@ def main():
     identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset, seed=a.seed,
                     method=cfg.identifier, effective_config=config, data_binding=binding(data, None, None),
                     command=sys.argv, output_role=role, smoke=a.smoke)
+    if a.resume:
+        final = output / "cell/result.json"
+        checkpoints = sorted((output / "cell/checkpoints").glob("checkpoint_*.pt"))
+        if final.exists():
+            previous = json.loads(final.read_text())["identity"]
+        elif checkpoints:
+            previous = torch.load(checkpoints[0], map_location="cpu", weights_only=True)["identity"]
+        else:
+            raise ValueError("No checkpoint or result to resume; preserve this failed attempt")
+        # Invocation changes on resume; scientific inputs and source must not.
+        if {k: v for k, v in previous.items() if k != "command"} != {
+                k: v for k, v in identity.items() if k != "command"}:
+            raise ValueError("Resume source, data or configuration differs")
+        identity = previous
     result = run_cell(data, config, identity, output / "cell", cfg)
-    save_json(output / "summary.json", dict(completed=True, scientific_result=not a.smoke,
+    summary = output / "summary.json"
+    if a.resume and summary.exists():
+        return
+    save_json(summary, dict(completed=True, scientific_result=not a.smoke,
         source_commit=identity["git_commit"], dataset=a.dataset, seed=a.seed, method=cfg.identifier,
         output_role=role, checkpoints=len(result["checkpoints"]), elapsed_seconds=time.perf_counter()-started))
 
