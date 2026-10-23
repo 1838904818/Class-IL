@@ -16,6 +16,13 @@ def train_gate_schedule(model, x, y, *, schedule, config, seed, device,
     """
     if len(training_ids) != len(y) or len(x) != len(y):
         raise ValueError("Gate optimization role length mismatch")
+    for ids in (training_ids, stopping_ids, calibration_ids):
+        ids = np.asarray(ids)
+        if (ids.ndim != 1 or ids.dtype.kind not in "iu" or np.any(ids < 0)
+                or len(np.unique(ids)) != len(ids)):
+            raise ValueError("Gate role IDs must be unique nonnegative integer vectors")
+    if not len(y) or np.asarray(y).dtype.kind not in "iu" or not np.isin(y, [0, 1]).all():
+        raise ValueError("Nonempty binary gate labels required")
     if float(config.get("lambda_g", 0)) != 0:
         raise ValueError("Section138 gate must have no retention")
     if schedule == "fixed":
