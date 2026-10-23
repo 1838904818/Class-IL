@@ -87,3 +87,23 @@ def last_layer_cbf(model, memory, mapping, config, seed, device):
         for p, flag in zip(parameters, original_flags):
             p.grad = None
             p.requires_grad_(flag)
+
+
+def postprocess_family(model, retention, old_columns, new_columns,
+                       memory, mapping, config, seed, device):
+    """Explicit D1/D2/D3 ordering; does not alter stored admission logits."""
+    from ncd.aacil_retention import apply_weight_alignment
+    if retention not in (1, 2, 3):
+        raise ValueError("Unregistered retention")
+    result = {"retention_level": retention, "operations": [],
+              "weight_alignment_seconds": 0.0, "cbf_seconds": 0.0}
+    if retention >= 2:
+        result["weight_alignment"] = apply_weight_alignment(model, old_columns, new_columns)
+        result["weight_alignment_seconds"] = result["weight_alignment"]["elapsed_seconds"]
+        result["operations"].append("weight_alignment")
+    if retention == 3:
+        elapsed, stats = last_layer_cbf(model, memory, mapping, config, seed, device)
+        result["cbf"] = stats
+        result["cbf_seconds"] = elapsed
+        result["operations"].append("last_layer_cbf")
+    return result
