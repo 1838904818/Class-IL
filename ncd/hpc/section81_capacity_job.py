@@ -88,10 +88,12 @@ def main():
     parser.add_argument("--wall-seconds", type=int, required=True)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--confirmation", action="store_true")
+    parser.add_argument("--exclude-cell", action="append", default=[], help="Exact dataset/method/seed already assigned or complete")
     args = parser.parse_args()
-    if args.remaining == (args.dataset is not None or args.width is not None):
+    if not args.confirmation and args.remaining == (args.dataset is not None or args.width is not None):
         parser.error("Choose --remaining or both --dataset and --width")
-    if not args.remaining and (args.dataset is None or args.width is None):
+    if not args.confirmation and not args.remaining and (args.dataset is None or args.width is None):
         parser.error("Single matrix requires dataset and width")
     if not math.isfinite(args.memory_limit_gib) or args.memory_limit_gib <= 0:
         parser.error("Memory guard must be positive and based on measurement")
@@ -109,6 +111,12 @@ def main():
     pairs = [("UNSW-NB15", 1024), ("CIC-IDS-2017", 512), ("CIC-IDS-2017", 1024)] if args.remaining else [(args.dataset, args.width)]
     queue = [(dataset, width, method, seed) for dataset, width in pairs
              for seed in ((1,) if args.smoke else SEEDS) for method in METHODS]
+    if args.confirmation:
+        pairs = [("UNSW-NB15", 128), ("CIC-IDS-2017", 128)]
+        queue = [(dataset, width, method, seed) for dataset, width in pairs[:1 if args.smoke else 2]
+                 for seed in ((10,) if args.smoke else (10, 11, 12, 13, 14))
+                 for method in ("ar_joint", "ar", "replay_bs", "freq", "wacb")
+                 if f"{dataset}/{method}/{seed}" not in args.exclude_cell]
     live, finished = {}, []
     start = time.monotonic()
     stopping = False
@@ -131,8 +139,19 @@ def main():
                 if slot in live or not queue:
                     continue
                 dataset, width, method, seed = queue.pop(0)
-                stem = f"{dataset.lower()}_w{width}_{method}_seed{seed}" if args.remaining else f"{method}_seed{seed}"
+                stem = f"{dataset.lower()}_w{width}_{method}_seed{seed}" if args.remaining or args.confirmation else f"{method}_seed{seed}"
                 cell = output / stem
+                if args.confirmation and args.resume and (cell / "summary.json").exists():
+                    summary = json.loads((cell / "summary.json").read_text())
+                    expected = dict(dataset=dataset, method=method, seed=seed, smoke=args.smoke,
+                                    scientific_result=not args.smoke)
+                    if not summary.get("completed") or any(summary.get(k) != v for k, v in expected.items()):
+                        raise RuntimeError("Confirmation completed marker identity differs")
+                    if summary.get("source_commit") != os.environ.get("NCD_SOURCE_COMMIT"):
+                        raise RuntimeError("Resume must use the original explicit source commit")
+                    finished.append(dict(dataset=dataset, method=method, seed=seed,
+                                         exit_code=0, resumed_completed=True, summary=summary))
+                    continue
                 if args.resume and (cell / "summary.json").exists():
                     summary = json.loads((cell / "summary.json").read_text(encoding="utf-8"))
                     entry_sha = hashlib.sha256((ROOT / "ncd/run_section81_capacity.py").read_bytes()).hexdigest()
@@ -149,6 +168,17 @@ def main():
                     "--output-dir", str(cell), "--smoke" if args.smoke else "--formal"]
                 if args.resume and cell.exists():
                     cmd.append("--resume")
+                if args.confirmation:
+                    entry = "run_section123_joint.py" if method == "ar_joint" else "run_section123_fixed.py"
+                    cmd = [sys.executable, "-I", "-B", str(ROOT / "ncd" / entry),
+                           "--dataset", dataset, "--seed", str(seed),
+                           "--data-root", str(args.data_root.resolve()), "--output-dir", str(cell)]
+                    if method != "ar_joint":
+                        cmd += ["--method", method]
+                    if args.smoke:
+                        cmd.append("--smoke")
+                    if args.resume and cell.exists():
+                        cmd.append("--resume")
                 out = (output / f"{stem}.stdout.log").open("a", encoding="utf-8")
                 err = (output / f"{stem}.stderr.log").open("a", encoding="utf-8")
                 env = dict(os.environ, OMP_NUM_THREADS="4", MKL_NUM_THREADS="4", OPENBLAS_NUM_THREADS="4",
@@ -204,7 +234,7 @@ def main():
             protect(output, protected)
         write(output / "summary.json", dict(completed=True, smoke=args.smoke,
             dataset=args.dataset, width=args.width, matrix=pairs, workers=args.workers,
-            hidden_layers=3, cell_count=len(finished),
+            hidden_layers=2 if args.confirmation else 3, cell_count=len(finished),
             job_id=os.environ.get("SLURM_JOB_ID"), partition=os.environ.get("SLURM_JOB_PARTITION"),
             node=os.environ.get("SLURMD_NODENAME"), elapsed_seconds=time.monotonic()-start, cells=finished))
     except BaseException as exc:

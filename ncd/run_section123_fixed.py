@@ -29,6 +29,7 @@ def main():
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
+    p.add_argument("--resume", action="store_true")
     a = p.parse_args()
     selection = json.loads((ROOT / "paper_aacil/results/section123_schedule_selection.json").read_text())
     if selection["selected_schedule"] != "original_fixed":
@@ -53,7 +54,7 @@ def main():
     if a.method in ("freq", "wacb"):
         config.update(section26=True, section26_schema_version=2, section26_access_policy=ps.SECTION26_POLICY)
     output = a.output_dir.resolve()
-    output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, exist_ok=a.resume)
     started = time.perf_counter()
     data, _, _, metadata = prepare_setting(a.dataset, config)
     counts = np.bincount(data.y_train, minlength=len(data.class_order))
@@ -62,7 +63,7 @@ def main():
     train, valid = ps.section26_pools(data, a.seed)
     identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset,
         method=ar.NOGKD_WA if a.method == "ar" else a.method, seed=a.seed,
-        effective_config=config, command=sys.argv, class_order=data.class_order,
+        effective_config=config, command=[v for v in sys.argv if v != "--resume"], class_order=data.class_order,
         tasks=data.tasks, feature_names=data.feature_names, data_binding=ps.binding(data, None, None),
         data_metadata_sha256=ps.canonical_hash(metadata), original_train_counts=counts.tolist(),
         regularization=0., section26_access_policy=ps.SECTION26_POLICY,
@@ -71,7 +72,7 @@ def main():
         section26_holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
             validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid})
     cell = output / "cell"
-    cell.mkdir()
+    cell.mkdir(exist_ok=a.resume)
     device = torch.device("cpu")
     if a.method == "ar":
         result = ar.run_cell(data, config, identity, cell, device)

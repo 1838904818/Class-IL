@@ -25,6 +25,7 @@ def main():
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
+    p.add_argument("--resume", action="store_true")
     a = p.parse_args()
     if not a.smoke:
         selection = json.loads((ROOT / "paper_aacil/results/section123_schedule_selection.json").read_text())
@@ -37,14 +38,14 @@ def main():
         hidden=128, device="cpu", cpu_threads=4, smoke=a.smoke, schedule="fixed",
         eval_batch_size=4096, deadline_iso=None, memory_setting="fixed200")
     output = a.output_dir.resolve()
-    output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, exist_ok=a.resume)
     started = time.perf_counter()
     data, _, _, _ = prepare_setting(a.dataset, config)
     if a.smoke:
         data, _, _ = smoke_subset(data, None, None, limit=64)
     sources = ("ncd/run_section123_joint.py", "ncd/section123_joint.py", "ncd/section123_joint_cell.py")
     identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset, method="ar_joint",
-        seed=a.seed, effective_config=config, command=sys.argv,
+        seed=a.seed, effective_config=config, command=[v for v in sys.argv if v != "--resume"],
         source_hashes={s: digest(ROOT / s) for s in sources}, data_binding=binding(data, None, None))
     result = run_joint_fixed(data, config, identity, output / "cell")
     save_json(output / "summary.json", dict(completed=True, scientific_result=not a.smoke,
