@@ -26,8 +26,12 @@ def main():
     p.add_argument("--claim-root", type=Path, help="Existing central shared-filesystem claim directory")
     p.add_argument("--lane", default="local")
     a = p.parse_args()
-    if not a.smoke and a.claim_root is None:
-        p.error("Formal cells require a central --claim-root")
+    if not a.smoke:
+        local_cell = a.dataset == "CIC-IDS-2017" and a.seed in (1, 2)
+        if a.lane not in ("local", "dicc") or local_cell != (a.lane == "local"):
+            p.error("Cell is outside the fixed section143 lane partition")
+        if a.claim_root is not None:
+            p.error("Section143 uses disjoint lanes, not cross-machine claims")
     if a.resume and a.claim_root is not None:
         p.error("Claimed-cell recovery requires owner reconciliation; automatic reclaim is disabled")
     import torch
