@@ -107,3 +107,26 @@ def postprocess_family(model, retention, old_columns, new_columns,
         result["cbf_seconds"] = elapsed
         result["operations"].append("last_layer_cbf")
     return result
+
+
+def build_models(configuration, dataset, feature_names, task0_training_x, attack_classes):
+    """Bind both independent models to registered factors and TRAIN-only encoding.
+
+    The caller must supply optimization-eligible Task-0 rows only. No test,
+    stopping, calibration or future-task rows may be used to fit vocabularies.
+    Returned spec must be persisted with checkpoints for exact restoration.
+    """
+    from ncd.section81_tabtransformer import fit_feature_spec
+    switches = configuration.switches()
+    if attack_classes < 1:
+        raise ValueError("At least one attack output required")
+    spec = (fit_feature_spec(dataset, feature_names, task0_training_x)
+            if configuration.encoding == 2 else None)
+    inputs = len(feature_names)
+    gate = Classifier(inputs, 2, switches["gate_hidden"],
+                      switches["gate_hidden_layers"], spec=spec)
+    family = Family(inputs, attack_classes, switches["family_hidden"],
+                    switches["family_hidden_layers"], spec=spec)
+    if {id(p) for p in gate.parameters()} & {id(p) for p in family.parameters()}:
+        raise AssertionError("AR gate and family parameters must be decoupled")
+    return gate, family, spec
