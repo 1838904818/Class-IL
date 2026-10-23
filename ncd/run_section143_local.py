@@ -38,15 +38,27 @@ def main():
     commit = a.source_commit or runner_commit
     # Compare every exported tracked ncd file to its actual Git blob before use.
     if a.source_root:
-        names = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", commit, "ncd"], cwd=ROOT, text=True).splitlines()
+        names = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", commit, "ncd", "src"], cwd=ROOT, text=True).splitlines()
         if not names:
             raise RuntimeError("Empty source export")
-        for name in names:
-            blob = subprocess.check_output(["git", "show", f"{commit}:{name}"], cwd=ROOT)
-            exported = (training_root / name).read_bytes()
-            if exported != blob and not (b"\0" not in blob and
-                    exported.replace(b"\r\n", b"\n") == blob.replace(b"\r\n", b"\n")):
-                raise RuntimeError("Exported source differs: " + name)
+        with subprocess.Popen(["git", "cat-file", "--batch"], cwd=ROOT,
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE) as reader:
+            try:
+                for name in names:
+                    reader.stdin.write(f"{commit}:{name}\n".encode())
+                    reader.stdin.flush()
+                    header = reader.stdout.readline().split()
+                    if len(header) != 3 or header[1] != b"blob":
+                        raise RuntimeError("Invalid source blob: " + name)
+                    blob = reader.stdout.read(int(header[2]))
+                    if reader.stdout.read(1) != b"\n":
+                        raise RuntimeError("Truncated source blob")
+                    exported = (training_root / name).read_bytes()
+                    if exported != blob and not (b"\0" not in blob and
+                            exported.replace(b"\r\n", b"\n") == blob.replace(b"\r\n", b"\n")):
+                        raise RuntimeError("Exported source differs: " + name)
+            finally:
+                reader.stdin.close()
     child_env = dict(os.environ, NCD_SOURCE_COMMIT=commit)
     queue = [(cfg.identifier, seed) for cfg in configurations() for seed in (1, 2)]
     for number, (configuration, seed) in enumerate(queue):
