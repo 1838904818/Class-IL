@@ -31,13 +31,15 @@ def write(path, value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"), required=True)
-    parser.add_argument("--method", choices=("ar_es", "replay_bs_es"), required=True)
-    parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42), required=True)
+    parser.add_argument("--method", choices=("ar_es", "replay_bs_es", "ar_joint"), required=True)
+    parser.add_argument("--seed", type=int, choices=(1, 2, 3, 4, 42, 10, 11, 12, 13, 14), required=True)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--protected-root", type=Path, required=True)
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
+    if not args.smoke and ((args.method == "ar_joint") != (args.seed in (10, 11, 12, 13, 14))):
+        parser.error("Joint confirmation uses fresh seeds; TB uses original seeds")
     if os.name != "nt" or os.environ.get("SLURM_JOB_ID"):
         parser.error("Windows CPU launcher only")
     output, protected = args.output_root.resolve(), args.protected_root.resolve()
@@ -78,6 +80,10 @@ def main():
         command = [sys.executable, "-I", "-B", "-u", str(ROOT / "ncd/run_section123_tb.py"),
                    "--dataset", args.dataset, "--method", args.method, "--seed", str(args.seed),
                    "--data-root", str(args.data_root.resolve(strict=True)), "--output-dir", str(output / "run")]
+        if args.method == "ar_joint":
+            command[4] = str(ROOT / "ncd/run_section123_joint.py")
+            position = command.index("--method")
+            del command[position:position + 2]
         if args.smoke:
             command.append("--smoke")
         with (output / "stdout.log").open("x") as out, (output / "stderr.log").open("x") as err:
