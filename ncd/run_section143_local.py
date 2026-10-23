@@ -24,22 +24,45 @@ def main():
     p.add_argument("--worker", type=int, required=True)
     p.add_argument("--workers", type=int, required=True)
     p.add_argument("--smoke", action="store_true", help="One non-scientific cell through this worker")
+    p.add_argument("--source-root", type=Path, help="Immutable git-exported training checkout")
+    p.add_argument("--source-commit", help="Commit of the exported training checkout")
     a = p.parse_args()
     if not 0 <= a.worker < a.workers or 4*a.workers > (psutil.cpu_count(logical=False) or 0):
         p.error("Worker partition exceeds physical CPU capacity")
     root = a.output_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
-    commit = source_commit(ROOT)
+    runner_commit = source_commit(ROOT)
+    training_root = a.source_root.resolve(strict=True) if a.source_root else ROOT
+    if bool(a.source_root) != bool(a.source_commit):
+        p.error("Source root and commit must be supplied together")
+    commit = a.source_commit or runner_commit
+    # Compare every exported tracked ncd file to its actual Git blob before use.
+    if a.source_root:
+        names = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", commit, "ncd"], cwd=ROOT, text=True).splitlines()
+        if not names:
+            raise RuntimeError("Empty source export")
+        for name in names:
+            blob = subprocess.check_output(["git", "show", f"{commit}:{name}"], cwd=ROOT)
+            if (training_root / name).read_bytes() != blob:
+                raise RuntimeError("Exported source differs: " + name)
+    child_env = dict(os.environ, NCD_SOURCE_COMMIT=commit)
     queue = [(cfg.identifier, seed) for cfg in configurations() for seed in (1, 2)]
     for number, (configuration, seed) in enumerate(queue):
         if number % a.workers != a.worker:
             continue
-        if source_commit(ROOT) != commit:
+        if not a.source_root and source_commit(ROOT) != commit:
             raise RuntimeError("Source changed: stop before the next cell")
         if psutil.virtual_memory().available < 6*1024**3 or shutil.disk_usage(root).free < 20*1024**3:
             raise RuntimeError("Insufficient RAM or disk for next cell")
         cell = root / "screen/cic-ids-2017" / configuration / f"seed{seed}"
-        command = [sys.executable, "-I", "-B", "-u", str(ROOT / "ncd/run_section138.py"),
+        if (cell / "summary.json").exists():
+            done = json.loads((cell / "summary.json").read_text())
+            if not (done["completed"] and done["source_commit"] == commit and
+                    done["seed"] == seed and done["method"] == configuration and
+                    done["scientific_result"] == (not a.smoke)):
+                raise RuntimeError("Completed cell identity differs")
+            continue
+        command = [sys.executable, "-I", "-B", "-u", str(training_root / "ncd/run_section138.py"),
             "--configuration", configuration, "--dataset", "CIC-IDS-2017", "--seed", str(seed),
             "--data-root", str(a.data_root.resolve(strict=True)), "--output-root", str(root), "--lane", "local"]
         if cell.exists():
@@ -51,7 +74,7 @@ def main():
         started = time.perf_counter()
         reason, peak = None, 0
         with (attempt / "stdout.log").open("x") as out, (attempt / "stderr.log").open("x") as err:
-            child = subprocess.Popen(command, stdout=out, stderr=err,
+            child = subprocess.Popen(command, stdout=out, stderr=err, env=child_env,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             process = psutil.Process(child.pid)
             with (attempt / "resources.jsonl").open("x") as telemetry:
@@ -71,7 +94,7 @@ def main():
                         break
                     time.sleep(1)
             code = child.wait()
-        receipt = dict(command=command, git_commit=commit, seed=seed, configuration=configuration,
+        receipt = dict(command=command, git_commit=commit, runner_commit=runner_commit, seed=seed, configuration=configuration,
             worker=a.worker, workers=a.workers, exit_code=code, guard_reason=reason,
             elapsed_seconds=time.perf_counter()-started, sampled_peak_rss_bytes=peak,
             stdout_log="stdout.log", stderr_log="stderr.log", resource_log="resources.jsonl")
