@@ -23,7 +23,13 @@ def main():
     p.add_argument("--output-root", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--resume", action="store_true", help="Resume only an identity-matched existing cell")
+    p.add_argument("--claim-root", type=Path, help="Existing central shared-filesystem claim directory")
+    p.add_argument("--lane", default="local")
     a = p.parse_args()
+    if not a.smoke and a.claim_root is None:
+        p.error("Formal cells require a central --claim-root")
+    if a.resume and a.claim_root is not None:
+        p.error("Claimed-cell recovery requires owner reconciliation; automatic reclaim is disabled")
     import torch
     from ncd.prepare_problem_scout_data import prepare_setting
     from ncd.run_problem_scout import binding, save_json, smoke_subset
@@ -41,6 +47,15 @@ def main():
         ema_decay=.999, ema_consistency=1., hidden=128, section138=cfg.switches())
     role = "screen" if a.seed in (1, 2) else "s138_sealed"
     output = a.output_root.resolve() / role / a.dataset.lower() / cfg.identifier / f"seed{a.seed}"
+    commit = source_commit(ROOT)
+    owner = None
+    cell_key = f"{cfg.identifier}-{a.dataset}-seed{a.seed}-{'smoke' if a.smoke else 'formal'}"
+    if a.claim_root is not None:
+        from ncd.section138_claim import claim
+        owner = claim(a.claim_root, cell_key, lane=a.lane, source_commit=commit)
+        if owner is None:
+            print(json.dumps(dict(skipped=True, reason="Cell already claimed", cell=cell_key)))
+            return
     if a.resume:
         if not output.is_dir():
             raise ValueError("Resume requires an existing cell directory")
@@ -58,7 +73,7 @@ def main():
     data, _, _, _ = prepare_setting(a.dataset, config)
     if a.smoke:
         data, _, _ = smoke_subset(data, None, None, limit=64)
-    identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset, seed=a.seed,
+    identity = dict(git_commit=commit, dataset=a.dataset, seed=a.seed,
                     method=cfg.identifier, effective_config=config, data_binding=binding(data, None, None),
                     command=sys.argv, output_role=role, smoke=a.smoke)
     if a.resume:
@@ -82,6 +97,11 @@ def main():
     save_json(summary, dict(completed=True, scientific_result=not a.smoke,
         source_commit=identity["git_commit"], dataset=a.dataset, seed=a.seed, method=cfg.identifier,
         output_role=role, checkpoints=len(result["checkpoints"]), elapsed_seconds=time.perf_counter()-started))
+    if owner is not None:
+        from ncd.run_problem_scout import digest
+        from ncd.section138_claim import finish
+        finish(a.claim_root, cell_key, owner,
+               result_sha256=digest(output / "cell/result.json"), exit_code=0)
 
 
 if __name__ == "__main__":
