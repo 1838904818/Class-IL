@@ -25,9 +25,15 @@ def main():
     p.add_argument("--resume", action="store_true", help="Resume only an identity-matched existing cell")
     p.add_argument("--claim-root", type=Path, help="Existing central shared-filesystem claim directory")
     p.add_argument("--lane", default="local")
+    p.add_argument("--confirmation", action="store_true")
     a = p.parse_args()
+    from ncd.section147_selection import SELECTED, SELECTION_COMMIT
+    if a.confirmation and (a.configuration not in SELECTED or a.seed not in range(10, 15) or a.lane != "local"):
+        p.error("Confirmation requires a section147 selected local cell")
     if not a.smoke:
-        local_cell = a.seed in (1, 2)
+        local_cell = a.seed in (1, 2) or (a.seed in range(10, 15) and a.configuration in SELECTED)
+        if a.lane == "local" and a.seed >= 10 and not a.confirmation:
+            p.error("Selected confirmation requires --confirmation")
         if a.lane not in ("local", "dicc") or local_cell != (a.lane == "local"):
             p.error("Cell is outside the fixed section145 lane partition (local screen, DICC sealed)")
         if a.claim_root is not None:
@@ -50,6 +56,8 @@ def main():
         derpp_alpha=1., derpp_beta=1., deadline_iso=None, normal_training_rows=50000,
         ema_decay=.999, ema_consistency=1., hidden=128, section138=cfg.switches())
     role = "screen" if a.seed in (1, 2) else "s138_sealed"
+    if a.confirmation:
+        role = "confirmation"
     output = a.output_root.resolve() / role / a.dataset.lower() / cfg.identifier / f"seed{a.seed}"
     commit = source_commit(ROOT)
     owner = None
@@ -80,6 +88,8 @@ def main():
     identity = dict(git_commit=commit, dataset=a.dataset, seed=a.seed,
                     method=cfg.identifier, effective_config=config, data_binding=binding(data, None, None),
                     command=sys.argv, output_role=role, smoke=a.smoke)
+    if a.confirmation:
+        identity["selection_commit"] = SELECTION_COMMIT
     if a.resume:
         final = output / "cell/result.json"
         checkpoints = sorted((output / "cell/checkpoints").glob("checkpoint_*.pt"))

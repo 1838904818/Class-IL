@@ -24,6 +24,7 @@ def main():
     p.add_argument("--output-root", type=Path, required=True)
     p.add_argument("--worker", type=int, required=True)
     p.add_argument("--workers", type=int, required=True)
+    p.add_argument("--confirmation", action="store_true")
     p.add_argument("--smoke", action="store_true", help="One non-scientific cell through this worker")
     p.add_argument("--source-root", type=Path, help="Immutable git-exported training checkout")
     p.add_argument("--source-commit", help="Commit of the exported training checkout")
@@ -62,6 +63,9 @@ def main():
                 reader.stdin.close()
     child_env = dict(os.environ, NCD_SOURCE_COMMIT=commit)
     queue = [(cfg.identifier, seed) for cfg in configurations() for seed in (1, 2)]
+    if a.confirmation:
+        from ncd.section147_selection import SELECTED
+        queue = [(cfg, seed) for cfg in SELECTED for seed in range(10, 15)]
     for number, (configuration, seed) in enumerate(queue):
         if number % a.workers != a.worker:
             continue
@@ -69,7 +73,7 @@ def main():
             raise RuntimeError("Source changed: stop before the next cell")
         if psutil.virtual_memory().available < 6*1024**3 or shutil.disk_usage(root).free < 20*1024**3:
             raise RuntimeError("Insufficient RAM or disk for next cell")
-        cell = root / "screen" / a.dataset.lower() / configuration / f"seed{seed}"
+        cell = root / ("confirmation" if a.confirmation else "screen") / a.dataset.lower() / configuration / f"seed{seed}"
         if (cell / "summary.json").exists():
             done = json.loads((cell / "summary.json").read_text())
             if not (done["completed"] and done["source_commit"] == commit and
@@ -82,6 +86,8 @@ def main():
             "--data-root", str(a.data_root.resolve(strict=True)), "--output-root", str(root), "--lane", "local"]
         if cell.exists():
             command.append("--resume")
+        if a.confirmation:
+            command.append("--confirmation")
         if a.smoke:
             command.append("--smoke")
         attempt = root / "logs" / f"{configuration}-seed{seed}-{uuid.uuid4().hex}"
