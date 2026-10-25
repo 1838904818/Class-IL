@@ -80,7 +80,7 @@ def build():
                 observed = abs(mean(diff))
                 flip = sum(abs(mean(d*s for d,s in zip(diff,signs))) >= observed-1e-12 for signs in itertools.product((-1,1),repeat=5))/32
                 p = float(ttest_rel(a,b).pvalue)
-                out.append(f'{label} & {endpoint} & {100*mean(diff):.2f} & {p:.4f} & {flip:.4f}'+r' \\')
+                out.append(f'{label} & {endpoint} & {100*mean(diff):.2f} & {p:.3g} & {flip:.4f}'+r' \\')
         out += [r'\bottomrule\end{tabular}\end{table*}']
     return '\n'.join(out)+'\n'
 
