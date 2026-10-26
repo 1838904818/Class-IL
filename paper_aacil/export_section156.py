@@ -16,15 +16,21 @@ def main():
     p.add_argument('--cell', type=Path, required=True)
     p.add_argument('--log-prefix', type=Path, required=True)
     p.add_argument('--destination', type=Path, required=True)
+    p.add_argument('--confirmation-r3l', action='store_true')
     a = p.parse_args()
+    seeds = (10, 11, 12, 13, 14) if a.confirmation_r3l else (1, 2)
+    role = 'confirmation' if a.confirmation_r3l else 'screen'
     summary = json.loads((a.cell/'summary.json').read_text())
-    if summary['seed'] not in (1, 2) or not summary['completed'] or not summary['scientific_result']:
+    if summary['seed'] not in seeds or not summary['completed'] or not summary['scientific_result']:
         raise ValueError('Completed formal screening cell required')
     path = a.cell/'cell/result.json'
     raw = json.loads(path.read_text())
     identity = raw['identity']
-    if identity['output_role'] != 'screen' or identity['smoke'] or not raw['completed']:
+    if identity['output_role'] != role or identity['smoke'] or not raw['completed']:
         raise ValueError('Not a formal screening result')
+    if a.confirmation_r3l and (identity['method'] != 'R3-L' or
+            identity['effective_config'].get('section165_memory') != 'literature'):
+        raise ValueError('Not an R3-L confirmation')
     for key in ('dataset', 'seed', 'method'):
         if identity[key] != summary[key]:
             raise ValueError('Summary identity mismatch')
@@ -35,7 +41,8 @@ def main():
         if cp['checkpoint_file'] != rel or hashlib.sha256((a.cell/'cell'/rel).read_bytes()).hexdigest() != cp['checkpoint_sha256']:
             raise ValueError('Checkpoint changed')
     body = public(dict(raw, execution_summary=summary), hashlib.sha256(path.read_bytes()).hexdigest(), 'result.json')
-    body['publication_derivation']['original_json'] = 'section156/screen/cell/result.json'
+    body['publication_derivation']['original_json'] = ('section165/confirmation/cell/result.json'
+        if a.confirmation_r3l else 'section156/screen/cell/result.json')
     body['execution_cost'] = dict(elapsed_seconds=summary['elapsed_seconds'],
         sampled_peak_rss_bytes=None, process_exit_code=None,
         limitation='Standalone run: completion summary verified; OS exit code and peak RSS were not recorded.')
