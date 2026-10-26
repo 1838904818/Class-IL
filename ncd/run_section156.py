@@ -21,7 +21,10 @@ def main():
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-root", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
+    p.add_argument("--threads", type=int, default=4, choices=(1, 2, 4))
     a = p.parse_args()
+    os.environ["OMP_NUM_THREADS"] = str(a.threads)
+    os.environ["MKL_NUM_THREADS"] = str(a.threads)
     import torch
     from ncd.prepare_problem_scout_data import prepare_setting
     from ncd.run_problem_scout import binding, save_json, smoke_subset
@@ -31,11 +34,11 @@ def main():
     cfg = next(c for c in configurations() if c.identifier == a.configuration)
     if cfg.special in ("T3", "T4", "T5") or cfg.family == 3:
         p.error("f3 and T3-T5 are not integrated yet")
-    torch.set_num_threads(4)
+    torch.set_num_threads(a.threads)
     torch.set_num_interop_threads(1)
     config = json.loads((ROOT / "ncd/configs/problem_scout_section21.json").read_text())
     config.update(problem_scout_data_root=str(a.data_root.resolve(strict=True)),
-        device="cpu", cpu_threads=4, smoke=a.smoke, lambda_g=0.,
+        device="cpu", cpu_threads=a.threads, smoke=a.smoke, lambda_g=0.,
         epochs_per_task=1 if a.smoke else 8, min_steps_per_task=0 if a.smoke else 2000,
         batch_size=256, eval_batch_size=4096, learning_rate=.001,
         derpp_alpha=1., derpp_beta=1., deadline_iso=None,
