@@ -62,7 +62,12 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
         else:
             current = exposure(index)
             slots = {c: current[c] if c in current else memory[c] for c in seen}
-            normal_ids = aa.select_rows(exposure.train[normal], switches["normal_training_rows"], task_seed * 10007 + normal)
+            normal_pool = exposure.train[normal]
+            if config.get("section156") and switches["normal_training_rows"] == 500000:
+                # n2 is capped after excluding held-out roles, not before.
+                excluded = np.union1d(exposure.normal_stopping_ids, exposure.calibration_ids)
+                normal_pool = normal_pool[~np.isin(normal_pool, excluded)]
+            normal_ids = aa.select_rows(normal_pool, switches["normal_training_rows"], task_seed * 10007 + normal)
             if configuration.gate_schedule == 2:
                 normal_ids = normal_ids[~np.isin(normal_ids, exposure.normal_stopping_ids)]
             ids = np.concatenate([normal_ids, *[slots[c]["train_ids"] for c in seen if c != normal]])
