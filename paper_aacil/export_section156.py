@@ -41,6 +41,7 @@ def main():
         limitation='Standalone run: completion summary verified; OS exit code and peak RSS were not recorded.')
     destination = a.destination/summary['dataset'].lower()/f"{summary['method']}_seed{summary['seed']}"
     logs = {}
+    body['log_artifacts'] = {}
     for stream in ('stdout', 'stderr'):
         content = Path(str(a.log_prefix)+f'.{stream}.log').read_bytes()
         text = content.decode('utf-8', errors='replace')
@@ -48,6 +49,9 @@ def main():
         if re.search(r'github_pat_|ghp_|BEGIN .*PRIVATE KEY', text):
             raise ValueError('Sensitive log pattern')
         logs[stream] = gzip.compress(text.encode(), mtime=0)
+        body['log_artifacts'][stream] = dict(path=f'{stream}.log.gz',
+            raw_sha256=hashlib.sha256(content).hexdigest(),
+            published_sha256=hashlib.sha256(logs[stream]).hexdigest())
     def strip_local(value):
         if isinstance(value, dict):
             return {k: strip_local(v) for k, v in value.items()}
