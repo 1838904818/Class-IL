@@ -1,4 +1,4 @@
-"""Section165 R3-L confirmation; R3-A awaits resolution of its memory budget."""
+"""Section165 confirmation: literature memory or Section174 exact-C1 memory."""
 import argparse
 import json
 import os
@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dataset', required=True, choices=('UNSW-NB15', 'CIC-IDS-2017'))
+    p.add_argument('--method', choices=('R3-L', 'R3-A'), default='R3-L')
     p.add_argument('--seed', required=True, type=int, choices=(1, 10, 11, 12, 13, 14))
     p.add_argument('--data-root', required=True, type=Path)
     p.add_argument('--output-root', required=True, type=Path)
@@ -40,15 +41,16 @@ def main():
         batch_size=256, eval_batch_size=4096, learning_rate=.001,
         derpp_alpha=1., derpp_beta=1., deadline_iso=None,
         normal_training_rows=50000, ema_decay=.999, ema_consistency=1., hidden=128,
-        section156=cfg.switches(), section165_memory='literature')
-    output = a.output_root.resolve() / ('smoke' if a.smoke else 'confirmation') / a.dataset.lower() / 'R3-L' / f'seed{a.seed}'
+        section156=cfg.switches(),
+        section165_memory='literature' if a.method == 'R3-L' else 'exact_c1')
+    output = a.output_root.resolve() / ('smoke' if a.smoke else 'confirmation') / a.dataset.lower() / a.method / f'seed{a.seed}'
     output.mkdir(parents=True, exist_ok=False)
     started = time.perf_counter()
     data, _, _, _ = prepare_setting(a.dataset, config)
     if a.smoke:
         data, _, _ = smoke_subset(data, None, None, limit=64)
     identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset, seed=a.seed,
-        method='R3-L', effective_config=config, data_binding=binding(data, None, None),
+        method=a.method, effective_config=config, data_binding=binding(data, None, None),
         command=sys.argv, output_role='smoke' if a.smoke else 'confirmation', smoke=a.smoke)
     def trainer(model, x, y, *, schedule, **kwargs):
         return train_gate(model, x, y, kind='histgb', **kwargs)
@@ -56,7 +58,7 @@ def main():
                       model_builder=build_models, gate_trainer=trainer)
     save_json(output / 'summary.json', dict(completed=True, scientific_result=not a.smoke,
         source_commit=identity['git_commit'], dataset=a.dataset, seed=a.seed,
-        method='R3-L', checkpoints=len(result['checkpoints']),
+        method=a.method, checkpoints=len(result['checkpoints']),
         elapsed_seconds=time.perf_counter()-started))
 
 

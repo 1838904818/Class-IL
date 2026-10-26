@@ -16,10 +16,13 @@ def main():
     p.add_argument('--cell', type=Path, required=True)
     p.add_argument('--log-prefix', type=Path, required=True)
     p.add_argument('--destination', type=Path, required=True)
-    p.add_argument('--confirmation-r3l', action='store_true')
+    confirmation = p.add_mutually_exclusive_group()
+    confirmation.add_argument('--confirmation-r3l', action='store_true')
+    confirmation.add_argument('--confirmation-r3a', action='store_true')
     a = p.parse_args()
-    seeds = (10, 11, 12, 13, 14) if a.confirmation_r3l else (1, 2)
-    role = 'confirmation' if a.confirmation_r3l else 'screen'
+    is_confirmation = a.confirmation_r3l or a.confirmation_r3a
+    seeds = (10, 11, 12, 13, 14) if is_confirmation else (1, 2)
+    role = 'confirmation' if is_confirmation else 'screen'
     summary = json.loads((a.cell/'summary.json').read_text())
     if summary['seed'] not in seeds or not summary['completed'] or not summary['scientific_result']:
         raise ValueError('Completed formal screening cell required')
@@ -31,6 +34,9 @@ def main():
     if a.confirmation_r3l and (identity['method'] != 'R3-L' or
             identity['effective_config'].get('section165_memory') != 'literature'):
         raise ValueError('Not an R3-L confirmation')
+    if a.confirmation_r3a and (identity['method'] != 'R3-A' or
+            identity['effective_config'].get('section165_memory') != 'exact_c1'):
+        raise ValueError('Not an R3-A confirmation')
     for key in ('dataset', 'seed', 'method'):
         if identity[key] != summary[key]:
             raise ValueError('Summary identity mismatch')
@@ -42,7 +48,7 @@ def main():
             raise ValueError('Checkpoint changed')
     body = public(dict(raw, execution_summary=summary), hashlib.sha256(path.read_bytes()).hexdigest(), 'result.json')
     body['publication_derivation']['original_json'] = ('section165/confirmation/cell/result.json'
-        if a.confirmation_r3l else 'section156/screen/cell/result.json')
+        if is_confirmation else 'section156/screen/cell/result.json')
     body['execution_cost'] = dict(elapsed_seconds=summary['elapsed_seconds'],
         sampled_peak_rss_bytes=None, process_exit_code=None,
         limitation='Standalone run: completion summary verified; OS exit code and peak RSS were not recorded.')
