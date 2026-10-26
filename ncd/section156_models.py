@@ -1,6 +1,7 @@
 """Section156 model primitives; trajectory integration is required before use."""
 import math
 import time
+import pickle
 
 import numpy as np
 import torch
@@ -19,12 +20,12 @@ class HistGBModule(torch.nn.Module):
         self.estimator = None
 
     def get_extra_state(self):
-        return dict(outputs=self.outputs, estimator=self.estimator)
+        return dict(outputs=self.outputs, estimator_pickle=pickle.dumps(self.estimator))
 
     def set_extra_state(self, state):
         if state["outputs"] != self.outputs:
             raise ValueError("HistGB checkpoint output mismatch")
-        self.estimator = state["estimator"]
+        self.estimator = pickle.loads(state["estimator_pickle"])
 
     def forward(self, x):
         if self.estimator is None:
@@ -75,6 +76,22 @@ def train_gate(model, x, y, *, kind, config, seed, device, training_ids,
     elapsed = time.perf_counter() - started
     stats.update(elapsed_seconds=elapsed, gate_retention=False)
     return elapsed, stats
+
+
+def build_models(configuration, dataset, feature_names, task0_training_x, attack_classes):
+    """Initial integration supports factorial g1-g4 with f1 only; fail otherwise."""
+    from ncd.section138_models import Classifier, Family
+    from ncd.section81_tabtransformer import fit_feature_spec
+    if configuration.special or configuration.family != 1:
+        raise NotImplementedError("f2/f3 and special trajectories are not integrated yet")
+    spec = fit_feature_spec(dataset, feature_names, task0_training_x)
+    def member():
+        return Classifier(len(feature_names), 2, 128, 2, spec=spec)
+    kind = configuration.switches()["gate"]
+    gate = HistGBModule(2) if kind == "histgb" else (
+        EnsembleGate([member() for _ in range(5)]) if kind == "ensemble5" else member())
+    family = Family(len(feature_names), attack_classes, 128, 2, spec=spec)
+    return gate, family, spec
 
 
 def fit_histgb(x, y, *, stopping_x, stopping_y, seed, training_ids,

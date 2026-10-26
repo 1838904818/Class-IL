@@ -15,7 +15,8 @@ from ncd.section138_training import train_gate_schedule
 from ncd.train_cil import seed_everything
 
 
-def run_cell(data, config, identity, output, configuration):
+def run_cell(data, config, identity, output, configuration, *, model_builder=None,
+             gate_trainer=None):
     output.mkdir(parents=True, exist_ok=True)
     final = output / "result.json"
     if final.exists():
@@ -40,7 +41,7 @@ def run_cell(data, config, identity, output, configuration):
         if c == normal and configuration.gate_schedule == 1:
             first_x.append(first[c]["validation_x"])
     seed_everything(seed * 10000)
-    gate, family, spec = build_models(configuration, identity["dataset"], data.feature_names,
+    gate, family, spec = (model_builder or build_models)(configuration, identity["dataset"], data.feature_names,
                                       np.concatenate(first_x), len(attacks))
     memory, records = {}, []
     for index, task in enumerate(data.tasks):
@@ -61,14 +62,14 @@ def run_cell(data, config, identity, output, configuration):
         else:
             current = exposure(index)
             slots = {c: current[c] if c in current else memory[c] for c in seen}
-            normal_ids = aa.select_rows(exposure.train[normal], 50000, task_seed * 10007 + normal)
+            normal_ids = aa.select_rows(exposure.train[normal], switches["normal_training_rows"], task_seed * 10007 + normal)
             if configuration.gate_schedule == 2:
                 normal_ids = normal_ids[~np.isin(normal_ids, exposure.normal_stopping_ids)]
             ids = np.concatenate([normal_ids, *[slots[c]["train_ids"] for c in seen if c != normal]])
             gx = data.x_train[ids].copy()
             gy = (data.y_train[ids] != normal).astype(np.int64)
             stop_ids = np.concatenate([slots[c]["validation_ids"] for c in seen])
-            gate_seconds, gate_stats = train_gate_schedule(
+            gate_seconds, gate_stats = (gate_trainer or train_gate_schedule)(
                 gate, gx, gy, schedule=switches["gate_schedule"], config=config, seed=task_seed,
                 device=device, training_ids=ids, stopping_ids=stop_ids,
                 calibration_ids=exposure.calibration_ids, stopping_x=data.x_train[stop_ids],

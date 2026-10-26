@@ -24,6 +24,11 @@ class Configuration:
     def selectable(self):
         return self.special not in ("C1", "C2")
 
+    # Compatibility with the shared trajectory's registered role construction.
+    encoding = 2
+    gate_schedule = 2
+    retention = 3
+
     def switches(self):
         gate = {1: "embedding", 2: "histgb", 3: "ensemble5", 4: "partial_auc"}[self.gate]
         family = "histgb" if self.family == 2 or (self.gate == 2 and self.family == 3) else "embedding"
