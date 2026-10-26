@@ -18,16 +18,27 @@ class HistGBModule(torch.nn.Module):
         super().__init__()
         self.outputs = outputs
         self.estimator = None
+        self.constant_class = None
+
+    def set_seen(self, columns):
+        if any(c < 0 or c >= self.outputs for c in columns):
+            raise ValueError("Invalid seen HistGB class")
 
     def get_extra_state(self):
-        return dict(outputs=self.outputs, estimator_pickle=pickle.dumps(self.estimator))
+        return dict(outputs=self.outputs, estimator_pickle=pickle.dumps(self.estimator),
+                    constant_class=self.constant_class)
 
     def set_extra_state(self, state):
         if state["outputs"] != self.outputs:
             raise ValueError("HistGB checkpoint output mismatch")
         self.estimator = pickle.loads(state["estimator_pickle"])
+        self.constant_class = state["constant_class"]
 
     def forward(self, x):
+        if self.constant_class is not None:
+            scores = torch.full((len(x), self.outputs), -1e6, device=x.device)
+            scores[:, self.constant_class] = 0.
+            return scores
         if self.estimator is None:
             raise RuntimeError("HistGB estimator is not fitted")
         raw = self.estimator.decision_function(x.detach().cpu().numpy())
@@ -79,19 +90,43 @@ def train_gate(model, x, y, *, kind, config, seed, device, training_ids,
 
 
 def build_models(configuration, dataset, feature_names, task0_training_x, attack_classes):
-    """Initial integration supports factorial g1-g4 with f1 only; fail otherwise."""
+    """Factorial gate variants with f1/f2; other trajectories fail explicitly."""
     from ncd.section138_models import Classifier, Family
     from ncd.section81_tabtransformer import fit_feature_spec
-    if configuration.special or configuration.family != 1:
-        raise NotImplementedError("f2/f3 and special trajectories are not integrated yet")
+    if configuration.special or configuration.family == 3:
+        raise NotImplementedError("f3 and special trajectories are not integrated yet")
     spec = fit_feature_spec(dataset, feature_names, task0_training_x)
     def member():
         return Classifier(len(feature_names), 2, 128, 2, spec=spec)
     kind = configuration.switches()["gate"]
     gate = HistGBModule(2) if kind == "histgb" else (
         EnsembleGate([member() for _ in range(5)]) if kind == "ensemble5" else member())
-    family = Family(len(feature_names), attack_classes, 128, 2, spec=spec)
+    family = (HistGBModule(attack_classes) if configuration.family == 2 else
+              Family(len(feature_names), attack_classes, 128, 2, spec=spec))
     return gate, family, spec
+
+
+def train_histgb_family(model, x, y, *, stopping_x, stopping_y, seed,
+                        training_ids, stopping_ids, calibration_ids):
+    from ncd.section123_es_training import assert_disjoint_roles
+    assert_disjoint_roles(training_ids, stopping_ids, calibration_ids)
+    started = time.perf_counter()
+    classes = np.unique(y)
+    model.estimator, model.constant_class = None, None
+    if len(classes) == 1:
+        if not np.isin(stopping_y, classes).all():
+            raise ValueError("Stopping class absent from family training")
+        model.constant_class = int(classes[0])
+        iterations = 0
+    else:
+        model.estimator = fit_histgb(x, y, stopping_x=stopping_x,
+            stopping_y=stopping_y, seed=seed, training_ids=training_ids,
+            stopping_ids=stopping_ids, calibration_ids=calibration_ids)
+        iterations = int(model.estimator.n_iter_)
+    elapsed = time.perf_counter() - started
+    return elapsed, dict(backend="histgb", iterations=iterations,
+        constant_class=model.constant_class, elapsed_seconds=elapsed,
+        logits_stored=False, weight_alignment=False, cbf=False)
 
 
 def fit_histgb(x, y, *, stopping_x, stopping_y, seed, training_ids,

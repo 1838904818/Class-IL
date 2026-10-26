@@ -77,14 +77,28 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             fx = np.concatenate([slots[c]["train_x"] for c in seen if c != normal])
             fy = np.concatenate([np.full(len(slots[c]["train_ids"]), mapping[c], dtype=np.int64)
                                  for c in seen if c != normal])
-            family_seconds, family_stats = train_compact_family(
-                family, fx, fy, memory, mapping, config, task_seed, device)
+            tree_family = switches.get("family") == "histgb"
+            if tree_family:
+                from ncd.section156_models import train_histgb_family
+                family_ids = np.concatenate([slots[c]["train_ids"] for c in seen if c != normal])
+                family_stop = np.concatenate([slots[c]["validation_ids"] for c in seen if c != normal])
+                family_seconds, family_stats = train_histgb_family(family, fx, fy,
+                    stopping_x=data.x_train[family_stop],
+                    stopping_y=np.asarray([mapping[int(c)] for c in data.y_train[family_stop]]),
+                    seed=task_seed, training_ids=family_ids, stopping_ids=family_stop,
+                    calibration_ids=exposure.calibration_ids)
+            else:
+                family_seconds, family_stats = train_compact_family(
+                    family, fx, fy, memory, mapping, config, task_seed, device)
             next_memory = aa.refresh_attack_memory(data, exposure.train, exposure.valid, memory, new,
                 aa.attack_targets("aacil", seen, normal), seed, index)
-            post = postprocess_family(family, configuration.retention,
-                [mapping[c] for c in seen if c != normal and c not in new], [mapping[c] for c in new],
-                next_memory, mapping, config, task_seed, device)
-            attach_compact_logits(memory, next_memory, new, gate, family, device, 4096)
+            if tree_family:
+                post = dict(operations=[], logits_stored=False, weight_alignment=False, cbf=False)
+            else:
+                post = postprocess_family(family, configuration.retention,
+                    [mapping[c] for c in seen if c != normal and c not in new], [mapping[c] for c in new],
+                    next_memory, mapping, config, task_seed, device)
+                attach_compact_logits(memory, next_memory, new, gate, family, device, 4096)
             memory = next_memory
             state = dict(identity=identity, task_index=index, seen_classes=seen, feature_spec=spec,
                 gate_state=gate.state_dict(), family_state=family.state_dict(),

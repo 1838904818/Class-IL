@@ -29,8 +29,8 @@ def main():
     from ncd.section156_models import build_models, train_gate
     from ncd.source_commit import source_commit
     cfg = next(c for c in configurations() if c.identifier == a.configuration)
-    if cfg.special or cfg.family != 1:
-        p.error("This integration currently supports g1-g4/f1/n1-n2 only")
+    if cfg.special or cfg.family == 3:
+        p.error("This integration currently supports g1-g4/f1-f2/n1-n2 only")
     torch.set_num_threads(4)
     torch.set_num_interop_threads(1)
     config = json.loads((ROOT / "ncd/configs/problem_scout_section21.json").read_text())
