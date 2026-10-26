@@ -1,7 +1,7 @@
-"""Run the unmodified official ReplayIDS B2 entry with Windows I/O adapters.
+"""Run official ReplayIDS B2 with Windows I/O and categorical-index repair.
 
-Only loader workers and file locations change. The official eight-epoch config,
-global vocabulary, per-experience scaling, replay and oracle are retained.
+Negative categorical values receive distinct legal embedding tokens. The official
+eight-epoch config, per-experience scaling, replay and oracle are retained.
 """
 from __future__ import annotations
 
@@ -59,11 +59,29 @@ def main():
         if actual != expected:
             raise ValueError('Prepared data hash differs: ' + name)
     original_load = np.load
+    cat = original_load(data / 'catfeaturelist.npy').tolist()
+    negative_values = {c: set() for c in cat}
+    maxima = {c: 0 for c in cat}
+    for split in ('train', 'val', 'test'):
+        values = original_load(data / (split + '.npy'), mmap_mode='r')
+        for c in cat:
+            column = values[:, c].astype(np.int64)
+            negative_values[c].update(np.unique(column[column < 0]).tolist())
+            maxima[c] = max(maxima[c], int(column.max()))
+        del values
+    negative_tokens = {c: {v: maxima[c]+1+j for j,v in enumerate(sorted(negative_values[c]))}
+                       for c in cat if negative_values[c]}
 
     def load(path, *args, **kwargs):
         s = str(path).replace('\\', '/')
         if s.startswith('dataset/CICIDS2017/'):
             path = data / Path(s).name
+            values = original_load(path, *args, **kwargs)
+            if Path(s).name in ('train.npy', 'val.npy', 'test.npy'):
+                for c, mapping in negative_tokens.items():
+                    for old, new in mapping.items():
+                        values[values[:, c] == old, c] = new
+            return values
         return original_load(path, *args, **kwargs)
 
     np.load = load
@@ -97,7 +115,9 @@ def main():
                       command=f'python -I -B ncd/run_section151_er.py --upstream UPSTREAM --dependencies DEPENDENCIES --runtime RUNTIME --data DATA --output OUTPUT --scenario {a.scenario} --seed {a.seed}',
                       log_path='stdout.log; stderr.log', memory_percent=10,
                       adaptations=['Windows DataLoader workers=0; unchanged scientific code',
-                                   'External prepared arrays, per-cell config and checkpoint directory'],
+                                   'External prepared arrays, per-cell config and checkpoint directory',
+                                   'Negative categorical IDs remapped injectively above each column maximum; no rows removed or categories merged.'],
+                      negative_categorical_tokens=negative_tokens,
                       limitations=['Official preprocessing retains duplicates and zero-fills invalid values.',
                                    'Official vocabulary includes train/validation/test feature maxima.',
                                    'Official config uses eight epochs, not the B1 100-epoch schedule.',
