@@ -1,0 +1,748 @@
+{
+  "section": 151,
+  "method": "AR-MLP",
+  "seed": 4,
+  "scenario": 2,
+  "git_commit": "2b4a60045743e53ca47e96a554853d460f50d127",
+  "upstream_commit": "b154c79aaf7c422cc5dc35c9763f2ab1d5775342",
+  "config": {
+    "hidden": 128,
+    "epochs_per_task": 8,
+    "min_steps_per_task": 2000,
+    "batch_size": 256,
+    "eval_batch_size": 2048,
+    "learning_rate": 0.001,
+    "derpp_alpha": 1.0,
+    "derpp_beta": 1.0,
+    "deadline_iso": null
+  },
+  "memory_percent": 10,
+  "data_split_seed": 42,
+  "command": "python -I -B ncd/run_section151_ar.py --upstream UPSTREAM --data DATA --output OUTPUT --scenario 2 --seed 4",
+  "log_path": {
+    "stdout": {
+      "path": "stdout.log.gz",
+      "raw_sha256": "4252d5541ee33315145fb91710942b74149bb42e00df0814cdd726ace33264dd"
+    },
+    "stderr": {
+      "path": "stderr.log.gz",
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "adaptations": [
+    "Official per-experience continuous scaling; categorical scalar columns standardized using task zero TRAIN only.",
+    "Official balanced 10% replay quotas and seeded sampling from seen TRAIN; benign stays in replay.",
+    "No external 50000-row benign refresh in CI; CII uses the current benign partition.",
+    "DER targets cached at each official buffer rebuild after WA; old pools revisited as in official ER.",
+    "Default decision: binary gate argmax then seen-family argmax; no FPR calibration."
+  ],
+  "limitations": [
+    "B2 descriptive adaptation, not B1 or an independent validation of RQ1/RQ3.",
+    "Intransigence requires the paired official oracle; left null until that finishes."
+  ],
+  "completed": true,
+  "elapsed_seconds": 144.995441198349,
+  "checkpoints": [
+    {
+      "task": 0,
+      "accuracy": 0.9972626138752628,
+      "macro_f1": 0.9845382999434427,
+      "argmax_fpr": 0.0028207774337805297,
+      "confusion_matrix": [
+        [
+          43482,
+          123,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          2057,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "gate_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 136991,
+        "batches_per_epoch": 536,
+        "baseline_steps": 4288,
+        "target_steps": 4288,
+        "optimizer_steps": 4288,
+        "completed_epochs": 8,
+        "epochs_started": 8,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "examples_presented": 1095928,
+        "effective_epochs": 8.0,
+        "output_classes_in_ce": 2,
+        "kd_lambda": 0.0,
+        "kd_eligible_rows": 0,
+        "kd_reduction": "mean squared raw logits over eligible rows and both output columns"
+      },
+      "family_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 6176,
+        "batches_per_epoch": 25,
+        "baseline_steps": 200,
+        "target_steps": 2000,
+        "optimizer_steps": 2000,
+        "completed_epochs": 80,
+        "epochs_started": 80,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "examples_presented": 494080,
+        "effective_epochs": 80.0,
+        "output_classes_allocated": 7,
+        "output_classes_in_ce": 1,
+        "single_seen_output_ce_is_degenerate": true,
+        "old_replay_rows": 0,
+        "derpp_alpha": 1.0,
+        "derpp_beta": 1.0,
+        "ema_decay": null,
+        "ema_consistency": null,
+        "masked_mse_policy": "only output columns seen when retained row entered memory; raw finite logits",
+        "dual_distillation_scope": null
+      },
+      "weight_alignment": {
+        "method": "weight_alignment",
+        "old_attack_columns": [],
+        "new_attack_columns": [
+          0
+        ],
+        "bias_treatment": "unchanged",
+        "formula": "new W rows *= mean_old_L2_norm / mean_new_L2_norm",
+        "applied": false,
+        "gamma": 1.0,
+        "optimizer_steps": 0,
+        "reason": "no old or no new attack class; no alignment reference",
+        "elapsed_seconds": 2.70000055024866e-06,
+        "cost_scope": "post-task alignment only; no extra training"
+      },
+      "replay_rows": 13025
+    },
+    {
+      "task": 1,
+      "accuracy": 0.9926126046974756,
+      "macro_f1": 0.9827608934015852,
+      "argmax_fpr": 0.010732714138286893,
+      "confusion_matrix": [
+        [
+          86274,
+          109,
+          812,
+          15,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          2058,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          26,
+          0,
+          46189,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          46,
+          0,
+          0,
+          1054,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "gate_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 285783,
+        "batches_per_epoch": 1117,
+        "baseline_steps": 8936,
+        "target_steps": 8936,
+        "optimizer_steps": 8936,
+        "completed_epochs": 8,
+        "epochs_started": 8,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "examples_presented": 2286264,
+        "effective_epochs": 8.0,
+        "output_classes_in_ce": 2,
+        "kd_lambda": 0.0,
+        "kd_eligible_rows": 0,
+        "kd_reduction": "mean squared raw logits over eligible rows and both output columns"
+      },
+      "family_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 148119,
+        "batches_per_epoch": 579,
+        "baseline_steps": 4632,
+        "target_steps": 4632,
+        "optimizer_steps": 4632,
+        "completed_epochs": 8,
+        "epochs_started": 8,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "examples_presented": 1184952,
+        "effective_epochs": 8.0,
+        "output_classes_allocated": 7,
+        "output_classes_in_ce": 3,
+        "single_seen_output_ce_is_degenerate": false,
+        "old_replay_rows": 6176,
+        "derpp_alpha": 1.0,
+        "derpp_beta": 1.0,
+        "ema_decay": null,
+        "ema_consistency": null,
+        "masked_mse_policy": "only output columns seen when retained row entered memory; raw finite logits",
+        "dual_distillation_scope": null
+      },
+      "weight_alignment": {
+        "method": "weight_alignment",
+        "old_attack_columns": [
+          0
+        ],
+        "new_attack_columns": [
+          1,
+          2
+        ],
+        "bias_treatment": "unchanged",
+        "formula": "new W rows *= mean_old_L2_norm / mean_new_L2_norm",
+        "applied": true,
+        "gamma": 0.5952948927879333,
+        "optimizer_steps": 0,
+        "old_norms_before": [
+          0.8825934529304504
+        ],
+        "new_norms_before": [
+          1.5901238918304443,
+          1.3751072883605957
+        ],
+        "old_mean_norm": 0.8825934529304504,
+        "new_mean_norm_before": 1.48261559009552,
+        "new_mean_norm_after": 0.8825934529304504,
+        "elapsed_seconds": 0.0004704000002675457,
+        "cost_scope": "post-task alignment only; no extra training"
+      },
+      "replay_rows": 29961
+    },
+    {
+      "task": 2,
+      "accuracy": 0.9890398828005422,
+      "macro_f1": 0.9571020059578218,
+      "argmax_fpr": 0.01504414631349616,
+      "confusion_matrix": [
+        [
+          128847,
+          125,
+          1342,
+          400,
+          30,
+          71,
+          0,
+          0
+        ],
+        [
+          1,
+          2058,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          46211,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          1096,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          9,
+          0,
+          0,
+          1,
+          1149,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          3,
+          0,
+          11,
+          1570,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "gate_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 169016,
+        "batches_per_epoch": 661,
+        "baseline_steps": 5288,
+        "target_steps": 5288,
+        "optimizer_steps": 5288,
+        "completed_epochs": 8,
+        "epochs_started": 8,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "examples_presented": 1352128,
+        "effective_epochs": 8.0,
+        "output_classes_in_ce": 2,
+        "kd_lambda": 0.0,
+        "kd_eligible_rows": 0,
+        "kd_reduction": "mean squared raw logits over eligible rows and both output columns"
+      },
+      "family_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 27958,
+        "batches_per_epoch": 110,
+        "baseline_steps": 880,
+        "target_steps": 2000,
+        "optimizer_steps": 2000,
+        "completed_epochs": 18,
+        "epochs_started": 19,
+        "partial_epoch_batches": 20,
+        "partial_epoch_examples": 5120,
+        "examples_presented": 508364,
+        "effective_epochs": 18.18313184061807,
+        "output_classes_allocated": 7,
+        "output_classes_in_ce": 5,
+        "single_seen_output_ce_is_degenerate": false,
+        "old_replay_rows": 19718,
+        "derpp_alpha": 1.0,
+        "derpp_beta": 1.0,
+        "ema_decay": null,
+        "ema_consistency": null,
+        "masked_mse_policy": "only output columns seen when retained row entered memory; raw finite logits",
+        "dual_distillation_scope": null
+      },
+      "weight_alignment": {
+        "method": "weight_alignment",
+        "old_attack_columns": [
+          0,
+          1,
+          2
+        ],
+        "new_attack_columns": [
+          3,
+          4
+        ],
+        "bias_treatment": "unchanged",
+        "formula": "new W rows *= mean_old_L2_norm / mean_new_L2_norm",
+        "applied": true,
+        "gamma": 0.5968339443206787,
+        "optimizer_steps": 0,
+        "old_norms_before": [
+          0.9082448482513428,
+          0.934411346912384,
+          0.7961413264274597
+        ],
+        "new_norms_before": [
+          1.4697202444076538,
+          1.4778306484222412
+        ],
+        "old_mean_norm": 0.8795991539955139,
+        "new_mean_norm_before": 1.4737753868103027,
+        "new_mean_norm_after": 0.8795992136001587,
+        "elapsed_seconds": 0.0002981999996336526,
+        "cost_scope": "post-task alignment only; no extra training"
+      },
+      "replay_rows": 36007
+    },
+    {
+      "task": 3,
+      "accuracy": 0.9933515718658195,
+      "macro_f1": 0.977703405711449,
+      "argmax_fpr": 0.008198554073190728,
+      "confusion_matrix": [
+        [
+          172991,
+          60,
+          1051,
+          71,
+          36,
+          170,
+          0,
+          42
+        ],
+        [
+          3,
+          2056,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          10,
+          0,
+          46177,
+          28,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          1096,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          7,
+          0,
+          0,
+          0,
+          1152,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          2,
+          0,
+          9,
+          1574,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0
+        ],
+        [
+          18,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1161
+        ]
+      ],
+      "gate_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 170370,
+        "batches_per_epoch": 666,
+        "baseline_steps": 5328,
+        "target_steps": 5328,
+        "optimizer_steps": 5328,
+        "completed_epochs": 8,
+        "epochs_started": 8,
+        "partial_epoch_batches": 0,
+        "partial_epoch_examples": 0,
+        "examples_presented": 1362960,
+        "effective_epochs": 8.0,
+        "output_classes_in_ce": 2,
+        "kd_lambda": 0.0,
+        "kd_eligible_rows": 0,
+        "kd_reduction": "mean squared raw logits over eligible rows and both output columns"
+      },
+      "family_schedule": {
+        "requested_epochs": 8,
+        "min_steps_per_task": 2000,
+        "rows_per_epoch": 30406,
+        "batches_per_epoch": 119,
+        "baseline_steps": 952,
+        "target_steps": 2000,
+        "optimizer_steps": 2000,
+        "completed_epochs": 16,
+        "epochs_started": 17,
+        "partial_epoch_batches": 96,
+        "partial_epoch_examples": 24576,
+        "examples_presented": 511072,
+        "effective_epochs": 16.80826152733013,
+        "output_classes_allocated": 7,
+        "output_classes_in_ce": 7,
+        "single_seen_output_ce_is_degenerate": false,
+        "old_replay_rows": 26861,
+        "derpp_alpha": 1.0,
+        "derpp_beta": 1.0,
+        "ema_decay": null,
+        "ema_consistency": null,
+        "masked_mse_policy": "only output columns seen when retained row entered memory; raw finite logits",
+        "dual_distillation_scope": null
+      },
+      "weight_alignment": {
+        "method": "weight_alignment",
+        "old_attack_columns": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "new_attack_columns": [
+          5,
+          6
+        ],
+        "bias_treatment": "unchanged",
+        "formula": "new W rows *= mean_old_L2_norm / mean_new_L2_norm",
+        "applied": true,
+        "gamma": 0.6895114779472351,
+        "optimizer_steps": 0,
+        "old_norms_before": [
+          0.9006286859512329,
+          0.8975611329078674,
+          0.7950485348701477,
+          0.8826342225074768,
+          0.9584485292434692
+        ],
+        "new_norms_before": [
+          0.9771417379379272,
+          1.5953004360198975
+        ],
+        "old_mean_norm": 0.886864185333252,
+        "new_mean_norm_before": 1.2862210273742676,
+        "new_mean_norm_after": 0.8868641257286072,
+        "elapsed_seconds": 0.0003737999995792052,
+        "cost_scope": "post-task alignment only; no extra training"
+      },
+      "replay_rows": 38338
+    }
+  ],
+  "accuracy_matrix": [
+    [
+      0.9972626138752628,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.9973502102312544,
+      0.9902331720193577,
+      0.0,
+      0.0
+    ],
+    [
+      0.9964742466713384,
+      0.9810382754069512,
+      0.9974111149464964,
+      0.0
+    ],
+    [
+      0.9981604765241766,
+      0.9872525296964364,
+      0.9950811183983431,
+      0.9990398999709738
+    ]
+  ],
+  "f1_matrix": [
+    [
+      0.9845382999434427,
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.9862906532321782,
+      0.9848288915526325,
+      0.0,
+      0.0
+    ],
+    [
+      0.985715122316718,
+      0.9392600672319166,
+      0.9874268558817502,
+      0.0
+    ],
+    [
+      0.9922090822445682,
+      0.9773363406814299,
+      0.9734042412130542,
+      0.9943294948703563
+    ]
+  ],
+  "intransigence": null,
+  "final_forgetting_accuracy": 0.0015001241927174263,
+  "final_forgetting_macro_f1": 0.005198912175836197,
+  "intransigence_status": "paired oracle pending",
+  "final_metrics": {
+    "accuracy": 0.9933515718658195,
+    "macro_f1": 0.977703405711449,
+    "argmax_fpr": 0.008198554073190728
+  }
+}
