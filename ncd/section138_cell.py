@@ -63,10 +63,7 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             family.load_state_dict(state["family_state"], strict=True)
             memory = aa.memory_from_tensors(state["attack_memory"])
         else:
-            current = exposure(index)
-            if literature_memory and index:
-                # Benign is an old class: no fresh optimization or stopping rows.
-                current.pop(normal, None)
+            current = exposure(index, include_normal=not literature_memory or index == 0)
             slots = {c: current[c] if c in current else memory[c] for c in seen}
             normal_pool = exposure.train[normal]
             if config.get("section156") and switches["normal_training_rows"] == 500000:

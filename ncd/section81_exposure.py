@@ -36,7 +36,7 @@ class ERExposure:
             c: int(np.count_nonzero(data.y_train == c))
             for c in range(len(data.class_order))}
 
-    def __call__(self, task_index):
+    def __call__(self, task_index, *, include_normal=True):
         if not 0 <= task_index < len(self.data.tasks):
             raise ValueError("Invalid B1 task index")
         task = self.data.tasks[task_index]
@@ -45,10 +45,12 @@ class ERExposure:
         if new & earlier:
             raise ValueError("B1 task would reread an old attack class")
         task_seed = self.seed * 10000 + task_index
-        normal_ids = select_rows(self.train[self.normal], 50000,
-                                 task_seed * 10007 + self.normal)
-        stopping = np.isin(normal_ids, self.normal_stopping_ids)
-        pairs = {self.normal: (normal_ids[~stopping], normal_ids[stopping])}
+        pairs = {}
+        if include_normal:
+            normal_ids = select_rows(self.train[self.normal], 50000,
+                                     task_seed * 10007 + self.normal)
+            stopping = np.isin(normal_ids, self.normal_stopping_ids)
+            pairs[self.normal] = (normal_ids[~stopping], normal_ids[stopping])
         pairs.update({c: (self.train[c], self.valid[c]) for c in sorted(new)})
         slots = {}
         for c, (train_ids, validation_ids) in pairs.items():
