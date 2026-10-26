@@ -50,6 +50,41 @@ class HistGBModule(torch.nn.Module):
         return torch.as_tensor(scores, device=x.device)
 
 
+class ReplayGBDTGate(HistGBModule):
+    """One joint classifier: internal column zero is benign."""
+    def joint_logits(self, x):
+        return super().forward(x)
+
+    def forward(self, x):
+        logits = self.joint_logits(x)
+        margin = torch.logsumexp(logits[:, 1:], dim=1) - logits[:, 0]
+        return torch.stack((-margin / 2, margin / 2), dim=1)
+
+
+class ReplayGBDTFamily(torch.nn.Module):
+    """Attack view of the same estimator, not a second trained classifier."""
+    def __init__(self, joint):
+        super().__init__()
+        self.joint = joint
+
+    def set_seen(self, columns):
+        self.joint.set_seen([0, *[c + 1 for c in columns]])
+
+    def forward(self, x):
+        return self.joint.joint_logits(x)[:, 1:]
+
+
+class ReplayGBDTGlobal(torch.nn.Module):
+    """Original single-model argmax view in dataset class order."""
+    def __init__(self, joint, normal, attacks):
+        super().__init__()
+        self.joint = joint
+        self.order = [([normal, *attacks]).index(c) for c in range(len(attacks) + 1)]
+
+    def forward(self, x):
+        return self.joint.joint_logits(x)[:, self.order]
+
+
 def train_gate(model, x, y, *, kind, config, seed, device, training_ids,
                stopping_ids, calibration_ids, stopping_x, stopping_y):
     """Stateless gate dispatch; caller creates a fresh model at every task."""
@@ -93,6 +128,9 @@ def build_models(configuration, dataset, feature_names, task0_training_x, attack
     """Factorial gate variants with f1/f2; other trajectories fail explicitly."""
     from ncd.section138_models import Classifier, Family
     from ncd.section81_tabtransformer import fit_feature_spec
+    if configuration.special in ("C1", "C2"):
+        gate = ReplayGBDTGate(attack_classes + 1)
+        return gate, ReplayGBDTFamily(gate), None
     if configuration.special or configuration.family == 3:
         raise NotImplementedError("f3 and special trajectories are not integrated yet")
     spec = fit_feature_spec(dataset, feature_names, task0_training_x)

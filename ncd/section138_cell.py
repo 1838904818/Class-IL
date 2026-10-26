@@ -72,18 +72,25 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
                 normal_ids = normal_ids[~np.isin(normal_ids, exposure.normal_stopping_ids)]
             ids = np.concatenate([normal_ids, *[slots[c]["train_ids"] for c in seen if c != normal]])
             gx = data.x_train[ids].copy()
+            control = switches.get("control", False)
             gy = (data.y_train[ids] != normal).astype(np.int64)
             stop_ids = np.concatenate([slots[c]["validation_ids"] for c in seen])
+            stop_y = (data.y_train[stop_ids] != normal).astype(np.int64)
+            if control:
+                gy = np.asarray([0 if c == normal else mapping[int(c)] + 1 for c in data.y_train[ids]])
+                stop_y = np.asarray([0 if c == normal else mapping[int(c)] + 1 for c in data.y_train[stop_ids]])
             gate_seconds, gate_stats = (gate_trainer or train_gate_schedule)(
                 gate, gx, gy, schedule=switches["gate_schedule"], config=config, seed=task_seed,
                 device=device, training_ids=ids, stopping_ids=stop_ids,
                 calibration_ids=exposure.calibration_ids, stopping_x=data.x_train[stop_ids],
-                stopping_y=(data.y_train[stop_ids] != normal).astype(np.int64))
+                stopping_y=stop_y)
             fx = np.concatenate([slots[c]["train_x"] for c in seen if c != normal])
             fy = np.concatenate([np.full(len(slots[c]["train_ids"]), mapping[c], dtype=np.int64)
                                  for c in seen if c != normal])
-            tree_family = switches.get("family") == "histgb"
-            if tree_family:
+            tree_family = switches.get("family") == "histgb" or control
+            if control:
+                family_seconds, family_stats = 0., dict(backend="shared_joint_histgb", separately_trained=False)
+            elif tree_family:
                 from ncd.section156_models import train_histgb_family
                 family_ids = np.concatenate([slots[c]["train_ids"] for c in seen if c != normal])
                 family_stop = np.concatenate([slots[c]["validation_ids"] for c in seen if c != normal])
@@ -115,8 +122,13 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
         calibration = aa.calibrate_gate(gate, data.x_train[exposure.calibration_ids],
                                         exposure.calibration_ids, device, 4096)
         points = aa.evaluate_pair(gate, family, data, seen, attacks, calibration, config, device)
-        default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, gate,
-                                  family=family, attack_ids=attacks)
+        if switches.get("control", False):
+            from ncd.section156_models import ReplayGBDTGlobal
+            default = evaluate_models(data.x_test, data.y_test, seen, data.class_order,
+                                      ReplayGBDTGlobal(gate, normal, attacks))
+        else:
+            default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, gate,
+                                      family=family, attack_ids=attacks)
         record = dict(task_index=index, seen_classes=seen,
             checkpoint_file=checkpoint.relative_to(output).as_posix(), checkpoint_sha256=digest(checkpoint),
             gate_schedule=state["gate_schedule"], family_schedule=state["family_schedule"],

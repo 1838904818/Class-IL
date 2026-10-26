@@ -29,8 +29,8 @@ def main():
     from ncd.section156_models import build_models, train_gate
     from ncd.source_commit import source_commit
     cfg = next(c for c in configurations() if c.identifier == a.configuration)
-    if cfg.special or cfg.family == 3:
-        p.error("This integration currently supports g1-g4/f1-f2/n1-n2 only")
+    if cfg.special in ("T3", "T4", "T5") or cfg.family == 3:
+        p.error("f3 and T3-T5 are not integrated yet")
     torch.set_num_threads(4)
     torch.set_num_interop_threads(1)
     config = json.loads((ROOT / "ncd/configs/problem_scout_section21.json").read_text())
@@ -51,7 +51,8 @@ def main():
         method=cfg.identifier, effective_config=config, data_binding=binding(data, None, None),
         command=sys.argv, output_role="smoke" if a.smoke else "screen", smoke=a.smoke)
     def trainer(model, x, y, *, schedule, **kwargs):
-        return train_gate(model, x, y, kind=cfg.switches()["gate"], **kwargs)
+        kind = "histgb" if cfg.switches()["control"] else cfg.switches()["gate"]
+        return train_gate(model, x, y, kind=kind, **kwargs)
     result = run_cell(data, config, identity, output / "cell", cfg,
                       model_builder=build_models, gate_trainer=trainer)
     save_json(output / "summary.json", dict(completed=True, scientific_result=not a.smoke,
