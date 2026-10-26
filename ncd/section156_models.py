@@ -1,9 +1,80 @@
 """Section156 model primitives; trajectory integration is required before use."""
 import math
+import time
 
 import numpy as np
 import torch
 from sklearn.ensemble import HistGradientBoostingClassifier
+
+
+class HistGBModule(torch.nn.Module):
+    """CPU estimator with torch inference interface; checkpoint via extra state.
+
+    Only trusted locally produced checkpoints may be loaded: extra state holds
+    the fitted sklearn estimator, not merely tensors.
+    """
+    def __init__(self, outputs):
+        super().__init__()
+        self.outputs = outputs
+        self.estimator = None
+
+    def get_extra_state(self):
+        return dict(outputs=self.outputs, estimator=self.estimator)
+
+    def set_extra_state(self, state):
+        if state["outputs"] != self.outputs:
+            raise ValueError("HistGB checkpoint output mismatch")
+        self.estimator = state["estimator"]
+
+    def forward(self, x):
+        if self.estimator is None:
+            raise RuntimeError("HistGB estimator is not fitted")
+        raw = self.estimator.decision_function(x.detach().cpu().numpy())
+        classes = self.estimator.classes_.astype(int)
+        if np.ndim(raw) == 1:
+            raw = np.stack((-raw / 2, raw / 2), axis=1)
+        scores = np.full((len(x), self.outputs), -1e6, dtype=np.float32)
+        scores[:, classes] = raw
+        return torch.as_tensor(scores, device=x.device)
+
+
+def train_gate(model, x, y, *, kind, config, seed, device, training_ids,
+               stopping_ids, calibration_ids, stopping_x, stopping_y):
+    """Stateless gate dispatch; caller creates a fresh model at every task."""
+    from ncd.section123_es_training import assert_disjoint_roles, train_es
+    from ncd.crr_benchmarks import _class_balanced_cross_entropy
+    from ncd.train_cil import seed_everything
+    assert_disjoint_roles(training_ids, stopping_ids, calibration_ids)
+    started = time.perf_counter()
+    if kind == "histgb":
+        model.estimator = fit_histgb(x, y, stopping_x=stopping_x,
+            stopping_y=stopping_y, seed=seed, training_ids=training_ids,
+            stopping_ids=stopping_ids, calibration_ids=calibration_ids)
+        stats = dict(iterations=int(model.estimator.n_iter_), backend="histgb")
+    elif kind in ("embedding", "ensemble5", "partial_auc"):
+        members = model.members if kind == "ensemble5" else [model]
+        histories = []
+        for k, member in enumerate(members):
+            member_seed = seed + 7919 * k
+            seed_everything(member_seed)
+            # Reset each independent network after setting its own init seed.
+            for module in member.modules():
+                if hasattr(module, "reset_parameters"):
+                    module.reset_parameters()
+            def objective(m, bx, by):
+                logits = m(bx)
+                ce = _class_balanced_cross_entropy(logits, by)
+                return ce + partial_auc_penalty(logits, by) if kind == "partial_auc" else ce
+            histories.append(train_es(member, x, y, stopping_x, stopping_y,
+                objective=objective, logits=lambda m, bx: m(bx),
+                seen_classes=(0, 1), seed=member_seed, device=device,
+                config=config, smoke=bool(config.get("smoke", False))))
+        stats = dict(members=histories, backend=kind)
+    else:
+        raise NotImplementedError(f"Gate backend not integrated: {kind}")
+    elapsed = time.perf_counter() - started
+    stats.update(elapsed_seconds=elapsed, gate_retention=False)
+    return elapsed, stats
 
 
 def fit_histgb(x, y, *, stopping_x, stopping_y, seed, training_ids,
