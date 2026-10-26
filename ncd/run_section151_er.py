@@ -39,12 +39,14 @@ def main():
     (output / 'model').mkdir()
     shutil.copy2(upstream / 'configs/config.yaml', output / 'configs/config.yaml')
     os.environ.update(WANDB_MODE='disabled', OMP_NUM_THREADS='2', MKL_NUM_THREADS='2',
-                      OPENBLAS_NUM_THREADS='2', CUBLAS_WORKSPACE_CONFIG=':4096:8')
+                      OPENBLAS_NUM_THREADS='2', CUBLAS_WORKSPACE_CONFIG=':4096:8',
+                      TORCH_BLAS_PREFER_CUBLASLT='0', CUDA_LAUNCH_BLOCKING='1')
     sys.path[:0] = [str(a.dependencies.resolve()), str(a.runtime.resolve()), str(upstream)]
     import numpy as np
     import torch
     torch.set_num_threads(2)
     torch.set_num_interop_threads(1)
+    torch.backends.cuda.preferred_blas_library('cublas')
     if not torch.cuda.is_available():
         raise RuntimeError('B2 ER requires local CUDA')
     report = json.loads((data / 'data_report.json').read_text())
