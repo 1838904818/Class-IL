@@ -21,8 +21,12 @@ def main():
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-root", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
+    p.add_argument("--literature-memory-smoke", action="store_true",
+                   help="Section165 R3-L smoke only; joint C1 with 200 rows per seen class")
     p.add_argument("--threads", type=int, default=4, choices=(1, 2, 4))
     a = p.parse_args()
+    if a.literature_memory_smoke and (not a.smoke or a.configuration != "C1"):
+        p.error("Literature-memory smoke requires --smoke --configuration C1")
     os.environ["OMP_NUM_THREADS"] = str(a.threads)
     os.environ["MKL_NUM_THREADS"] = str(a.threads)
     import torch
@@ -44,6 +48,8 @@ def main():
         derpp_alpha=1., derpp_beta=1., deadline_iso=None,
         normal_training_rows=cfg.switches()["normal_training_rows"],
         ema_decay=.999, ema_consistency=1., hidden=128, section156=cfg.switches())
+    if a.literature_memory_smoke:
+        config["section165_memory"] = "literature"
     output = a.output_root.resolve() / ("smoke" if a.smoke else "screen") / a.dataset.lower() / cfg.identifier / f"seed{a.seed}"
     output.mkdir(parents=True, exist_ok=False)
     started = time.perf_counter()

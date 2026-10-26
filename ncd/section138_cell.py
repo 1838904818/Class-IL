@@ -34,6 +34,9 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
     attacks = [c for c in range(len(data.class_order)) if c != normal]
     mapping = {c: i for i, c in enumerate(attacks)}
     switches = configuration.switches()
+    literature_memory = config.get("section165_memory") == "literature"
+    if literature_memory and not switches.get("control", False):
+        raise ValueError("Literature-memory ablation requires the joint tree control")
     first = exposure(0)
     first_x = []
     for c in sorted(first):
@@ -61,6 +64,9 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             memory = aa.memory_from_tensors(state["attack_memory"])
         else:
             current = exposure(index)
+            if literature_memory and index:
+                # Benign is an old class: no fresh optimization or stopping rows.
+                current.pop(normal, None)
             slots = {c: current[c] if c in current else memory[c] for c in seen}
             normal_pool = exposure.train[normal]
             if config.get("section156") and switches["normal_training_rows"] == 500000:
@@ -70,6 +76,8 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             normal_ids = aa.select_rows(normal_pool, switches["normal_training_rows"], task_seed * 10007 + normal)
             if configuration.gate_schedule == 2:
                 normal_ids = normal_ids[~np.isin(normal_ids, exposure.normal_stopping_ids)]
+            if literature_memory:
+                normal_ids = slots[normal]["train_ids"]
             ids = np.concatenate([normal_ids, *[slots[c]["train_ids"] for c in seen if c != normal]])
             gx = data.x_train[ids].copy()
             control = switches.get("control", False)
@@ -102,8 +110,21 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             else:
                 family_seconds, family_stats = train_compact_family(
                     family, fx, fy, memory, mapping, config, task_seed, device)
-            next_memory = aa.refresh_attack_memory(data, exposure.train, exposure.valid, memory, new,
-                aa.attack_targets("aacil", seen, normal), seed, index)
+            if literature_memory:
+                train_pools = dict(exposure.train)
+                valid_pools = dict(exposure.valid)
+                # Initial benign admission uses the same fixed roles as C1.
+                # Later refreshes can only subselect retained rows, never reread.
+                if index == 0:
+                    train_pools[normal] = current[normal]["train_ids"]
+                    valid_pools[normal] = current[normal]["validation_ids"]
+                next_memory = aa.refresh_attack_memory(
+                    data, train_pools, valid_pools, memory,
+                    new + ([normal] if index == 0 else []),
+                    {c: 200 for c in seen}, seed, index)
+            else:
+                next_memory = aa.refresh_attack_memory(data, exposure.train, exposure.valid, memory, new,
+                    aa.attack_targets("aacil", seen, normal), seed, index)
             if tree_family:
                 post = dict(operations=[], logits_stored=False, weight_alignment=False, cbf=False)
             else:
