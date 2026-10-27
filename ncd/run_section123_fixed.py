@@ -24,7 +24,7 @@ from ncd.source_commit import source_commit
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018"), required=True)
-    p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb"), required=True)
+    p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb", "derpp"), required=True)
     p.add_argument("--seed", type=int, choices=range(10, 15), required=True)
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
@@ -54,6 +54,11 @@ def main():
             calibration_protocol=bs.CALIBRATION_PROTOCOL, deadline="9999-12-31T23:59:59+00:00")
     if a.method in ("freq", "wacb"):
         config.update(section26=True, section26_schema_version=2, section26_access_policy=ps.SECTION26_POLICY)
+    if a.method == "derpp":
+        config.update(section178_literature=True, section26=False,
+            derpp_alpha=.3, derpp_beta=.5,
+            derpp_coefficient_source=ps.DERPP_REFERENCE,
+            derpp_allocation_adaptation="Classwise reservoir 200/class including Normal; no refreshed stream; permanent holdout excluded from training")
     output = a.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=a.resume)
     started = time.perf_counter()
@@ -94,7 +99,7 @@ def main():
             family.assert_capacity()
         else:
             model.load_state_dict(state["model_state"], strict=True)
-        if a.method in ("freq", "wacb"):
+        if a.method in ("freq", "wacb", "derpp"):
             calibration, points, cal_seconds, eval_seconds = bs.evaluate(
                 model, data, cp["seen_classes"], valid[data.class_order.index("Normal")], counts, config, device)
             calibrated.append(dict(task_index=cp["task_index"], calibration=calibration,

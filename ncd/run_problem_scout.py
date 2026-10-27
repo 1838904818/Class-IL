@@ -509,7 +509,10 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
     section26 = bool(config.get("section26", False))
     if section26 and config.get("section26_access_policy") != SECTION26_POLICY:
         raise ValueError("Section26.9 requires the new benign-only-refresh policy")
-    train_pools, valid_pools = section26_pools(data, seed) if section26 else ({}, {})
+    literature_confirmation = bool(config.get("section178_literature", False))
+    if literature_confirmation and (section26 or method != "derpp"):
+        raise ValueError("Section178 DER++ requires non-refresh memory path")
+    train_pools, valid_pools = section26_pools(data, seed) if section26 or literature_confirmation else ({}, {})
     validation_x, validation_y = [], []
     buffer_ids, validation_ids = {}, {}
     model = MLP(data.x_train.shape[1], int(config["hidden"]), len(data.class_order)).to(device)
@@ -546,7 +549,7 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
                 # Joint is never warm-started, even after a resumed checkpoint.
                 model = MLP(data.x_train.shape[1], int(config["hidden"]), len(data.class_order)).to(device)
             selected_classes = seen if method == "joint" else tuple(task)
-            if section26:
+            if section26 or literature_confirmation:
                 indices = np.sort(np.concatenate([train_pools[c] for c in selected_classes]))
                 current_x, current_y = data.x_train[indices], data.y_train[indices]
             elif method == "joint" and len(seen) == len(data.class_order):
