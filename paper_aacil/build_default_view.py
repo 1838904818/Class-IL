@@ -39,10 +39,12 @@ def build():
                 r'\caption{'+dataset.upper()+r': literature-comparable view (default decision, no FPR calibration). Seeds 10--14, mean $\pm$ sample SD; percentages or percentage points. ACC is mean stage micro accuracy; BWT is mean old-class recall change since introduction; forgetting is signed best pre-final minus final old-class recall, including Normal. NA denotes no published default view in this seed block, not a zero or an omitted failed seed.}',
                 r'\label{tab:default-'+slug+'}',r'\begin{tabular}{lrrrrrrr}\toprule',
                 r'Method & $n/5$ & Accuracy & Macro-F1 & Weighted-F1 & ACC & BWT & Forgetting \\\midrule']
-        for method, label in [('replay','Replay'),('derpp','DER++'),('wacb','WACB'),('freq','Freq'),('replay_bs','Replay-BS'),('aa_cil','AA-CIL'),('kdwa','KD+WA'),('akd','AKD'),('joint','Joint (offline)'),('ar','AR'),('ar_joint','AR-Joint'),('er_bal_tabt','ER-Bal-TabT')]:
+        for method, label in [('R3-A','AR-Stateless'),('R3-L','R3-L'),('replay','Replay'),('derpp','DER++'),('wacb','WACB'),('freq','Freq'),('replay_bs','Replay-BS'),('aa_cil','AA-CIL'),('kdwa','KD+WA'),('akd','AKD'),('joint','Joint (offline)'),('ar','AR'),('ar_joint','AR-Joint'),('er_bal_tabt','ER-Bal-TabT')]:
             rows = []
             for seed in range(10,15):
                 path = RESULTS/'section123_confirmation'/dataset/f'{method}_seed{seed}.json'
+                if method.startswith('R3-'):
+                    path = RESULTS/'section165_confirmation'/dataset/f'{method}_seed{seed}/result.json'
                 if method == 'er_bal_tabt':
                     path = RESULTS/'section137_defaults'/f'{slug}_seed{seed}.json'
                 if not path.exists():
@@ -53,7 +55,7 @@ def build():
                     tasks = source['identity']['tasks']
                     stages = [cp['default_decision'] for cp in r['checkpoints']]
                 else:
-                    tasks = r['tasks']
+                    tasks = r.get('tasks', r.get('identity', {}).get('tasks'))
                     stages = [cp['metrics'] for cp in r['default_stages']] if 'default_stages' in r else [cp['default_decision'] for cp in r['checkpoints']]
                 computed = metrics(stages,tasks)
                 if method == 'er_bal_tabt':

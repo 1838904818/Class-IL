@@ -87,7 +87,7 @@ New-seed lead-reported supplement: 2026-10-21 08:15 MYT}
 \raggedbottom
 \maketitle
 \begin{abstract}
-Class-incremental network intrusion detection must retain old attacks while learning new ones. We study a refreshed benign--attack gate and an attack-only family classifier under explicit asymmetric data availability. Default decisions supply the main accuracy, F1, ACC, BWT and forgetting comparison; strict false-alarm calibration is a separate deployment analysis. Existing replay, distillation, weight alignment and calibration are not claimed as novel. The evidence supports a retention--plasticity trade-off, not a universal accuracy winner. Earlier KD+WA and CSE18 final-accuracy comparisons remain negative. A complete 48-configuration design-space screen followed by evaluation of three selected configurations on five fresh seeds confirms none: all fail K1 on both datasets. At the 1\% calibration target the leading candidate's final balanced accuracy is 51.2\% on UNSW and 90.0\% on CIC, below ER-Bal-TabT's 56.3\% and 92.7\%; its lower forgetting is dataset-dependent. Non-significant harm is not equivalence or non-inferiority. These prediction/retention results neither establish explanation stability or non-suppressive governance efficacy nor close the substantive-innovation requirement.
+Class-incremental network intrusion detection must retain old attacks while learning new ones. Under explicit asymmetric data availability, AR-Stateless retrains a standard histogram-based gradient-boosted learner using refreshed benign data and attack-only memory. Five paired confirmation seeds yield final balanced accuracy of 65.4\% on UNSW-NB15 and 98.3\% on CIC-IDS-2017 at a 1\% calibration false-positive-rate target, compared with ER-Bal-TabT's 56.3\% and 92.7\%. Signed forgetting is lower against this comparator in this view, but not uniformly across methods or decision views. On the previously exposed CSE-CIC-IDS2018 dataset, final balanced accuracy is 81.7\%; the 2.1-point margin over the same-learner literature-memory control is narrow (paired one-sided t $p=0.0491$, exact sign-flip $p=0.0625$), and forgetting is higher than both that control and neural AR. Calibration targets are not guaranteed test false-positive rates. Historical neural-candidate failures remain part of the design-space evidence, and added published-method comparisons are incomplete. Standard learners, replay and calibration are not claimed as novel. These bounded prediction/retention results do not establish explanation stability, governance efficacy or completion of the substantive-innovation requirement.
 In the five-seed default-decision comparison, AR exceeds ER-Bal-TabT on UNSW by 1.6 points in accuracy and 2.7 in macro-F1, but trails on CIC by 3.4 and 14.8 points. Under the low-FPR protocol AR trails ER on both datasets; there is no overall winner. These exploratory differences do not override the two-sided exact sign-flip sensitivity result ($p\geq0.0625$ with five pairs).
 \end{abstract}
 \noindent\textbf{Keywords:} continual learning; intrusion detection; benign data availability; false-positive calibration; replay memory.
@@ -99,7 +99,7 @@ The asymmetry is useful only under an explicit assumption. The learner must have
 
 Replay-based NIDS research includes class balancing, frequency-aware replacement, representative selection, and other memory designs \citep{cbrs,ecbrs,ssf,acil}. Some multiclass formulations place Normal and attack classes in a common classifier and replay budget. However, this is not a universal description of the literature: binary and novelty-detection methods use different protocols, and prior domain-adaptation work has already used new benign data outside an old attack memory \citep{cerasuolo_rtsi}. The question is therefore not whether benign data have ever been treated differently. It is whether a continuously refreshed, independently calibrated detector provides useful retention and detection behavior in a multistage class-incremental experiment.
 
-We study availability-asymmetric class-incremental learning (AA-CIL). A binary gate $G$ is updated using newly sampled benign data, current attacks, and stored old attacks. A separate classifier $F$ predicts attack families. A benign-only calibration pool sets $G$'s operating threshold without test labels. Memory allocation to attack families is evaluated as a secondary component rather than presented as the principal mechanism.
+We study learning under asymmetric data availability. The selected AR-Stateless candidate fits a fresh multiclass tree learner at each task using newly sampled benign data, current attacks and retained old attacks. A disjoint benign-only calibration pool supplies the optional low-FPR operating point without test labels. The preceding AA-CIL design used a binary gate $G$ and a separate attack-family classifier $F$; it and later neural retention variants are retained as historical design-space controls, not conflated with the selected stateless learner.
 
 The contribution is an evidence-bounded experimental study:
 \begin{itemize}
@@ -175,7 +175,26 @@ Under the registered correction sweep, the best tested correction/base combinati
 \subsection{Why change the learning organization?}
 The preceding FARQ experiments adjusted shared replay allocation using measured validation false alarms. Their registered main criterion failed, and descriptive operating curves did not establish a universally superior false-alarm/detection frontier. Replay+LA and Replay share the same attainable predictions when the total adjustment is recalibrated; this does not make all allocation methods threshold-equivalent. WACB and Freq change the learned model and improve detection relative to Replay at evaluated matched-FPR points on UNSW-NB15 and CIC-IDS-2017. Memory reallocation can therefore improve the measured trade-off, although it does not close every offline-reference gap. These finite operating-point comparisons are not a global frontier theorem. AA-CIL tests a different learning organization, not a premise that every shared-classifier method merely moves along one common curve.
 
-\section{Method: AA-CIL}
+\section{Method: AR-Stateless and historical neural controls}
+\subsection{Selected stateless learner}
+AR-Stateless (R3-A) uses one standard multiclass histogram-based
+gradient-boosted learner, including Normal, rather than the two neural
+networks described below. Each task fits a new learner from scratch on the
+current new-class training rows, the retained old attack memory, and the
+task's benign training sample. No learned model parameters are carried into
+the next task. The attack-memory budget is $200K_t$, where $K_t$ includes
+Normal; Normal's share is transferred to attacks. Old attack examples cannot
+be replenished from their original pools. The benign calibration pool is
+permanently excluded from fitting. Default inference chooses the highest
+scoring seen class; the low-FPR view separately calibrates the attack-versus-
+benign score. R3-L retains the same learner but stores 200 examples of each
+seen class, including Normal, without refreshed benign access.
+
+The neural gate/family design, retention objectives and architecture diagram
+in the following subsections are historical controls in the design-space
+study, not the architecture or optimization procedure of AR-Stateless.
+The shared access assumption is stated first; neural-specific update counts,
+cross-entropy, distillation and weight alignment do not apply to the tree.
 \subsection{Data roles and access assumption}
 At update $t$, let $\mathcal A_t$ be the observed attack families and $\mathcal N_t$ the newly introduced attack families. The learner receives their current training data $D_t^A$, retained old attack training memory $R_{t-1}^{A,\mathrm{tr}}$, and a benign training source $B^{\mathrm{tr}}$. A permanent benign calibration pool $B^{\mathrm{cal}}$ is disjoint from every optimizer input. We assume continued access to $B^{\mathrm{tr}}$ but not to the original pools of old attacks.
 
@@ -283,6 +302,30 @@ We use the prepared NSL-KDD, deduplicated UNSW-NB15, and CIC-IDS-2017 benchmarks
 \generatedtable{protocol}{Dataset and protocol table}
 \generatedtable{dataset_details}{Dataset preparation and task details}
 \CSEProtocolText
+
+\subsection{AR-Stateless confirmation under asymmetric availability}
+The later R3-A candidate (AR-Stateless) retrains a standard histogram-based
+gradient-boosted learner at each task using fresh benign data and attack-only
+memory. Its total memory budget is 200 times the number of seen classes,
+including the benign share, distributed across attacks. R3-L uses the same
+learner with 200 stored examples per seen class including benign, without a
+refreshed benign stream. This tests the asymmetric-availability design, not a
+novel tree algorithm; both designs remain bounded RQ2 studies.
+
+Tables~\ref{tab:section165-confirmation} and~\ref{tab:section165-tests}
+reuse completed seeds 10--14. At the 1\% calibration target, R3-A improves
+final balanced accuracy over ER-Bal-TabT by 9.14 percentage points on UNSW
+and 5.53 on CIC-2017, with lower signed forgetting in this view. This does
+not imply lower forgetting in every view or against every comparator.
+On CSE-2018, gains over AR and R3-L are 2.63 and 2.06 points. The latter
+is narrow: one-sided paired t $p=0.04914$, exact sign-flip $p=0.0625$.
+R3-A's signed forgetting is 7.3 points, higher than AR's $-3.5$ and R3-L's
+3.1. New seeds on the previously exposed CSE dataset are not independent
+unseen-dataset replication. Historical candidate failures remain unchanged.
+These results do not establish explanation continuity or governance efficacy,
+or close the substantive-innovation gate. Added published baselines and their
+separately registered S1 comparison remain incomplete.
+\input{generated/section165_confirmation.tex}
 
 Training uses MLPs with two hidden layers of width \HiddenWidth, Adam with learning rate \LearningRate, and batch size \BatchSize. Each model/update receives
 \begin{equation}
@@ -410,12 +453,12 @@ The targeted literature review does not establish first-of-its-kind status. In p
 This manuscript addresses predictive retention, class-wise safety, and cost under class-incremental updates. It does not measure silent explanation drift across checkpoints, and it does not evaluate non-suppressive explanation governance. Those explanatory and governance questions remain unanswered by these experiments. Predictive gains alone cannot establish stable explanations or the safety of an explanation-governance mechanism.
 
 \section{Conclusion}
-The current prediction--retention comparison has a split outcome: AR is ahead of ER-Bal-TabT in default accuracy and macro-F1 on UNSW, behind on CIC, and behind in low-FPR final balanced accuracy on both. The default comparisons are exploratory and unadjusted; five-pair exact sign-flip tests cannot attain a two-sided $p<0.05$. This is not an overall-winner or robust-superiority claim and does not close RQ1, RQ3 or the substantive-innovation requirement.
-Class-incremental NIDS must balance false alarms, attack detection and retention as new families arrive. The completed comparisons support a trade-off study rather than selection of an accuracy winner. The refreshed benign-stream gate is useful under the disclosed data-availability and calibration assumptions, but retention components can reduce forgetting while impairing learning of new classes. \RetentionConclusionText
+The selected AR-Stateless candidate improves final and mean incremental balanced accuracy over ER-Bal-TabT on UNSW and CIC-2017 at the registered 1\% calibration target. Its R3 harm tests do not detect higher forgetting against that comparator; this is not proof of equivalence or non-inferiority. The CSE margin over R3-L passes the registered t test narrowly but not the sign-flip sensitivity check at .05, and forgetting exceeds neural AR and R3-L. Added-baseline comparisons remain pending. These conclusions concern the disclosed RQ2 setting, not universal superiority, RQ1, RQ3 or completion of the substantive-innovation requirement.
+Class-incremental NIDS must balance false alarms, attack detection and retention as new families arrive. The earlier neural comparisons support a trade-off study: retention components can reduce forgetting while impairing learning of new classes. Their historical conclusions follow and do not describe the later AR-Stateless candidate. \RetentionConclusionText
 
 \CSEConclusionText
 
-The later AR round does not reverse that negative history. In the lead-reported seeds 5--9 summary, AR's final BAcc is descriptively close to Replay-BS at 2\%, without demonstrated superiority or equivalence. At 1\%, the 1.9pp advantage is not significant: H-low's external-comparator half passes for AR, while its Replay-BS half fails. The roughly 4--5pp mean incremental BAcc cost and lower signed forgetting must be reported together. The lowest-forgetting statement is limited to the five available decision methods, not all variants; the complete nine-method descriptive extension is reported separately in Table~\ref{tab:cse-all45-descriptive} without changing the decision. No further candidate search or criterion revision follows this last round.
+The historical neural AR round does not reverse that negative history. In the lead-reported seeds 5--9 summary, AR's final BAcc is descriptively close to Replay-BS at 2\%, without demonstrated superiority or equivalence. At 1\%, the 1.9pp advantage is not significant: H-low's external-comparator half passes for AR, while its Replay-BS half fails. The roughly 4--5pp mean incremental BAcc cost and lower signed forgetting must be reported together. The lowest-forgetting statement is limited to the five available decision methods, not all variants; the complete nine-method descriptive extension is reported separately in Table~\ref{tab:cse-all45-descriptive} without changing that historical decision. The later AR-Stateless study uses its separately registered criteria and seeds 10--14; it does not revise the earlier candidate's outcome.
 
 The resulting contribution is a reproducible study of this unresolved trade-off under an explicit benign-data availability assumption. Clean benign access, calibration shift, unmatched total computation and the CIC-IDS-2017 accuracy cost of retention limit generalization. Silent explanation drift and non-suppressive explanation governance remain separate, unanswered research questions.
 
