@@ -23,22 +23,23 @@ from ncd.source_commit import source_commit
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017"), required=True)
+    p.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018"), required=True)
     p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb"), required=True)
     p.add_argument("--seed", type=int, choices=range(10, 15), required=True)
     p.add_argument("--data-root", type=Path, required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--threads", type=int, choices=(1, 2, 4), default=4)
     a = p.parse_args()
     selection = json.loads((ROOT / "paper_aacil/results/section123_schedule_selection.json").read_text())
     if selection["selected_schedule"] != "original_fixed":
         p.error("Registered original_fixed schedule required")
-    torch.set_num_threads(4)
+    torch.set_num_threads(a.threads)
     torch.set_num_interop_threads(1)
     config = json.loads((ROOT / "ncd/configs/problem_scout_section21.json").read_text())
     config.update(problem_scout_data_root=str(a.data_root.resolve(strict=True)),
-        hidden=128, hidden_layers=2, device="cpu", cpu_threads=4,
+        hidden=128, hidden_layers=2, device="cpu", cpu_threads=a.threads,
         section27=True, section31=True, section81=True, smoke=a.smoke,
         epochs_per_task=1 if a.smoke else 8, min_steps_per_task=0 if a.smoke else 2000,
         normal_training_rows=50000, lambda_g=0., derpp_alpha=1., derpp_beta=1.,
