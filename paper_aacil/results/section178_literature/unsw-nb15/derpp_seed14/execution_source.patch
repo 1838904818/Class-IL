@@ -1,0 +1,100 @@
+diff --git a/ncd/prepare_problem_scout_data.py b/ncd/prepare_problem_scout_data.py
+index 77b4edf..ee18904 100644
+--- a/ncd/prepare_problem_scout_data.py
++++ b/ncd/prepare_problem_scout_data.py
+@@ -50,7 +50,12 @@ def sha256(path):
+ 
+ 
+ def relative(path):
+-    return os.path.relpath(Path(path).resolve(), ROOT).replace("\\", "/")
++    resolved = Path(path).resolve()
++    try:
++        return os.path.relpath(resolved, ROOT).replace("\\", "/")
++    except ValueError:
++        # External experiment volumes cannot be relative to the code drive.
++        return resolved.as_posix()
+ 
+ 
+ def counts(y, classes):
+diff --git a/ncd/run_problem_scout.py b/ncd/run_problem_scout.py
+index 9ca1130..4604b63 100644
+--- a/ncd/run_problem_scout.py
++++ b/ncd/run_problem_scout.py
+@@ -71,7 +71,11 @@ def canonical_hash(value) -> str:
+ 
+ 
+ def path_label(path: Path) -> str:
+-    return Path(os.path.relpath(path.resolve(), ROOT)).as_posix()
++    resolved = path.resolve()
++    try:
++        return Path(os.path.relpath(resolved, ROOT)).as_posix()
++    except ValueError:
++        return resolved.as_posix()
+ 
+ 
+ def save_json(path: Path, value) -> None:
+@@ -510,8 +514,8 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
+     if section26 and config.get("section26_access_policy") != SECTION26_POLICY:
+         raise ValueError("Section26.9 requires the new benign-only-refresh policy")
+     literature_confirmation = bool(config.get("section178_literature", False))
+-    if literature_confirmation and (section26 or method != "derpp"):
+-        raise ValueError("Section178 DER++ requires non-refresh memory path")
++    if literature_confirmation and (section26 or method not in {"derpp", "icarl"}):
++        raise ValueError("Section178 literature baselines require non-refresh memory path")
+     train_pools, valid_pools = section26_pools(data, seed) if section26 or literature_confirmation else ({}, {})
+     validation_x, validation_y = [], []
+     buffer_ids, validation_ids = {}, {}
+diff --git a/ncd/run_section123_fixed.py b/ncd/run_section123_fixed.py
+index b27cb0b..956a9d2 100644
+--- a/ncd/run_section123_fixed.py
++++ b/ncd/run_section123_fixed.py
+@@ -24,7 +24,7 @@ from ncd.source_commit import source_commit
+ def main():
+     p = argparse.ArgumentParser(description=__doc__)
+     p.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018"), required=True)
+-    p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb", "derpp"), required=True)
++    p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb", "derpp", "icarl"), required=True)
+     p.add_argument("--seed", type=int, choices=range(10, 15), required=True)
+     p.add_argument("--data-root", type=Path, required=True)
+     p.add_argument("--output-dir", type=Path, required=True)
+@@ -59,6 +59,8 @@ def main():
+             derpp_alpha=.3, derpp_beta=.5,
+             derpp_coefficient_source=ps.DERPP_REFERENCE,
+             derpp_allocation_adaptation="Classwise reservoir 200/class including Normal; no refreshed stream; permanent holdout excluded from training")
++    if a.method == "icarl":
++        config.update(section178_literature=True, section26=False)
+     output = a.output_dir.resolve()
+     output.mkdir(parents=True, exist_ok=a.resume)
+     started = time.perf_counter()
+@@ -77,6 +79,19 @@ def main():
+         offline_joint_reference=False, lambda_file=None, lambda_file_sha256=None, lambda_source_commit=None,
+         section26_holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
+             validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid})
++    if a.method == "icarl":
++        selection_path = ROOT / config["lambda_files"].get(a.dataset, config["lambda_files"]["default"])
++        kd_selection = json.loads(selection_path.read_text(encoding="utf-8"))
++        assert kd_selection["selection_seeds"] == [5, 6]
++        coefficient = float(kd_selection["lambdas"]["icarl"])
++        assert coefficient > 0, "iCaRL requires its registered nonzero KD coefficient"
++        identity.update(regularization=coefficient,
++            lambda_file=selection_path.relative_to(ROOT).as_posix(),
++            lambda_file_sha256=hashlib.sha256(selection_path.read_bytes()).hexdigest(),
++            lambda_source_commit=kd_selection["git_commit"],
++            lambda_selection_dataset=kd_selection["dataset"],
++            lambda_transferred=kd_selection["dataset"] != a.dataset,
++            inference="nme", implementation_scope="Existing herding and softmax-KL adaptation; not an exact sigmoid-BCE reproduction")
+     cell = output / "cell"
+     cell.mkdir(exist_ok=a.resume)
+     device = torch.device("cpu")
+@@ -99,7 +114,10 @@ def main():
+             family.assert_capacity()
+         else:
+             model.load_state_dict(state["model_state"], strict=True)
+-        if a.method in ("freq", "wacb", "derpp"):
++        if a.method == "icarl":
++            model = ps._scorer(model, "icarl", state["buffer_x"], state["buffer_y"],
++                len(data.class_order), device, int(config["batch_size"]))
++        if a.method in ("freq", "wacb", "derpp", "icarl"):
+             calibration, points, cal_seconds, eval_seconds = bs.evaluate(
+                 model, data, cp["seen_classes"], valid[data.class_order.index("Normal")], counts, config, device)
+             calibrated.append(dict(task_index=cp["task_index"], calibration=calibration,
