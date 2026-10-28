@@ -1,0 +1,110 @@
+"""Serial common-budget UNSW CER follow-up, after validated seed 10."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+PYTHON = '@@PYTHON_ENV@@/python.exe'
+
+def records(path):
+    return [json.loads(s) for s in path.read_text().splitlines() if s.startswith('{')]
+
+def validated(seed):
+    prefix = BASE / f'logs/cer-bic-common-unsw-seed{seed}'
+    rows = records(Path(str(prefix)+'.monitor.stdout.log'))
+    terminal = next(r for r in rows if r.get('event') == 'TERMINAL')
+    assert terminal['exit_code'] == 0 and terminal['reason'] is None
+    assert terminal['source_unchanged'] and terminal['wall_seconds'] < 3300
+    assert terminal['sampled_peak_rss_bytes'] < 10*1024**3
+    assert any(r.get('event') == 'CELL_VALIDATED' for r in rows)
+    verification = records(Path(str(prefix)+'.validation.stdout.log'))[-1]
+    assert verification['validated'] and verification['scientific_result']
+    assert verification['checkpoints'] == 5 and verification['calibrations'] == 15
+    assert verification['data_source_row_roles_memory_and_recomputed_predictions']
+    summary = json.loads((BASE/f'runs/section178/unsw-nb15/cer-bic-common/seed{seed}/summary.json').read_text())
+    assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+    assert summary['seed'] == seed and summary['checkpoints'] == 5
+    assert summary['method'] == 'cer-bic-flow-cnn-common'
+    return next(r['source_sha256'] for r in rows if r.get('event') == 'START')
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--seed', type=int, choices=range(11,15), required=True)
+    seed = parser.parse_args().seed
+    volume = ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/', volume, 100)
+    assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    assert psutil.disk_usage('@@RESULT_DRIVE@@/').free > 20*1024**3
+    assert psutil.virtual_memory().available > 12*1024**3
+    for proc in psutil.process_iter(['pid','name','cmdline']):
+        if proc.info['pid'] != os.getpid() and (proc.info['name'] or '').lower() == 'python.exe':
+            command = ' '.join(proc.info['cmdline'] or [])
+            assert not any(s in command for s in ['run_section','monitor-','run-cer','verify-longpaths']), command
+    files = sorted(set(REPO.glob('ncd/**/*.py')) | set(REPO.glob('ncd/configs/*.json')) |
+                   {REPO/'src/methods/replay_dpmeans.py', REPO/'paper_aacil/results/section123_schedule_selection.json'})
+    def hashes():
+        return {f.relative_to(REPO).as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+    bound = hashes()
+    assert len(bound) == 398 and bound == validated(10) == validated(seed-1)
+    smoke = records(BASE/'logs/cer-bic-common-unsw-smoke.monitor.stdout.log')
+    assert any(r.get('event') == 'SMOKE_VALIDATED' for r in smoke)
+    assert bound == next(r['source_sha256'] for r in smoke if r.get('event') == 'START')
+    env = os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'), TMP=str(BASE/'tmp'), OMP_NUM_THREADS='2', MKL_NUM_THREADS='2', PYTHONDONTWRITEBYTECODE='1')
+    prefix = BASE/f'logs/cer-bic-common-unsw-seed{seed}'
+    out = BASE/f'runs/section178/unsw-nb15/cer-bic-common/seed{seed}'
+    assert not out.exists()
+    for suffix in ['stdout','stderr','validation.stdout','validation.stderr']:
+        assert not Path(str(prefix)+'.'+suffix+'.log').exists()
+    cmd = [PYTHON,'-I','-B','-u','ncd/run_section192_cer_common.py','--dataset','UNSW-NB15','--seed',str(seed),
+           '--data-root',str(BASE/'data/derived/section21_clean_v1'),'--output-dir',str(out),'--log-prefix',str(prefix)]
+    print(json.dumps({'event':'START','command':cmd,'source_sha256':bound,'work_order_commit':'e9c11b95baf896fe3b31ec0fa6a47a33f473bf07',
+                      'max_seconds':3300,'max_rss_bytes':10*1024**3,'min_system_available_bytes':2*1024**3,
+                      'system_available_bytes':psutil.virtual_memory().available,'wd_free_bytes':psutil.disk_usage('@@RESULT_DRIVE@@/').free}),flush=True)
+    start, peak, reason, samples = time.monotonic(), 0, None, 0
+    with Path(str(prefix)+'.stdout.log').open('x') as stdout, Path(str(prefix)+'.stderr.log').open('x') as stderr:
+        child = subprocess.Popen(cmd,cwd=REPO,env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+        print(json.dumps({'event':'CHILD_STARTED','pid':child.pid}),flush=True)
+        tracked = psutil.Process(child.pid)
+        try:
+            while child.poll() is None:
+                try:
+                    rss, cpu = tracked.memory_info().rss, tracked.cpu_times()
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak,rss)
+                elapsed, available = time.monotonic()-start, psutil.virtual_memory().available
+                if samples % 6 == 0:
+                    print(json.dumps({'event':'RESOURCE','pid':child.pid,'elapsed_seconds':elapsed,'rss_bytes':rss,
+                                      'peak_rss_bytes':peak,'cpu_seconds':cpu.user+cpu.system,'system_available_bytes':available}),flush=True)
+                if elapsed > 3300 or rss > 10*1024**3 or available < 2*1024**3 or psutil.disk_usage('@@RESULT_DRIVE@@/').free < 20*1024**3:
+                    reason = 'Local resource budget exceeded; preserve partial results; no automatic retry or schedule switch'
+                    child.terminate()
+                    break
+                samples += 1
+                time.sleep(5)
+        finally:
+            if child.poll() is None:
+                child.terminate()
+            try:
+                code = child.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                code = child.wait()
+    print(json.dumps({'event':'TERMINAL','exit_code':code,'sampled_peak_rss_bytes':peak,'wall_seconds':time.monotonic()-start,
+                      'reason':reason,'source_unchanged':hashes()==bound}),flush=True)
+    assert code == 0 and reason is None and hashes() == bound
+    with Path(str(prefix)+'.validation.stdout.log').open('x') as stdout, Path(str(prefix)+'.validation.stderr.log').open('x') as stderr:
+        subprocess.run([PYTHON,'-I','-B','-u',str(BASE/'admin/check-cer-bic-common.py'),str(out)],env=env,stdout=stdout,stderr=stderr,check=True)
+    assert hashes() == bound
+    print(json.dumps({'event':'CELL_VALIDATED','scientific_result':True,'output':str(out)}),flush=True)
+
+if __name__ == '__main__':
+    main()
