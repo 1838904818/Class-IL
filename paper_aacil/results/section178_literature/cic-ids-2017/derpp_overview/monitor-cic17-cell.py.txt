@@ -1,0 +1,91 @@
+"""One bounded local confirmation cell, with retained logs and resource samples."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import psutil
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('--method', choices=['derpp', 'icarl'], required=True)
+p.add_argument('--seed', type=int, choices=range(10, 15), required=True)
+a = p.parse_args()
+base = Path('@@EXPERIMENT_ROOT@@')
+repo = Path('@@SOURCE@@')
+python = Path('@@PYTHON_ENV@@/python.exe')
+volume = ctypes.create_unicode_buffer(100)
+assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/', volume, 100)
+assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+assert psutil.disk_usage('@@RESULT_DRIVE@@/').free > 20 * 1024**3
+assert psutil.virtual_memory().available > 12 * 1024**3
+for process in psutil.process_iter(['pid', 'name', 'cmdline']):
+    if process.info['pid'] == os.getpid() or process.info['name'] != 'python.exe':
+        continue
+    command = ' '.join(process.info['cmdline'] or [])
+    assert not any(s in command for s in ['run_section123_fixed.py', 'run_section178_ecbrs', 'monitor-cic17-cell.py']), 'Another cell is active'
+for method in ['derpp', 'icarl']:
+    subprocess.run([str(python), '-I', '-B', '-u', str(base/'admin/check-cic17-literature-smoke.py'),
+                    str(base/f'runs/section178/cic-ids-2017/{method}-smoke-seed10')], check=True)
+out = base/f'runs/section178/cic-ids-2017/{a.method}/seed{a.seed}'
+assert not out.exists(), 'Existing result/checkpoint must be inspected, not overwritten or retrained'
+files = sorted(set(repo.glob('ncd/**/*.py')) | set(repo.glob('ncd/configs/*.json')) |
+               {repo/'src/methods/replay_dpmeans.py', repo/'paper_aacil/results/section123_schedule_selection.json'})
+def hashes():
+    return {str(f.relative_to(repo)).replace('\\', '/'): hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+bound = hashes()
+if a.seed != 10:
+    reference = base/f'logs/{a.method}-cic17-seed10.monitor.stdout.log'
+    events = [json.loads(line) for line in reference.read_text(encoding='utf-8').splitlines() if line.startswith('{')]
+    assert next(row['source_sha256'] for row in events if row.get('event') == 'START') == bound
+    assert any(row.get('event') == 'CELL_COMPLETED_PENDING_INDEPENDENT_METRIC_CHECK' for row in events)
+command = [str(python), '-I', '-B', '-u', 'ncd/run_section123_fixed.py', '--method', a.method,
+           '--dataset', 'CIC-IDS-2017', '--seed', str(a.seed), '--threads', '2',
+           '--data-root', str(base/'data/derived/section21_clean_v1'), '--output-dir', str(out)]
+env = os.environ.copy()
+env.update(TEMP=str(base/'tmp'), TMP=str(base/'tmp'), PYTHONDONTWRITEBYTECODE='1', OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+prefix = base/f'logs/{a.method}-cic17-seed{a.seed}'
+print(json.dumps({'event': 'START', 'command': command, 'source_sha256': bound,
+                  'git_commit': subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip(),
+                  'max_wall_seconds': 3300, 'max_rss_bytes': 10*1024**3,
+                  'min_available_memory_bytes': 2*1024**3}), flush=True)
+with Path(str(prefix)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(prefix)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+    started = time.monotonic()
+    child = subprocess.Popen(command, cwd=repo, env=env, stdout=stdout, stderr=stderr,
+                             creationflags=subprocess.CREATE_NO_WINDOW)
+    tracked = psutil.Process(child.pid)
+    peak = 0
+    samples = 0
+    reason = None
+    print(json.dumps({'event':'CHILD_STARTED','pid':child.pid}),flush=True)
+    while child.poll() is None:
+        try:
+            rss = tracked.memory_info().rss
+            cpu = tracked.cpu_times()
+        except psutil.NoSuchProcess:
+            break
+        peak = max(peak, rss)
+        elapsed = time.monotonic()-started
+        available = psutil.virtual_memory().available
+        if samples % 6 == 0:
+            print(json.dumps({'event':'RESOURCE','pid':child.pid,'elapsed_seconds':elapsed,
+                              'rss_bytes':rss,'peak_rss_bytes':peak,'cpu_seconds':cpu.user+cpu.system,
+                              'system_available_bytes':available}),flush=True)
+        if elapsed > 3300 or rss > 10*1024**3 or available < 2*1024**3:
+            reason = 'Local time/memory budget exceeded; preserve checkpoints and logs for diagnosis, no automatic retry'
+            child.terminate()
+            break
+        samples += 1
+        time.sleep(5)
+    exit_code = child.wait()
+elapsed = time.monotonic()-started
+assert hashes() == bound, 'Bound source changed during execution'
+print(json.dumps({'event':'TERMINAL','exit_code':exit_code,'elapsed_seconds':elapsed,'peak_rss_bytes':peak,'reason':reason}),flush=True)
+if reason or exit_code:
+    raise SystemExit(1)
+summary = json.loads((out/'summary.json').read_text())
+assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+print(json.dumps({'event':'CELL_COMPLETED_PENDING_INDEPENDENT_METRIC_CHECK','method':a.method,'seed':a.seed,'output':str(out)}),flush=True)

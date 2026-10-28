@@ -1,0 +1,54 @@
+param([switch]$ContinueAfterDerSmoke)
+$ErrorActionPreference='Stop'
+$base='@@EXPERIMENT_ROOT@@'
+$code='@@SOURCE@@'
+$src='@@WORKSPACE@@\work\exp_h_section21_data\clean_v1\cic-ids-2017'
+$data="$base\data\derived\section21_clean_v1"
+$dst="$data\cic-ids-2017"
+function HashFile($path){
+ $h=[Security.Cryptography.SHA256]::Create();$s=[IO.File]::OpenRead($path)
+ try{([BitConverter]::ToString($h.ComputeHash($s))).Replace('-','').ToLowerInvariant()}finally{$s.Dispose();$h.Dispose()}
+}
+function CheckDrive {
+ $v=Get-Volume -DriveLetter E
+ if($v.UniqueId -ne '\\?\Volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\' -or $v.FileSystemLabel -ne 'My Passport' -or $v.SizeRemaining -lt 20GB){throw 'WD identity or capacity mismatch'}
+}
+CheckDrive
+if(Get-CimInstance Win32_Process | Where-Object {$_.Name -eq 'python.exe' -and $_.CommandLine -match 'run_section123_fixed.py|run_section178_ecbrs'}){throw 'A literature training process is already active'}
+if((Test-Path -LiteralPath $dst) -and -not $ContinueAfterDerSmoke){throw 'Input destination already exists: inspect rather than overwrite'}
+$env:TEMP="$base\tmp";$env:TMP=$env:TEMP;$env:PYTHONDONTWRITEBYTECODE='1'
+Write-Output "START $(Get-Date -Format o) CIC17 same-entry software smokes; not scientific results"
+if(-not $ContinueAfterDerSmoke){
+ & robocopy $src $dst /E /COPY:DAT /DCOPY:DAT /XJ /R:1 /W:2 /NP /LOG:@@EXPERIMENT_ROOT@@\logs\cic17-input-copy.log | Out-Null
+ if($LASTEXITCODE -ge 8){throw 'Prepared input copy failed'}
+}else{
+ & '@@PYTHON_ENV@@\python.exe' -I -B -u "$base\admin\check-cic17-literature-smoke.py" "$base\runs\section178\cic-ids-2017\derpp-smoke-seed10"
+ if($LASTEXITCODE -ne 0){throw 'Completed DER++ smoke check failed'}
+}
+$receipt=Get-Content -LiteralPath "$dst\data_quality.json" -Raw | ConvertFrom-Json
+if($receipt.status -ne 'complete' -or $receipt.dataset -ne 'CIC-IDS-2017'){throw 'Wrong prepared input receipt'}
+foreach($file in Get-ChildItem -LiteralPath $src -File){
+ if((HashFile $file.FullName) -ne (HashFile (Join-Path $dst $file.Name))){throw "Input copy hash mismatch $($file.Name)"}
+}
+foreach($item in $receipt.cache_files){
+ $path=Join-Path $dst $item.path
+ if((Get-Item -LiteralPath $path).Length -ne $item.bytes -or (HashFile $path) -ne $item.sha256){throw "Receipt mismatch $($item.path)"}
+}
+Write-Output "INPUT_BYTES_VERIFIED $(Get-Date -Format o)"
+Set-Location $code
+$methods=if($ContinueAfterDerSmoke){@('icarl')}else{@('derpp','icarl')}
+foreach($method in $methods){
+ CheckDrive
+ $out="$base\runs\section178\cic-ids-2017\$method-smoke-seed10"
+ if(Test-Path -LiteralPath $out){throw "Existing smoke output: $out"}
+ $watch=[Diagnostics.Stopwatch]::StartNew()
+ $p=Start-Process '@@PYTHON_ENV@@\python.exe' -WindowStyle Hidden -ArgumentList @('-I','-B','-u','ncd/run_section123_fixed.py','--method',$method,'--dataset','CIC-IDS-2017','--seed','10','--data-root',$data,'--output-dir',$out,'--threads','2','--smoke') -RedirectStandardOutput "$base\logs\$method-cic17-seed10.smoke.stdout.log" -RedirectStandardError "$base\logs\$method-cic17-seed10.smoke.stderr.log" -Wait -PassThru
+ $watch.Stop()
+ if($p.ExitCode -ne 0){throw "Smoke failed $method exit=$($p.ExitCode)"}
+ $summary=Get-Content -LiteralPath "$out\summary.json" -Raw | ConvertFrom-Json
+ if(-not $summary.completed -or -not $summary.smoke -or $summary.scientific_result){throw 'Invalid smoke summary'}
+ & '@@PYTHON_ENV@@\python.exe' -I -B -u "$base\admin\check-cic17-literature-smoke.py" $out
+ if($LASTEXITCODE -ne 0){throw "Independent smoke check failed $method"}
+ Write-Output "SMOKE_COMPLETE method=$method elapsed_seconds=$($watch.Elapsed.TotalSeconds) peak_rss_unmeasured=true summary=$out\summary.json"
+}
+Write-Output "ALL_SMOKES_COMPLETE $(Get-Date -Format o)"

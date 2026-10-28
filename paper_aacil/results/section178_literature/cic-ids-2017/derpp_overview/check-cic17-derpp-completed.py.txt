@@ -1,0 +1,90 @@
+"""Read-only full DER++ cell source, role, memory-content and step verification."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+import numpy as np
+import torch
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('directory', type=Path)
+a = p.parse_args()
+root = a.directory.resolve(strict=True)
+admin = Path(__file__).resolve().parent
+subprocess.run([sys.executable, '-I', '-B', '-u', str(admin/'check-cic17-literature-smoke.py'), str(root), '--formal'], check=True)
+r = json.loads((root/'cell/result.json').read_text(encoding='utf-8'))
+i = r['identity']
+assert i['method'] == 'derpp'
+base = Path('@@EXPERIMENT_ROOT@@')
+repo = Path('@@SOURCE@@')
+monitor = [json.loads(line) for line in (base/f"logs/derpp-cic17-seed{i['seed']}.monitor.stdout.log").read_text().splitlines() if line.startswith('{')]
+start = next(x for x in monitor if x.get('event') == 'START')
+terminal = next(x for x in monitor if x.get('event') == 'TERMINAL')
+assert terminal['exit_code'] == 0 and terminal['reason'] is None
+assert terminal['elapsed_seconds'] < 3600 and terminal['peak_rss_bytes'] < 10*1024**3
+for name, expected in start['source_sha256'].items():
+    assert hashlib.sha256((repo/name).read_bytes()).hexdigest() == expected, name
+data = Path(i['effective_config']['problem_scout_data_root'])/'cic-ids-2017'
+meta = json.loads((data/'data_quality.json').read_text(encoding='utf-8'))
+assert hashlib.sha256(json.dumps(meta, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest() == i['data_metadata_sha256']
+for key, expected in i['data_binding'].items():
+    if key not in ('x_train', 'y_train', 'x_test', 'y_test'):
+        continue
+    field, split = key.split('_')
+    array = np.load(data/f'{split}_{field}.npy', mmap_mode='r')
+    assert list(array.shape) == expected['shape'] and array.dtype.str == expected['dtype']
+    assert hashlib.sha256(array).hexdigest() == expected['sha256'], key
+    del array
+x = np.load(data/'train_x.npy', mmap_mode='r')
+y = np.load(data/'train_y.npy', mmap_mode='r')
+yt = np.load(data/'test_y.npy', mmap_mode='r')
+train, valid = {}, {}
+for c in range(len(i['class_order'])):
+    ids = np.flatnonzero(y == c)
+    permutation = np.random.default_rng(i['seed']*100003+c*1009+17).permutation(ids)
+    n = max(5, int(np.ceil(len(ids)*.1)))
+    valid[c], train[c] = permutation[:n], np.sort(permutation[n:])
+    assert hashlib.sha256(valid[c].tobytes()).hexdigest() == i['section26_holdout'][str(c)]['validation_indices_sha256']
+previous = None
+last = None
+for cp in r['checkpoints']:
+    state = torch.load(root/'cell'/cp['checkpoint_file'], map_location='cpu', weights_only=False)
+    assert state['identity'] == i
+    task = i['tasks'][cp['task_index']]
+    count = sum(len(train[c]) for c in task)
+    assert state['new_training_rows'] == state['train_rows'] == count
+    schedule = state['training_schedule']
+    assert schedule['optimizer_steps'] == schedule['target_steps'] == max(8*((count+255)//256), 2000)
+    assert schedule['rows_per_epoch'] == count
+    mem = state['derpp_memory']
+    assert mem['per_class'] == 200
+    for c in cp['seen_classes']:
+        assert state['train_class_counts'][str(c)] == (len(train[c]) if c in task else 0)
+        if c not in task and previous is not None:
+            assert mem['observations'][c] == previous['observations'][c]
+            assert torch.equal(mem['x'][c], previous['x'][c]) and torch.equal(mem['logits'][c], previous['logits'][c])
+    expected_test = np.bincount(yt, minlength=len(i['class_order']))
+    actual_test = np.asarray(cp['id']['confusion_matrix']).sum(1)
+    for c in cp['seen_classes']:
+        assert actual_test[c] == expected_test[c]
+    previous, last = mem, state
+memory_rows = 0
+for c in last['seen_classes']:
+    used = min(200, last['derpp_memory']['observations'][c])
+    candidates = last['derpp_memory']['x'][c, :used].numpy()
+    dtype = np.dtype((np.void, candidates.shape[1]*candidates.dtype.itemsize))
+    wanted = np.ascontiguousarray(candidates).view(dtype).ravel()
+    found = np.zeros(len(wanted), dtype=bool)
+    for offset in range(0, len(train[c]), 25000):
+        allowed = np.ascontiguousarray(x[train[c][offset:offset+25000]]).view(dtype).ravel()
+        found |= np.isin(wanted, allowed)
+        if found.all():
+            break
+    assert found.all(), f'Memory features absent from allowed training pool: class {c}'
+    memory_rows += used
+print(json.dumps({'verified_source_files':len(start['source_sha256']), 'verified_checkpoint_states':len(r['checkpoints']),
+                  'verified_final_memory_feature_memberships':memory_rows, 'memory_limitations':'Feature membership does not identify unique originating rows when duplicates exist; no row-ID provenance is stored by this DER++ path.',
+                  'training_seconds':sum(cp['training_seconds'] for cp in r['checkpoints']),
+                  'monitor_elapsed_seconds':terminal['elapsed_seconds'], 'sampled_peak_rss_bytes':terminal['peak_rss_bytes']}))
