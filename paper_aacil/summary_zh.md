@@ -1,5 +1,29 @@
 # AA-CIL 中文摘要
 
+## §178：新增基线的已发布范围（2026-10-28）
+
+主矩阵已完成并双发布25/60：UNSW的DER++、iCaRL适配、ECBRS论文语义各5seed；CIC17的DER++、iCaRL适配各5seed。UNSW作者-memory另5seed是敏感性，不计主60格。剩余35格未运行，不是负面结果；三数据集的四方法S1 Holm族均未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed补空白。
+
+以下均为seeds10–14均值，BAcc/FPR为%，有符号忘却为pp（逐seed逐旧类取pre-final最大召回减最终召回，含Normal，不截断）：
+
+| 数据集/方法 | 默认BAcc | 默认FPR | 默认忘却 | 1% BAcc | 1%测试FPR | 1%忘却 |
+|---|---:|---:|---:|---:|---:|---:|
+| UNSW AR-Stateless |65.99|1.26|27.42|65.41|1.02|20.62|
+| UNSW DER++ |68.46|24.05|28.23|12.17|1.15|14.01|
+| UNSW iCaRL适配 |57.98|33.71|28.19|12.90|1.03|17.44|
+| UNSW ECBRS论文语义 |54.35|98.63|41.26|11.78|1.14|11.13|
+| UNSW ECBRS作者-memory敏感性 |66.20|38.49|24.37|14.38|1.07|7.38|
+| CIC17 AR-Stateless |95.72|0.15|1.08|98.25|1.00|0.42|
+| CIC17 DER++ |92.35|10.87|2.84|35.75|0.99|24.15|
+| CIC17 iCaRL适配 |73.77|47.69|17.16|26.47|0.94|8.49|
+| CSE2018 AR-Stateless参考 |82.39|1.38|15.79|81.72|0.96|7.27|
+
+DER++在UNSW默认BAcc高于AR-Stateless（68.46对65.99），不能隐藏；但默认FPR为24.05对1.26，Accuracy为68.42对76.91，macro-F1为43.67对51.17。默认排名不等于同误报预算比较，校准目标也不保证测试FPR。CIC17两种神经基线从默认到1%视图的BAcc下降很大，两视图都必须保留。
+
+DER++是classwise memory、task-boundary的表格适配，不是原始online vision协议精确复现；iCaRL是herding+softmax-KL+NME，而非original sigmoid-BCE。存储feature可核验属于allowed TRAIN池，但没有unique来源rowID，重复向量不是独立来源行证明。CIC17五seed：DER++ checkpoint训练合计1622.24秒；iCaRL训练1167.21秒，另有buffer selection 157.21秒，端到端summary合计1406.25秒；采样峰RSS约2.23/3.01GB。不能隐藏herding成本，也不能把本地不同执行成本当硬件无关排名。
+
+ECBRS论文语义的global encounter ranking有supplement worked example依据，但与主算法local maximum措辞存在歧义，不能称唯一无歧义faithful。pre-decrement `m>=gamma`在gamma正但小于1时也能删掉最后槽，软件fixture无需浮点下溢；这不是整个性能损失的因果证明。UNSW默认FPR98.63%如实保留，seed10 Normal从task2起为空，不等于原native binary算法必然collapse。作者-memory敏感性保持其多条replacement/retrieval规则，同时明确underfill索引修补、rowID移植、M增长、无native task0预填/skip；不是原binary RMSprop/BCE入口。两组差异是规则组合敏感性，不能单归因gamma或Normal保留。CER真实packet10×4及注册split映射仍待，禁止flow列reshape或更换split冒充。
+
 ## §181：UNSW 忘却的独立核验（事后分析）
 
 `paper_aacil/check_forgetting.py` 独立从已发布混淆矩阵计算，不调用原表生成器、不训练、不重推理、不写结果。seeds10–14、1%校准目标下，逐种子逐旧类取“最终阶段之前的最高召回－最终召回”，包含Normal、等权平均、不截断负值。AR-Stateless均值20.621pp，neural AR为9.506pp；默认视图为27.420pp。
@@ -45,7 +69,7 @@ D1在1%目标下最终Exploits/DoS召回为83.30%/45.54%，AR-Stateless为50.83%
 
 UNSW校准池6,825条良性样本，严格≤1%最多68次误报，≤0.1%最多6次（不是7次）；CIC-2017池181,176条。尾部样本数说明更低工作点的分辨率限制，不说明1%适用于真实部署。2%和5%作为敏感性工作点保留。历史§27主工作点2%，§48改为低FPR主张1%，§165在seeds10–14确认运行前注册R1–R5；这不把既往开发证据变成未暴露证据。
 
-共同预算比较覆盖ER-Bal-TabT（官方代码基础上的适配）、Freq、WACB、Replay-BS、R3-L和neural AR，保留各自数据访问差异。§178新增基线仅在完成并核验后加入，不提前称齐全；ECBRS论文/作者代码语义仍待用户选择。本协议是评估选择而非创新机制；默认决策视图、precision/recall与预算视图并列保留。
+共同预算比较覆盖ER-Bal-TabT（官方代码基础上的适配）、Freq、WACB、Replay-BS、R3-L和neural AR，保留各自数据访问差异。§178新增基线仅将完成并核验的25/60主格加入，不提前称齐全；ECBRS论文主实现及UNSW作者-memory敏感性均已完成，语义差异与弱结果按本页§178保留。本协议是评估选择而非创新机制；默认决策视图、precision/recall与预算视图并列保留。
 
 ## AR-Stateless 确认结果补充（2026-10-27，§165–178）
 
