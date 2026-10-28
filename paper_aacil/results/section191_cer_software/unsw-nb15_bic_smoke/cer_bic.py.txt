@@ -1,0 +1,210 @@
+"""BiC on flow-vector Conv1D: explicit Cerasuolo adaptation, not packet reproduction.
+
+Paper: doi:10.1016/j.comnet.2025.111228, sections 3.2, 4.3, 4.4, Table 6.
+Algorithmic reference: https://github.com/mmasana/FACIL/blob/master/src/approach/bic.py
+This is an independent implementation; no claim of exact author-code parity.
+"""
+from copy import deepcopy
+import math
+import time
+
+import numpy as np
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+PAPER_URL = 'https://www.researchgate.net/publication/389901457_Attack-Adaptive_Network_Intrusion_Detection_Systems_for_IoT_Networks_through_Class_Incremental_Learning'
+MAPPING = {
+    'method_choice': {
+        'method': 'BiC', 'source': PAPER_URL, 'location': 'Table 6 and Section 5.2',
+        'metric': 'all-class macro F1 Drop, lower is better',
+        'values_percent': {'IoT-23': 10.92, 'TON-IoT': 5.48, 'IoT-NID': 18.16, 'Edge-IIoT': 12.85},
+        'reason': 'Lowest reported all-class F1 Drop among all eight CIL methods on every dataset; not a fallback or a new aggregate ranking.'},
+    'input': 'Registered preprocessed flow vector in unchanged feature order, one channel; NOT native 10-packet by 4-field input.',
+    'architecture_paper': 'Two convolutional layers with pooling and normalization, dense expanding output; native Conv2D replaced with Conv1D.',
+    'architecture_engineering_defaults': {'channels': [32, 64], 'kernel': 3, 'padding': 1,
+        'max_pool': 2, 'dense_hidden': 128, 'activation': 'ReLU',
+        'order': 'Conv1D-ReLU-MaxPool1D-BatchNorm1D twice; flatten; Linear128-ReLU; expanding class head'},
+    'native_schedule': {'epochs': 200, 'patience': 20, 'initial_lr': .1, 'decay_factor': 3., 'min_lr': .0001},
+    'algorithm': 'Stage 1: CE weighted by new/seen class count plus old-output softmax distillation weighted by old/seen. Stage 2: freeze network and older corrections, fit alpha/beta for only new logits.',
+    'engineering_defaults': {'batch_size': 256, 'optimizer': 'SGD', 'momentum': .9,
+        'weight_decay': .0002, 'temperature': 2., 'kd_temperature_squared_multiplier': False,
+        'bias_optimizer': 'SGD momentum .9, lr .1, 200 epochs, beta penalty .05*beta^2',
+        'reference': 'FACIL BiC defaults transferred, not asserted as Cerasuolo numeric settings',
+        'stopping': 'New-current-class TRAIN-only split: min(200, ceil(10% of eligible rows)); excludes permanent holdout and BiC correction; no old full-pool validation access.',
+        'correction_selection': 'Seeded random 20 rows per introduced class (10% of 200); persistent, excluded from backbone training and herding.',
+        'rare_class': 'Underfill unique replay slots when fewer than 180 eligible rows; never duplicate rows to fill memory.'},
+    'memory': '200 slots per seen class including Normal: up to 180 herded replay plus 20 correction rows. Old replay/correction rows retained without refresh. Paper uses 25/class.',
+    'other_adaptations': 'Registered multi-stage class order and splits replace native one-new-attack runs; no new input preprocessing, no TEST model selection; ordinary BiC CE, not the shared class-balanced CE.'}
+
+
+class FlowBiC(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        if input_dim < 4:
+            raise ValueError('Two pooling stages require at least four features')
+        self.input_dim = input_dim
+        self.encoder = nn.Sequential(nn.Conv1d(1, 32, 3, padding=1), nn.ReLU(),
+            nn.MaxPool1d(2), nn.BatchNorm1d(32), nn.Conv1d(32, 64, 3, padding=1),
+            nn.ReLU(), nn.MaxPool1d(2), nn.BatchNorm1d(64), nn.Flatten(),
+            nn.Linear(64*(input_dim//4), 128), nn.ReLU())
+        self.heads = nn.ModuleList()
+        self.scales = nn.ParameterList()
+        self.offsets = nn.ParameterList()
+        self.groups = []
+
+    def expand(self, classes):
+        old = [c for group in self.groups for c in group]
+        if list(classes) != list(range(len(old), len(old)+len(classes))):
+            raise ValueError('Expected registered contiguous global class order')
+        self.groups.append(list(classes))
+        self.heads.append(nn.Linear(128, len(classes)))
+        self.scales.append(nn.Parameter(torch.ones(()), requires_grad=False))
+        self.offsets.append(nn.Parameter(torch.zeros(()), requires_grad=False))
+
+    def features(self, x):
+        return self.encoder(x.unsqueeze(1))
+
+    def raw(self, x):
+        f = self.features(x)
+        return [h(f) for h in self.heads]
+
+    def correct(self, raw):
+        return torch.cat([a*z+b for a, b, z in zip(self.scales, self.offsets, raw)], dim=1)
+
+    def forward(self, x):
+        return self.correct(self.raw(x))
+
+
+def bic_loss(logits, labels, old_logits, n_old, temperature=2.):
+    ce = F.cross_entropy(logits, labels)
+    if not n_old:
+        return ce
+    target = F.softmax(old_logits.detach()/temperature, dim=1)
+    # Stable softmax temperature CE. No T^2 multiplier (FACIL BiC convention).
+    kd = -(target * F.log_softmax(logits[:, :n_old]/temperature, dim=1)).sum(1).mean()
+    fraction = n_old/logits.shape[1]
+    return (1-fraction)*ce + fraction*kd
+
+
+def partition_current(rows, seed):
+    shuffled = np.random.default_rng(seed).permutation(rows)
+    n_bias = min(20, max(1, len(rows)//3))
+    n_stop = min(200, max(1, math.ceil(.1*len(rows))))
+    bias, stop, fit = shuffled[:n_bias], shuffled[n_bias:n_bias+n_stop], shuffled[n_bias+n_stop:]
+    if not len(fit):
+        raise ValueError('Insufficient current training rows')
+    return np.sort(fit), np.sort(stop), np.sort(bias)
+
+
+def tensor_batch(x, y, rows):
+    return torch.from_numpy(np.array(x[rows], dtype=np.float32, copy=True)), torch.from_numpy(np.array(y[rows], dtype=np.int64, copy=True))
+
+
+def fit_backbone(model, teacher, x, y, fit, stop, seed, smoke, progress, identity, ps):
+    """Epoch-boundary resumable native schedule; stopping data are TRAIN-only."""
+    n_old = sum(len(g) for g in teacher.groups) if teacher is not None else 0
+    model.requires_grad_(True)
+    for p in list(model.scales)+list(model.offsets):
+        p.requires_grad_(False)
+    optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=.1, momentum=.9, weight_decay=.0002)
+    best, best_loss, patience, steps, elapsed, begin_epoch = deepcopy(model.state_dict()), float('inf'), 20, 0, 0., 0
+    history = []
+    if progress.exists():
+        state = ps.checkpoint_load(progress, identity)
+        model.load_state_dict(state['model'])
+        optimizer.load_state_dict(state['optimizer'])
+        best, best_loss, patience, steps, elapsed = (state[k] for k in ['best', 'best_loss', 'patience', 'steps', 'seconds'])
+        history, begin_epoch = state['history'], state['next_epoch']
+        if state['done']:
+            model.load_state_dict(best)
+            return dict(epochs=len(history), optimizer_steps=steps, seconds=elapsed, history=history)
+    for epoch in range(begin_epoch, 1 if smoke else 200):
+        start = time.perf_counter()
+        model.train()
+        shuffled = np.random.default_rng(seed+epoch*1009).permutation(fit)
+        for offset in range(0, len(shuffled), 256):
+            bx, by = tensor_batch(x, y, shuffled[offset:offset+256])
+            with torch.no_grad():
+                old = teacher(bx) if teacher is not None else None
+            optimizer.zero_grad(set_to_none=True)
+            loss = bic_loss(model(bx), by, old, n_old)
+            if not torch.isfinite(loss):
+                raise ValueError('Nonfinite BiC stage-1 loss')
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 10000.)
+            optimizer.step()
+            steps += 1
+        model.eval()
+        total = 0.
+        with torch.no_grad():
+            for offset in range(0, len(stop), 256):
+                ids = stop[offset:offset+256]
+                bx, by = tensor_batch(x, y, ids)
+                old = teacher(bx) if teacher is not None else None
+                total += float(bic_loss(model(bx), by, old, n_old))*len(ids)
+        measured = total/len(stop)
+        if not math.isfinite(measured):
+            raise ValueError('Nonfinite stopping loss')
+        if measured < best_loss:
+            best_loss, best, patience = measured, deepcopy(model.state_dict()), 20
+        else:
+            patience -= 1
+        done = False
+        if patience == 0:
+            lr = optimizer.param_groups[0]['lr']/3
+            done = lr < .0001
+            if not done:
+                model.load_state_dict(best)
+                for group in optimizer.param_groups:
+                    group['lr'] = lr
+                patience = 20
+        elapsed += time.perf_counter()-start
+        history.append(dict(epoch=epoch+1, validation_loss=measured, lr=optimizer.param_groups[0]['lr']))
+        done = done or smoke or epoch == 199
+        ps.checkpoint_save(progress, dict(identity=identity, model=model.state_dict(), optimizer=optimizer.state_dict(),
+            best=best, best_loss=best_loss, patience=patience, steps=steps, seconds=elapsed, history=history,
+            next_epoch=epoch+1, done=done))
+        print(f'BIC_BACKBONE epoch={epoch+1} steps={steps} validation_loss={measured:.8g} seconds={elapsed:.2f}', flush=True)
+        if done:
+            break
+    model.load_state_dict(best)
+    return dict(epochs=len(history), optimizer_steps=steps, seconds=elapsed, history=history)
+
+
+def fit_bias(model, x, y, correction, seed, smoke):
+    """Network and older affine maps frozen, including BatchNorm buffers."""
+    if len(model.groups) == 1:
+        return dict(seconds=0., epochs=0, optimizer_steps=0)
+    start = time.perf_counter()
+    model.eval().requires_grad_(False)
+    model.scales[-1].requires_grad_(True)
+    model.offsets[-1].requires_grad_(True)
+    # Frozen raw logits may be cached without changing stage-2 gradients.
+    with torch.no_grad():
+        parts = []
+        for offset in range(0, len(correction), 256):
+            bx, _ = tensor_batch(x, y, correction[offset:offset+256])
+            raw = model.raw(bx)
+            old = torch.cat([a*z+b for a, b, z in zip(model.scales[:-1], model.offsets[:-1], raw[:-1])], 1)
+            parts.append(torch.cat([old, raw[-1]], 1))
+        cached = torch.cat(parts)
+        labels = torch.from_numpy(np.array(y[correction], dtype=np.int64))
+    n_new = len(model.groups[-1])
+    optimizer = torch.optim.SGD([model.scales[-1], model.offsets[-1]], lr=.1, momentum=.9)
+    epochs, steps = (1 if smoke else 200), 0
+    for epoch in range(epochs):
+        indices = np.random.default_rng(seed+epoch).permutation(len(correction))
+        for offset in range(0, len(indices), 256):
+            ids = indices[offset:offset+256]
+            z = cached[ids]
+            corrected = torch.cat([z[:, :-n_new], model.scales[-1]*z[:, -n_new:]+model.offsets[-1]], 1)
+            loss = F.cross_entropy(corrected, labels[ids])+.05*model.offsets[-1].square()
+            if not torch.isfinite(loss):
+                raise ValueError('Nonfinite BiC stage-2 loss')
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            optimizer.step()
+            steps += 1
+    model.requires_grad_(False)
+    return dict(seconds=time.perf_counter()-start, epochs=epochs, optimizer_steps=steps)

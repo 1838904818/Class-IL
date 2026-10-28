@@ -1,0 +1,104 @@
+"""Read-only verification of the CER BiC same-entry software smoke."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+ROOT = Path('@@SOURCE@@')
+sys.path.insert(0, str(ROOT))
+import numpy as np
+import torch
+from ncd import run_problem_scout as ps, run_replay_bs as bs
+from ncd.cer_bic import FlowBiC, partition_current
+from ncd.default_decision import evaluate_models
+from ncd.prepare_problem_scout_data import prepare_setting
+
+p = argparse.ArgumentParser()
+p.add_argument('directory', type=Path)
+a = p.parse_args()
+torch.set_num_threads(2)
+r = json.loads((a.directory/'result.json').read_text())
+i = r['identity']
+assert r['completed'] and i['smoke'] and not r['scientific_result']
+assert r['cer_mapping']['method_choice']['method'] == 'BiC'
+assert r['cer_mapping']['method_choice']['values_percent'] == {'IoT-23':10.92,'TON-IoT':5.48,'IoT-NID':18.16,'Edge-IIoT':12.85}
+assert i['effective_config']['epochs_per_task'] == 1
+for file, digest in i['source_sha256'].items():
+    assert ps.digest(ROOT/file) == digest, file
+data, _, _, metadata = prepare_setting(i['dataset'], i['effective_config'])
+assert ps.canonical_hash(metadata) == i['data_metadata_sha256']
+counts = np.bincount(data.y_train, minlength=len(data.class_order))
+assert counts.tolist() == i['original_train_counts']
+data, _, _ = ps.smoke_subset(data, None, None, limit=64)
+assert ps.binding(data, None, None) == i['data_binding']
+train, valid = ps.section26_pools(data, i['seed'])
+held = np.concatenate(list(valid.values()))
+model = FlowBiC(data.x_train.shape[1])
+prior = None
+assert len(r['checkpoints']) == len(r['default_stages']) == len(r['calibrated_stages']) == len(data.tasks)
+for t, task in enumerate(data.tasks):
+    record = r['checkpoints'][t]
+    cp = a.directory/record['checkpoint_file']
+    assert ps.digest(cp) == record['checkpoint_sha256']
+    s = ps.checkpoint_load(cp, i)
+    seen = [c for part in data.tasks[:t+1] for c in part]
+    assert s['seen_classes'] == seen and s['task_index'] == t
+    replay = {c: v.numpy() for c, v in s['replay'].items()}
+    correction = {c: v.numpy() for c, v in s['correction'].items()}
+    all_rows = np.concatenate(list(replay.values())+list(correction.values()))
+    assert len(np.unique(all_rows)) == len(all_rows) == record['unique_row_ids'] == record['memory_slots']
+    assert len(all_rows) <= 200*len(seen) and not np.intersect1d(all_rows, held).size
+    for c in seen:
+        assert len(replay[c]) <= 180 and len(correction[c]) <= 20
+        assert np.isin(np.concatenate([replay[c], correction[c]]), train[c]).all()
+        assert (data.y_train[replay[c]] == c).all() and (data.y_train[correction[c]] == c).all()
+    if prior is not None:
+        for c in prior['replay']:
+            assert torch.equal(s['replay'][c], prior['replay'][c])
+            assert torch.equal(s['correction'][c], prior['correction'][c])
+        for j in range(t):
+            for name in ('scales', 'offsets'):
+                assert torch.equal(s['model_state'][f'{name}.{j}'], prior['model_state'][f'{name}.{j}'])
+    current, stop = {}, {}
+    for c in task:
+        current[c], stop[c], expected_bias = partition_current(train[c], (i['seed']*10000+t)*1009+c)
+        assert np.array_equal(expected_bias, correction[c])
+        assert np.array_equal(s['current_rows'][c].numpy(), current[c])
+        assert np.array_equal(s['stopping_rows'][c].numpy(), stop[c])
+        assert np.isin(replay[c], current[c]).all()
+    fit = s['backbone_fit_rows'].numpy()
+    stopping = np.concatenate(list(stop.values()))
+    biases = s['bias_fit_rows'].numpy()
+    expected_fit = np.concatenate(list(current.values())+([] if prior is None else [v.numpy() for v in prior['replay'].values()]))
+    assert np.array_equal(fit, expected_fit)
+    assert not np.intersect1d(fit, np.concatenate([stopping, biases, held])).size
+    assert not np.intersect1d(stopping, np.concatenate([biases, held])).size
+    assert len(set(np.bincount(data.y_train[biases], minlength=len(data.class_order))[seen])) == 1
+    assert s['training_schedule']['epochs'] == 1
+    assert s['training_schedule']['optimizer_steps'] == int(np.ceil(len(fit)/256))
+    assert s['bias_schedule']['epochs'] == (1 if t else 0)
+    model.expand(task)
+    model.load_state_dict(s['model_state'])
+    default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, model, batch_size=512)
+    assert default == r['default_stages'][t]['metrics']
+    calibration, points, _, _ = bs.evaluate(model, data, seen, valid[data.class_order.index('Normal')], counts, i['effective_config'], torch.device('cpu'))
+    assert calibration == r['calibrated_stages'][t]['calibration']
+    assert points == r['calibrated_stages'][t]['operating_points']
+    assert set(points) == {'0.01', '0.02', '0.05'}
+    for metrics in [default]+list(points.values()):
+        cm = np.asarray(metrics['confusion_matrix'])
+        support = cm.sum(1)
+        assert cm.shape == (len(data.class_order),)*2 and (cm >= 0).all()
+        assert int(cm.sum()) == int(np.isin(data.y_test, seen).sum())
+        recall = np.diag(cm)[seen]/support[seen]
+        macro_f1 = np.mean(2*np.diag(cm)[seen]/(support+cm.sum(0))[seen])
+        assert abs(metrics['macro_f1']-macro_f1) < 1e-10
+        if 'balanced_accuracy' in metrics:
+            assert abs(metrics['balanced_accuracy']-recall.mean()) < 1e-10
+    prior = s
+summary = json.loads((a.directory/'summary.json').read_text())
+assert summary['completed'] and summary['smoke'] and not summary['scientific_result']
+assert abs(sum(c['training_seconds'] for c in r['checkpoints'])-r['training_seconds_total']) < 1e-8
+print(json.dumps({'validated':True,'scientific_result':False,'checkpoints':len(r['checkpoints']),
+    'calibrations':3*len(r['checkpoints']),'data_source_row_roles_memory_and_recomputed_predictions':True}), flush=True)

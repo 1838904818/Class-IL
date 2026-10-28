@@ -1,0 +1,91 @@
+"""Software tests, not scientific evidence for the flow-CNN BiC adaptation."""
+from copy import deepcopy
+import tempfile
+from pathlib import Path
+import sys
+import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import numpy as np
+import torch
+from torch.nn import functional as F
+from ncd.cer_bic import FlowBiC, bic_loss, partition_current, fit_bias, fit_backbone
+from ncd import run_problem_scout as ps
+
+
+class BiCTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.set_num_threads(2)
+
+    def setUp(self):
+        torch.manual_seed(123)
+
+    def test_expand_preserves_old_logits(self):
+        model = FlowBiC(42).eval()
+        model.expand([0, 1])
+        x = torch.randn(10, 42)
+        old = model(x).detach()
+        model.expand([2, 3])
+        self.assertTrue(torch.equal(old, model(x)[:, :2]))
+        self.assertEqual(model(x).shape, (10, 4))
+        with self.assertRaises(ValueError):
+            model.expand([6])
+
+    def test_loss_weights_and_teacher_detached(self):
+        z = torch.randn(7, 5, requires_grad=True)
+        teacher = torch.randn(7, 3, requires_grad=True)
+        y = torch.tensor([0, 1, 2, 3, 4, 0, 1])
+        expected = .4*F.cross_entropy(z, y)+.6*(-(teacher.detach().div(2).softmax(1)*z[:, :3].div(2).log_softmax(1)).sum(1).mean())
+        got = bic_loss(z, y, teacher, 3)
+        self.assertTrue(torch.allclose(got, expected))
+        got.backward()
+        self.assertIsNone(teacher.grad)
+        self.assertTrue(torch.isfinite(z.grad).all())
+        self.assertTrue(torch.equal(bic_loss(z, y, None, 0), F.cross_entropy(z, y)))
+
+    def test_partitions(self):
+        rows = np.arange(2000, 3000)
+        fit, stop, bias = partition_current(rows, 7)
+        self.assertEqual((len(fit), len(stop), len(bias)), (880, 100, 20))
+        self.assertEqual(len(np.unique(np.concatenate([fit, stop, bias]))), 1000)
+        self.assertTrue(np.array_equal(partition_current(rows, 7)[0], fit))
+
+    def test_bias_freezes_network_and_old_maps(self):
+        model = FlowBiC(42)
+        model.expand([0, 1])
+        model.expand([2, 3])
+        with torch.no_grad():
+            model.scales[0].fill_(1.2)
+            model.offsets[0].fill_(.2)
+        old = deepcopy(model.state_dict())
+        x = np.random.default_rng(1).normal(size=(80, 42)).astype('float32')
+        y = np.repeat(np.arange(4), 20)
+        stats = fit_bias(model, x, y, np.arange(80), 9, True)
+        self.assertEqual(stats['epochs'], 1)
+        for key, value in model.state_dict().items():
+            if key not in ('scales.1', 'offsets.1'):
+                self.assertTrue(torch.equal(value, old[key]), key)
+        self.assertTrue(any(not torch.equal(model.state_dict()[k], old[k]) for k in ('scales.1','offsets.1')))
+
+    def test_stage1_resume_and_safe_load(self):
+        model = FlowBiC(42)
+        model.expand([0, 1])
+        x = np.random.default_rng(1).normal(size=(80, 42)).astype('float32')
+        y = np.arange(80) % 2
+        with tempfile.TemporaryDirectory(dir='@@EXPERIMENT_ROOT@@/tmp', prefix='cer-test-') as temp:
+            progress = Path(temp)/'epoch.pt'
+            stats = fit_backbone(model, None, x, y, np.arange(60), np.arange(60,80), 2, True, progress, {'test': True}, ps)
+            old = deepcopy(model.state_dict())
+            other = FlowBiC(42)
+            other.expand([0, 1])
+            resumed = fit_backbone(other, None, x, y, np.arange(60), np.arange(60,80), 2, True, progress, {'test': True}, ps)
+            self.assertEqual(stats, resumed)
+            for key, value in other.state_dict().items():
+                self.assertTrue(torch.equal(value, old[key]), key)
+            with self.assertRaises(ValueError):
+                ps.checkpoint_load(progress, {'test': False})
+
+
+if __name__ == '__main__':
+    unittest.main()

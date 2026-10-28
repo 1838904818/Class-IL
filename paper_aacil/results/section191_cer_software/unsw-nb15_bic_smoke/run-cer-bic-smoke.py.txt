@@ -1,0 +1,72 @@
+"""One bounded CER smoke; no automatic formal run or queue."""
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+base = Path('@@EXPERIMENT_ROOT@@')
+repo = Path('@@SOURCE@@')
+python = '@@PYTHON_ENV@@/python.exe'
+volume = ctypes.create_unicode_buffer(100)
+assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/', volume, 100)
+assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+assert psutil.disk_usage('@@RESULT_DRIVE@@/').free > 20*1024**3
+assert psutil.virtual_memory().available > 12*1024**3
+for proc in psutil.process_iter(['pid','name','cmdline']):
+    if proc.info['pid'] != os.getpid() and proc.info['name'] == 'python.exe':
+        assert not any(s in ' '.join(proc.info['cmdline'] or []) for s in ['run_section', 'monitor-', 'run-cer', 'verify-longpaths'])
+env = os.environ.copy()
+env.update(TEMP=str(base/'tmp'), TMP=str(base/'tmp'), OMP_NUM_THREADS='2', MKL_NUM_THREADS='2', PYTHONDONTWRITEBYTECODE='1')
+files = sorted(set(repo.glob('ncd/**/*.py')) | set(repo.glob('ncd/configs/*.json')) |
+    {repo/'src/methods/replay_dpmeans.py', repo/'paper_aacil/results/section123_schedule_selection.json'})
+def hashes():
+    return {f.relative_to(repo).as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+bound = hashes()
+old_events = [json.loads(line) for line in (base/'logs/ecbrs-paper-cic17-seed10.monitor.stdout.log').read_text().splitlines() if line.startswith('{')]
+old = next(v['source_sha256'] for v in old_events if v.get('event') == 'START')
+assert len(old) == 394 and all(bound.get(k) == v for k, v in old.items())
+prefix = base/'logs/cer-bic-unsw-seed10.smoke'
+out = base/'runs/section178/unsw-nb15/cer-bic-smoke-seed10'
+assert not out.exists()
+for suffix in ['stdout','stderr','validation.stdout','validation.stderr','tests.stdout','tests.stderr']:
+    assert not Path(str(prefix)+'.'+suffix+'.log').exists()
+with Path(str(prefix)+'.tests.stdout.log').open('x') as stdout, Path(str(prefix)+'.tests.stderr.log').open('x') as stderr:
+    subprocess.run([python,'-I','-B','-u',str(repo/'tests/test_cer_bic.py')], env=env, stdout=stdout, stderr=stderr, check=True)
+cmd = [python,'-I','-B','-u','ncd/run_section191_cer.py','--dataset','UNSW-NB15','--seed','10',
+    '--data-root',str(base/'data/derived/section21_clean_v1'),'--output-dir',str(out),'--log-prefix',str(prefix),'--smoke']
+print(json.dumps({'event':'START','command':cmd,'source_sha256':bound,'old_394_unchanged':True,
+    'work_order_commit':'127f04ecbc856195c8cc26231cb00c43c5cc7c08','max_seconds':600}), flush=True)
+start, peak, reason = time.monotonic(), 0, None
+with Path(str(prefix)+'.stdout.log').open('x') as stdout, Path(str(prefix)+'.stderr.log').open('x') as stderr:
+    child = subprocess.Popen(cmd,cwd=repo,env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+    print(json.dumps({'event':'CHILD_STARTED','pid':child.pid}), flush=True)
+    try:
+        while child.poll() is None:
+            try:
+                peak = max(peak,psutil.Process(child.pid).memory_info().rss)
+            except psutil.NoSuchProcess:
+                break
+            if time.monotonic()-start > 600 or peak > 10*1024**3 or psutil.virtual_memory().available < 2*1024**3:
+                reason = 'Smoke resource budget exceeded'
+                child.terminate()
+                break
+            time.sleep(1)
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        try:
+            code = child.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            code = child.wait()
+print(json.dumps({'event':'TERMINAL','exit_code':code,'sampled_peak_rss_bytes':peak,
+    'wall_seconds':time.monotonic()-start,'reason':reason,'source_unchanged':hashes()==bound}), flush=True)
+assert code == 0 and reason is None and hashes() == bound
+with Path(str(prefix)+'.validation.stdout.log').open('x') as stdout, Path(str(prefix)+'.validation.stderr.log').open('x') as stderr:
+    subprocess.run([python,'-I','-B','-u',str(base/'admin/check-cer-bic-smoke.py'),str(out)], env=env, stdout=stdout, stderr=stderr, check=True)
+assert hashes() == bound
+print(json.dumps({'event':'SMOKE_VALIDATED','scientific_result':False,'output':str(out)}), flush=True)

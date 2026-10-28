@@ -1,0 +1,179 @@
+"""Registered-data CER BiC flow-CNN adaptation; native-schedule entry.
+
+Smoke is software validation only. Old completed outputs are never overwritten.
+Checkpoint-boundary and stage-1 epoch-boundary resume are supported.
+"""
+import argparse
+from copy import deepcopy
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+import time
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+import numpy as np
+import torch
+from ncd import run_problem_scout as ps, run_replay_bs as bs
+from ncd.cer_bic import FlowBiC, MAPPING, partition_current, fit_backbone, fit_bias
+from ncd.default_decision import evaluate_models
+from ncd.prepare_problem_scout_data import prepare_setting
+from ncd.source_commit import source_commit
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--dataset', choices=['UNSW-NB15', 'CIC-IDS-2017'], required=True)
+    p.add_argument('--seed', type=int, choices=range(10, 15), required=True)
+    p.add_argument('--data-root', type=Path, required=True)
+    p.add_argument('--output-dir', type=Path, required=True)
+    p.add_argument('--log-prefix', type=Path, required=True)
+    p.add_argument('--smoke', action='store_true')
+    p.add_argument('--resume', action='store_true')
+    a = p.parse_args()
+    wd = Path('@@EXPERIMENT_ROOT@@').resolve(strict=True)
+    for path in (a.data_root.resolve(strict=True), a.output_dir.resolve(), a.log_prefix.resolve()):
+        if not path.is_relative_to(wd):
+            p.error('All data, results and logs must remain on the mounted WD workspace')
+    os.environ['TEMP'] = os.environ['TMP'] = str(wd/'tmp')
+    torch.set_num_threads(2)
+    torch.set_num_interop_threads(1)
+    selected = json.loads((ROOT/'paper_aacil/results/section123_schedule_selection.json').read_text())
+    assert selected['selected_schedule'] == 'original_fixed'
+    config = json.loads((ROOT/'ncd/configs/problem_scout_section21.json').read_text())
+    config.update(problem_scout_data_root=str(a.data_root.resolve()), device='cpu', cpu_threads=2,
+        smoke=a.smoke, buffer_per_class=200, epochs_per_task=1 if a.smoke else 200,
+        min_steps_per_task=0, learning_rate=.1, batch_size=256, eval_batch_size=512,
+        schedule='cer_native_200_patience20_lr01_factor3_min1e-4', optimizer='SGD',
+        stage2_epochs=1 if a.smoke else 200)
+    data, _, _, metadata = prepare_setting(a.dataset, config)
+    original_counts = np.bincount(data.y_train, minlength=len(data.class_order))
+    if a.smoke:
+        data, _, _ = ps.smoke_subset(data, None, None, limit=64)
+    assert [c for task in data.tasks for c in task] == list(range(len(data.class_order)))
+    train, valid = ps.section26_pools(data, a.seed)
+    source_files = sorted(set(ROOT.glob('ncd/**/*.py')) | set(ROOT.glob('ncd/configs/*.json')) |
+        {ROOT/'src/methods/replay_dpmeans.py', ROOT/'paper_aacil/results/section123_schedule_selection.json'})
+    mapping = deepcopy(MAPPING)
+    mapping['actual_feature_count'] = data.x_train.shape[1]
+    mapping['actual_feature_names'] = data.feature_names
+    identity = dict(git_commit=source_commit(ROOT), method='cer-bic-flow-cnn', dataset=a.dataset,
+        seed=a.seed, smoke=a.smoke, effective_config=config, cer_mapping=mapping,
+        tasks=data.tasks, class_order=data.class_order, data_binding=ps.binding(data, None, None),
+        data_metadata_sha256=ps.canonical_hash(metadata), original_train_counts=original_counts.tolist(),
+        source_sha256={f.relative_to(ROOT).as_posix(): ps.digest(f) for f in source_files},
+        command=[v for v in sys.argv if v != '--resume'],
+        log_paths=[str(a.log_prefix.resolve())+f'.{s}.log' for s in ('stdout', 'stderr')],
+        holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
+            validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid})
+    out = a.output_dir.resolve()
+    out.mkdir(parents=True, exist_ok=a.resume)
+    if (out/'identity.json').exists():
+        assert json.loads((out/'identity.json').read_text()) == identity, 'Resume identity mismatch'
+    else:
+        ps.save_json(out/'identity.json', identity)
+    if (out/'result.json').exists():
+        done = json.loads((out/'result.json').read_text())
+        assert done['completed'] and done['identity'] == identity
+        assert len(done['checkpoints']) == len(data.tasks)
+        for cp in done['checkpoints']:
+            assert ps.digest(out/cp['checkpoint_file']) == cp['checkpoint_sha256']
+        assert json.loads((out/'summary.json').read_text())['completed']
+        print('COMPLETED_RESUME_VALIDATED_NO_OVERWRITE', flush=True)
+        return
+    all_start = time.perf_counter()
+    ps.seed_everything(a.seed*10000)
+    model = FlowBiC(data.x_train.shape[1])
+    replay, correction = {}, {}
+    records, defaults, calibrated = [], [], []
+    cumulative = 0.
+    held = np.concatenate(list(valid.values()))
+    for t, task in enumerate(data.tasks):
+        task_seed = a.seed*10000+t
+        ps.seed_everything(task_seed)
+        teacher = deepcopy(model).eval().requires_grad_(False) if t else None
+        model.expand(task)
+        seen = [c for part in data.tasks[:t+1] for c in part]
+        cp = out/f'checkpoints/checkpoint_{t:03d}.pt'
+        if cp.exists():
+            state = ps.checkpoint_load(cp, identity)
+            assert state['task_index'] == t and state['seen_classes'] == seen
+            model.load_state_dict(state['model_state'])
+            replay = {c: rows.numpy() for c, rows in state['replay'].items()}
+            correction = {c: rows.numpy() for c, rows in state['correction'].items()}
+            cumulative = state['training_seconds_cumulative']
+            print(f'CHECKPOINT_RESUMED task={t}', flush=True)
+        else:
+            current, stopping = {}, {}
+            old_replay = deepcopy(replay)
+            old_correction = deepcopy(correction)
+            for c in task:
+                current[c], stopping[c], correction[c] = partition_current(train[c], task_seed*1009+c)
+            fit = np.concatenate(list(current.values())+list(replay.values())).astype(np.int64)
+            stop = np.concatenate(list(stopping.values())).astype(np.int64)
+            # Equal correction count across seen classes, including rare-class underfill.
+            quota = min(len(rows) for rows in correction.values())
+            bias_rows = np.concatenate([correction[c][:quota] for c in seen]).astype(np.int64)
+            assert not np.intersect1d(fit, np.concatenate([held, stop, bias_rows])).size
+            assert not np.intersect1d(stop, np.concatenate([held, bias_rows])).size
+            print(f'BIC_TASK task={t} current={sum(map(len,current.values()))} replay={sum(map(len,replay.values()))} stopping={len(stop)} correction={len(bias_rows)}', flush=True)
+            schedule = fit_backbone(model, teacher, data.x_train, data.y_train, fit, stop,
+                task_seed, a.smoke, out/f'progress/backbone_{t:03d}.pt', identity, ps)
+            bias = fit_bias(model, data.x_train, data.y_train, bias_rows, task_seed, a.smoke)
+            selection_start = time.perf_counter()
+            for c in task:
+                candidates = current[c]
+                positions = ps.herding_select_indexed(model, data.x_train, candidates,
+                    min(180, len(candidates)), torch.device('cpu'), 512,
+                    mmap_threshold_bytes=64*1024**2, scratch_dir=wd/'tmp/cer-herding')
+                replay[c] = candidates[positions].copy()
+            selection_seconds = time.perf_counter()-selection_start
+            for c in old_replay:
+                assert np.array_equal(replay[c], old_replay[c])
+                assert np.array_equal(correction[c], old_correction[c])
+            elapsed = schedule['seconds']+bias['seconds']
+            cumulative += elapsed
+            state = dict(identity=identity, task_index=t, seen_classes=seen,
+                model_state=deepcopy(model.state_dict()),
+                replay={c: torch.from_numpy(rows.copy()) for c, rows in replay.items()},
+                correction={c: torch.from_numpy(rows.copy()) for c, rows in correction.items()},
+                current_rows={c: torch.from_numpy(rows.copy()) for c, rows in current.items()},
+                stopping_rows={c: torch.from_numpy(rows.copy()) for c, rows in stopping.items()},
+                backbone_fit_rows=torch.from_numpy(fit), bias_fit_rows=torch.from_numpy(bias_rows),
+                training_schedule=schedule, bias_schedule=bias,
+                selection_seconds=selection_seconds, training_seconds=elapsed,
+                training_seconds_cumulative=cumulative,
+                parameter_count=sum(p.numel() for p in model.parameters()))
+            ps.checkpoint_save(cp, state)
+        retained = np.concatenate(list(replay.values())+list(correction.values()))
+        assert len(retained) == len(np.unique(retained)) <= 200*len(seen)
+        assert not np.intersect1d(retained, held).size
+        model.eval()
+        default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, model, batch_size=512)
+        calibration, points, cal_seconds, eval_seconds = bs.evaluate(model, data, seen,
+            valid[data.class_order.index('Normal')], original_counts, config, torch.device('cpu'))
+        cp_hash = ps.digest(cp)
+        record = {k: state[k] for k in ['task_index', 'seen_classes', 'training_seconds',
+            'training_seconds_cumulative', 'training_schedule', 'bias_schedule', 'selection_seconds', 'parameter_count']}
+        record.update(checkpoint_file=cp.relative_to(out).as_posix(), checkpoint_sha256=cp_hash,
+            identity_hash=ps.canonical_hash(identity), memory_slots=len(retained), unique_row_ids=len(retained),
+            memory_per_class={str(c): dict(replay=len(replay[c]), correction=len(correction[c])) for c in seen})
+        ps.save_json(cp.with_suffix('.json'), record)
+        records.append(record)
+        defaults.append(dict(task_index=t, checkpoint_sha256=cp_hash, metrics=default))
+        calibrated.append(dict(task_index=t, checkpoint_sha256=cp_hash, calibration=calibration,
+            operating_points=points, calibration_seconds=cal_seconds, evaluation_seconds=eval_seconds))
+        print(f'BIC_TASK_COMPLETE task={t}', flush=True)
+    ps.save_json(out/'result.json', dict(completed=True, scientific_result=not a.smoke,
+        identity=identity, cer_mapping=mapping, checkpoints=records, default_stages=defaults,
+        calibrated_stages=calibrated, training_seconds_total=cumulative))
+    ps.save_json(out/'summary.json', dict(completed=True, scientific_result=not a.smoke,
+        smoke=a.smoke, method=identity['method'], seed=a.seed, checkpoints=len(records),
+        training_seconds_total=cumulative, elapsed_seconds=time.perf_counter()-all_start))
+    print('CELL_COMPLETE', flush=True)
+
+
+if __name__ == '__main__':
+    main()

@@ -29,7 +29,9 @@ DER++在UNSW默认BAcc高于AR-Stateless（68.46对65.99），不能隐藏；但
 
 DER++是classwise memory、task-boundary的表格适配，不是原始online vision协议精确复现；iCaRL是herding+softmax-KL+NME，而非original sigmoid-BCE。存储feature可核验属于allowed TRAIN池，但没有unique来源rowID，重复向量不是独立来源行证明。CIC17五seed：DER++ checkpoint训练合计1622.24秒；iCaRL训练1167.21秒，另有buffer selection 157.21秒，端到端summary合计1406.25秒；采样峰RSS约2.23/3.01GB。不能隐藏herding成本，也不能把本地不同执行成本当硬件无关排名。
 
-ECBRS论文语义的global encounter ranking有supplement worked example依据，但与主算法local maximum措辞存在歧义，不能称唯一无歧义faithful。pre-decrement `m>=gamma`在gamma正但小于1时也能删掉最后槽，软件fixture无需浮点下溢；这不是整个性能损失的因果证明。UNSW默认FPR98.63%如实保留，seed10 Normal从task2起为空，不等于原native binary算法必然collapse。作者-memory敏感性保持其多条replacement/retrieval规则，同时明确underfill索引修补、rowID移植、M增长、无native task0预填/skip；不是原binary RMSprop/BCE入口。两组差异是规则组合敏感性，不能单归因gamma或Normal保留。CER真实packet10×4及注册split映射仍待，禁止flow列reshape或更换split冒充。
+ECBRS论文语义的global encounter ranking有supplement worked example依据，但与主算法local maximum措辞存在歧义，不能称唯一无歧义faithful。pre-decrement `m>=gamma`在gamma正但小于1时也能删掉最后槽，软件fixture无需浮点下溢；这不是整个性能损失的因果证明。UNSW默认FPR98.63%如实保留，seed10 Normal从task2起为空，不等于原native binary算法必然collapse。作者-memory敏感性保持其多条replacement/retrieval规则，同时明确underfill索引修补、rowID移植、M增长、无native task0预填/skip；不是原binary RMSprop/BCE入口。两组差异是规则组合敏感性，不能单归因gamma或Normal保留。
+
+B-CER按原文Table 6选择BiC：IoT-23、TON-IoT、IoT-NID、Edge-IIoT的全类macro-F1 Drop依次为10.92%、5.48%、18.16%、12.85%，均为该表八种CIL方法最低值。这些是原文数据集结果，不是我们的注册split结果。新实现明确为同一flow向量单通道Conv1D适配，不是原生packet 10×4复现；不换split或特征顺序。保留双卷积/池化/归一化、dense、扩展输出、蒸馏及冻结骨干的偏置校正阶段；32/64通道、kernel 3、pool 2、dense 128为工程默认，不冒称论文原值。骨干采用论文最多200 epoch、patience 20、lr 0.1除3至1e-4日程，优化器、偏置阶段、停止集和其他移植默认另在execution mapping披露。我们的memory为每个已见类最多200个唯一来源行，含Normal及校正子集、旧类不refresh，而非论文每类25。软件smoke不计科学格，完整五seed组独立验证前不更新已完成基线表；原生packet复现仍未完成，但不再阻塞该flow适配。
 
 CIC17 ECBRS论文语义五seed默认Accuracy为25.55%，高FPR81.09%与1%校准后的低BAcc19.11%均须保留，不能解释成原native binary方法失败。checkpoint训练合计3151.76秒，summary elapsed合计3200.69秒，采样峰RSS2.32GB（decimal）。最终每seed均1600槽，真正unique来源rowID依次为1137/1127/1131/1132/1137；重复presentation可以占多个槽，不同于DER/iCaRL仅feature去重的口径。
 
