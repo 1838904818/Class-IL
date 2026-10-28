@@ -1,0 +1,20 @@
+$ErrorActionPreference='Stop'
+$base='@@EXPERIMENT_ROOT@@'
+$python='@@PYTHON_ENV@@/python.exe'
+$env:TEMP="$base/tmp";$env:TMP=$env:TEMP
+& $python -I -B -u "$base/admin/check-ecbrs-extended-completed.py" "$base/runs/section178/cic-ids-2017/ecbrs-paper/seed10"
+if($LASTEXITCODE -ne 0){throw 'Seed10 verification failed'}
+foreach($seed in 11..14){
+ $prefix="$base/logs/ecbrs-paper-cic17-seed$seed"
+ foreach($suffix in @('monitor.stdout','monitor.stderr','stdout','stderr','validation.stdout','validation.stderr')){
+  if(Test-Path -LiteralPath "$prefix.$suffix.log"){throw "Existing seed$seed log requires inspection"}
+ }
+ if((Test-Path -LiteralPath "$prefix.monitor.stdout.log") -or (Test-Path -LiteralPath "$base/runs/section178/cic-ids-2017/ecbrs-paper/seed$seed")){throw "Existing seed$seed evidence requires inspection"}
+ Write-Output "START seed=$seed time=$(Get-Date -Format o)"
+ $p=Start-Process $python -WindowStyle Hidden -ArgumentList @('-I','-B','-u',"$base/admin/monitor-cic17-ecbrs-cell.py",'--seed',"$seed") -RedirectStandardOutput "$prefix.monitor.stdout.log" -RedirectStandardError "$prefix.monitor.stderr.log" -Wait -PassThru
+ if($p.ExitCode -ne 0){throw "Seed$seed monitor exit=$($p.ExitCode), preserve evidence and diagnose"}
+ $check=Start-Process $python -WindowStyle Hidden -ArgumentList @('-I','-B','-u',"$base/admin/check-ecbrs-extended-completed.py","$base/runs/section178/cic-ids-2017/ecbrs-paper/seed$seed") -RedirectStandardOutput "$prefix.validation.stdout.log" -RedirectStandardError "$prefix.validation.stderr.log" -Wait -PassThru
+ if($check.ExitCode -ne 0){throw "Seed$seed independent check failed"}
+ Write-Output "COMPLETE seed=$seed time=$(Get-Date -Format o)"
+}
+Write-Output "ALL_COMPLETE $(Get-Date -Format o)"
