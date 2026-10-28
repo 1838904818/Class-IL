@@ -1,0 +1,89 @@
+"""One native-schedule CER cell; no retry, queue, or schedule switch."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('--dataset', choices=['UNSW-NB15', 'CIC-IDS-2017'], required=True)
+p.add_argument('--seed', type=int, choices=range(10,15), required=True)
+a = p.parse_args()
+base = Path('@@EXPERIMENT_ROOT@@')
+repo = Path('@@SOURCE@@')
+python = '@@PYTHON_ENV@@/python.exe'
+slug = {'UNSW-NB15':'unsw-nb15','CIC-IDS-2017':'cic-ids-2017'}[a.dataset]
+short = {'UNSW-NB15':'unsw','CIC-IDS-2017':'cic17'}[a.dataset]
+assert a.dataset == 'UNSW-NB15' and a.seed == 10, 'Only first native UNSW resource-confirmation cell currently authorized by this launcher'
+volume = ctypes.create_unicode_buffer(100)
+assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/', volume, 100)
+assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+assert psutil.disk_usage('@@RESULT_DRIVE@@/').free > 20*1024**3
+assert psutil.virtual_memory().available > 12*1024**3
+for proc in psutil.process_iter(['pid','name','cmdline']):
+    if proc.info['pid'] != os.getpid() and proc.info['name'] == 'python.exe':
+        assert not any(s in ' '.join(proc.info['cmdline'] or []) for s in ['run_section','monitor-','run-cer','verify-longpaths'])
+env = os.environ.copy()
+env.update(TEMP=str(base/'tmp'), TMP=str(base/'tmp'), OMP_NUM_THREADS='2', MKL_NUM_THREADS='2', PYTHONDONTWRITEBYTECODE='1')
+files = sorted(set(repo.glob('ncd/**/*.py')) | set(repo.glob('ncd/configs/*.json')) |
+    {repo/'src/methods/replay_dpmeans.py', repo/'paper_aacil/results/section123_schedule_selection.json'})
+def hashes():
+    return {f.relative_to(repo).as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+bound = hashes()
+smoke = [json.loads(line) for line in (base/'logs/cer-bic-smoke-wrapper.stdout.log').read_text().splitlines() if line.startswith('{')]
+assert any(r.get('event') == 'SMOKE_VALIDATED' for r in smoke)
+assert bound == next(r['source_sha256'] for r in smoke if r.get('event') == 'START')
+subprocess.run([python,'-I','-B','-u',str(base/'admin/check-cer-bic-smoke.py'),str(base/'runs/section178/unsw-nb15/cer-bic-smoke-seed10')], env=env, check=True)
+prefix = base/f'logs/cer-bic-{short}-seed{a.seed}'
+out = base/f'runs/section178/{slug}/cer-bic/seed{a.seed}'
+assert not out.exists()
+for suffix in ['stdout','stderr','validation.stdout','validation.stderr']:
+    assert not Path(str(prefix)+'.'+suffix+'.log').exists()
+cmd = [python,'-I','-B','-u','ncd/run_section191_cer.py','--dataset',a.dataset,'--seed',str(a.seed),
+    '--data-root',str(base/'data/derived/section21_clean_v1'),'--output-dir',str(out),'--log-prefix',str(prefix)]
+print(json.dumps({'event':'START','command':cmd,'source_sha256':bound,
+    'work_order_commit':'127f04ecbc856195c8cc26231cb00c43c5cc7c08','max_seconds':3300,
+    'max_rss_bytes':10*1024**3,'min_system_available_bytes':2*1024**3,
+    'system_available_bytes':psutil.virtual_memory().available,'wd_free_bytes':psutil.disk_usage('@@RESULT_DRIVE@@/').free}), flush=True)
+start, peak, reason, samples = time.monotonic(), 0, None, 0
+with Path(str(prefix)+'.stdout.log').open('x') as stdout, Path(str(prefix)+'.stderr.log').open('x') as stderr:
+    child = subprocess.Popen(cmd,cwd=repo,env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+    print(json.dumps({'event':'CHILD_STARTED','pid':child.pid}), flush=True)
+    tracked = psutil.Process(child.pid)
+    try:
+        while child.poll() is None:
+            try:
+                rss = tracked.memory_info().rss
+                cpu = tracked.cpu_times()
+            except psutil.NoSuchProcess:
+                break
+            peak = max(peak,rss)
+            elapsed, available = time.monotonic()-start, psutil.virtual_memory().available
+            if samples % 6 == 0:
+                print(json.dumps({'event':'RESOURCE','pid':child.pid,'elapsed_seconds':elapsed,'rss_bytes':rss,
+                    'peak_rss_bytes':peak,'cpu_seconds':cpu.user+cpu.system,'system_available_bytes':available}), flush=True)
+            if elapsed > 3300 or rss > 10*1024**3 or available < 2*1024**3 or psutil.disk_usage('@@RESULT_DRIVE@@/').free < 20*1024**3:
+                reason = 'Local resource budget exceeded; preserve native partial results; no automatic retry or mixed schedule'
+                child.terminate()
+                break
+            samples += 1
+            time.sleep(5)
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        try:
+            code = child.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            code = child.wait()
+print(json.dumps({'event':'TERMINAL','exit_code':code,'sampled_peak_rss_bytes':peak,
+    'wall_seconds':time.monotonic()-start,'reason':reason,'source_unchanged':hashes()==bound}), flush=True)
+assert code == 0 and reason is None and hashes() == bound
+with Path(str(prefix)+'.validation.stdout.log').open('x') as stdout, Path(str(prefix)+'.validation.stderr.log').open('x') as stderr:
+    subprocess.run([python,'-I','-B','-u',str(base/'admin/check-cer-bic-completed.py'),str(out)], env=env, stdout=stdout, stderr=stderr, check=True)
+assert hashes() == bound
+print(json.dumps({'event':'CELL_VALIDATED','scientific_result':True,'output':str(out)}), flush=True)
