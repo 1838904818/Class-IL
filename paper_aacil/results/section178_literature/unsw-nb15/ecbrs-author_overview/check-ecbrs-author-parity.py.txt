@@ -1,0 +1,84 @@
+"""Bounded software parity against two reviewed functions at the fixed author SHA.
+
+Only the two function ASTs are executed, not repository imports or training.
+Full-buffer transitions/retrieval are compared. The declared corrected
+underfill index, row-ID initialization and growing budget are tested separately;
+these are not asserted equivalent to the native training entry.
+"""
+import ast
+from collections import Counter
+import hashlib
+import json
+from pathlib import Path
+import random
+import sys
+import urllib.request
+
+ROOT = Path('@@SOURCE@@')
+sys.path.insert(0, str(ROOT))
+import numpy as np
+from ncd.ecbrs_author_memory import AuthorCodeMemory
+
+URL = 'https://raw.githubusercontent.com/amalapuram/CLbasedNIDS/0fa7ac97ff441a865ed89aad69f05fc7e2eb7840/codebase/utils/buffermemory.py'
+source = urllib.request.urlopen(URL, timeout=30).read()
+assert hashlib.sha256(source).hexdigest() == '060d76f62522e8c8cbd8ea7c98fc3ac9664b93ea369101a8c4f3b1ba4172c39c'
+parsed = ast.parse(source.decode('utf-8'))
+names = {'memory_update', 'retrieve_replaysamples'}
+nodes = [node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in names]
+assert len(nodes) == 2
+namespace = dict(np=np, random=random.Random(17))
+exec(compile(ast.Module(body=nodes, type_ignores=[]), URL, 'exec'), namespace)
+
+tested = 0
+for seed in range(5):
+    m = AuthorCodeMemory(20, seed=seed)
+    # The upstream memory is prefilled by its caller, independently of update.
+    m.rows = list(range(20))
+    m.labels = [0]*15+[1]*5
+    m.local_count = {0: 15, 1: 5}
+    m.local_store = {0: list(range(15)), 1: list(range(15,20))}
+    m.encounters = {0: 200, 1: 10}
+    ref_rng = random.Random(seed)
+    namespace['random'] = ref_rng
+    x, y, labels = np.arange(20)[:, None], np.zeros(20), np.array(m.labels)
+    local, counts = Counter(m.local_count), Counter(m.encounters)
+    store = {c: list(ids) for c, ids in m.local_store.items()}
+    classes, full, gp, lp = set(counts), set(), {}, {}
+    stream_rng = np.random.default_rng(seed+100)
+    for batch in range(40):
+        incoming = stream_rng.choice(6, size=13, p=[.5,.1,.1,.1,.1,.1])
+        rows = np.arange(20+batch*13, 20+(batch+1)*13)
+        counts.update(map(int, incoming))
+        classes.update(map(int, incoming))
+        x,y,labels,local,counts,store,classes,full,gp,lp = namespace['memory_update'](
+            rows[:,None], np.zeros(13), incoming, 1, .1, 1, batch*13, 13, 20,
+            x,y,labels,local,counts,store,classes,full,gp,lp)
+        m.offer_batch(rows, incoming)
+        assert list(x[:,0]) == m.rows and list(labels) == m.labels
+        assert dict(local) == m.local_count and store == m.local_store
+        assert dict(counts) == m.encounters and full == m.full and gp == m.global_priority
+        assert ref_rng.getstate() == m.rng.getstate()
+        np.random.set_state(m.np_rng.get_state())
+        replay, _, replay_labels = namespace['retrieve_replaysamples'](
+            x,y,labels,gp,local,7,1,.1,20)
+        ours, ours_labels = m.sample(7)
+        assert replay[:,0].tolist() == ours.tolist() and replay_labels == ours_labels.tolist()
+        restored = AuthorCodeMemory.restore(m.state())
+        a,b = restored.sample(3)
+        c,d = m.sample(3)
+        assert np.array_equal(a,c) and np.array_equal(b,d)
+        tested += len(rows)
+
+# Declared adaptation: upstream append records len AFTER append, an out-of-range
+# index. Our append uses the zero-based inserted position and survives growth.
+m = AuthorCodeMemory(2)
+m.offer_batch([0,1], [0,1])
+assert m.local_store == {0:[0], 1:[1]} and not m.full
+m.grow(4)
+m.offer_batch([2,3], [2,3])
+assert AuthorCodeMemory.restore(m.state()).rows == [0,1,2,3]
+print(json.dumps(dict(scientific_result=False, upstream_url=URL,
+    upstream_sha256=hashlib.sha256(source).hexdigest(), seeds=5,
+    full_buffer_offers_compared=tested, replay_batches_compared=200,
+    resume_checks=200, underfill_and_growth_index_check=True,
+    scope='Component parity only; no native initialization, optimizer, epoch-loop or binary-task equivalence claim.')))

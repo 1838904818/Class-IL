@@ -1,0 +1,102 @@
+"""Read-only row-role, checkpoint and CM checks for the ECBRS adaptation."""
+import argparse
+import hashlib
+import json
+import math
+from pathlib import Path
+import sys
+
+ROOT = Path('@@SOURCE@@')
+sys.path.insert(0, str(ROOT))
+import numpy as np
+import torch
+from ncd import run_problem_scout as ps
+from ncd.prepare_problem_scout_data import prepare_setting
+
+p = argparse.ArgumentParser()
+p.add_argument('directory', type=Path)
+a = p.parse_args()
+r = json.loads((a.directory/'result.json').read_text(encoding='utf-8'))
+identity = r['identity']
+config = identity['effective_config']
+assert r['completed'] and r['scientific_result'] == (not identity['smoke'])
+assert len(r['checkpoints']) == len(r['default_stages']) == len(r['calibrated_stages']) == 5
+for file, sha in identity['source_sha256'].items():
+    assert ps.digest(ROOT/file) == sha, ('source changed', file)
+data, _, _, _ = prepare_setting(identity['dataset'], config)
+if identity['smoke']:
+    data, _, _ = ps.smoke_subset(data, None, None, limit=64)
+assert ps.binding(data, None, None) == identity['data_binding']
+train, valid = ps.section26_pools(data, identity['seed'])
+normal = data.class_order.index('Normal')
+held = set(np.concatenate(list(valid.values())).tolist())
+
+
+def close(actual, expected):
+    assert abs(actual-expected) < 1e-10, (actual, expected)
+
+
+def check_cm(metric, seen):
+    cm = np.asarray(metric['confusion_matrix'])
+    assert cm.dtype.kind in 'iu' and cm.shape == (len(data.class_order),)*2
+    assert (cm >= 0).all()
+    supports, predictions = cm.sum(axis=1), cm.sum(axis=0)
+    for c in range(len(data.class_order)):
+        assert supports[c] == (int((data.y_test == c).sum()) if c in seen else 0)
+        if c not in seen:
+            assert predictions[c] == 0
+    recall = {c: cm[c,c]/supports[c] for c in seen}
+    close(metric['macro_f1'], sum(2*cm[c,c]/(supports[c]+predictions[c]) for c in seen)/len(seen))
+    close(metric['normal_fpr'], 1-recall[normal])
+    attacks = [c for c in seen if c != normal]
+    detection = 1-sum(cm[c,normal] for c in attacks)/sum(supports[c] for c in attacks)
+    if 'accuracy' in metric:
+        close(metric['accuracy'], np.trace(cm)/cm.sum())
+        close(metric['attack_detection'], detection)
+        for c in seen:
+            close(metric['per_class_recall'][str(c)], recall[c])
+    else:
+        close(metric['balanced_accuracy'], sum(recall.values())/len(seen))
+        close(metric['attack_recall'], detection)
+        for per in metric['per_class']:
+            close(per['recall'], recall[per['class_id']])
+
+
+previous, previous_encounters = set(), 0
+unique = []
+for t, cp in enumerate(r['checkpoints']):
+    path = a.directory/cp['checkpoint_file']
+    assert ps.digest(path) == cp['checkpoint_sha256']
+    assert json.loads(path.with_suffix('.json').read_text()) == cp
+    state = torch.load(path, map_location='cpu', weights_only=True)
+    assert state['identity'] == identity
+    seen = [c for part in data.tasks[:t+1] for c in part]
+    assert cp['task_index'] == t and cp['seen_classes'] == seen
+    current = np.sort(np.concatenate([train[c] for c in data.tasks[t]]))
+    assert cp['current_rows_sha256'] == hashlib.sha256(current.tobytes()).hexdigest()
+    memory = state['memory']
+    rows = np.asarray(memory['rows'], dtype=np.int64)
+    assert len(rows) <= memory['capacity'] == 200*len(seen)
+    assert np.array_equal(data.y_train[rows], np.asarray(memory['labels']))
+    assert not (set(rows.tolist()) & held)
+    assert set(rows.tolist()) <= previous | set(current.tolist())
+    count = sum(memory['encounters'].values())
+    assert count-previous_encounters == cp['training_schedule']['examples_presented']
+    expected = max(config['epochs_per_task']*math.ceil(len(current)/config['batch_size']), config['min_steps_per_task'])
+    assert cp['training_schedule']['optimizer_steps'] == expected
+    previous, previous_encounters = set(rows.tolist()), count
+    unique.append({'stage': t, 'slots': len(rows), 'unique_rows': len(previous)})
+    default, calibrated = r['default_stages'][t], r['calibrated_stages'][t]
+    assert default['checkpoint_sha256'] == calibrated['checkpoint_sha256'] == cp['checkpoint_sha256']
+    check_cm(default['metrics'], seen)
+    cal = calibrated['calibration']
+    assert cal['calibration_indices_sha256'] == hashlib.sha256(valid[normal].tobytes()).hexdigest()
+    for alpha, point in cal['operating_points'].items():
+        n = len(valid[normal])
+        assert point['calibration_count'] == n and point['maximum_false_positives'] == math.floor(float(alpha)*n)
+        assert 0 <= point['calibration_false_positives'] <= point['maximum_false_positives']
+        close(point['calibration_fpr'], point['calibration_false_positives']/n)
+        check_cm(calibrated['operating_points'][alpha], seen)
+print(json.dumps({'verified_checkpoints': 5, 'verified_calibrated_points': 15,
+    'smoke': identity['smoke'], 'scientific_result': r['scientific_result'],
+    'memory_slots_and_unique_rows': unique, 'training_seconds': r['training_seconds_total']}))

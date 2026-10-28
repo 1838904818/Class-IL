@@ -1,0 +1,31 @@
+"""Independent generic metrics/roles checks plus author-memory state checks."""
+import json
+from pathlib import Path
+import runpy
+import sys
+
+ROOT = Path('@@SOURCE@@')
+sys.path.insert(0, str(ROOT))
+import torch
+from ncd.ecbrs_author_memory import AuthorCodeMemory, SEMANTICS
+
+scope = runpy.run_path(str(Path(__file__).with_name('check-ecbrs-completed.py')))
+result = scope['r']
+directory = scope['a'].directory
+assert result['identity']['method'] == 'ecbrs-author-code-sensitivity'
+assert result['identity']['memory_semantics'] == SEMANTICS
+details = []
+for cp in result['checkpoints']:
+    state = torch.load(directory/cp['checkpoint_file'], map_location='cpu', weights_only=True)
+    memory = AuthorCodeMemory.restore(state['memory'])
+    assert state['memory_class_counts'] == memory.counts()
+    assert state['memory_threshold'] == memory.threshold()
+    assert sum(memory.local_count.values()) == len(memory.rows)
+    assert all(n <= memory.encounters[c] for c, n in memory.local_count.items())
+    assert set(memory.global_priority) <= set(memory.encounters)
+    assert all(0 < p <= 1 for p in memory.global_priority.values())
+    details.append(dict(stage=state['task_index'], slots=len(memory.rows),
+        unique_rows=len(set(memory.rows)), full=sorted(memory.full),
+        class_counts=memory.counts(), threshold=memory.threshold()))
+print(json.dumps(dict(author_memory_states_verified=len(details), states=details,
+    scope='Matched-protocol author-memory sensitivity, not native binary reproduction.')))

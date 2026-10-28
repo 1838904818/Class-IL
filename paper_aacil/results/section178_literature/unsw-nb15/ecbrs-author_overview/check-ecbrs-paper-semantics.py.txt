@@ -1,0 +1,101 @@
+"""Read-only checkpoint/gamma investigation for work-order 187.
+
+This checks the published interpretation, not unique fidelity to the paper.
+Algorithm 1's use of "largest" and supplement A.3's repeated global-majority
+replacement require separate interpretation; neither a passing test nor a
+collapsed result establishes native-binary reproduction.
+"""
+import hashlib
+import json
+from collections import Counter
+from decimal import Decimal, localcontext
+from pathlib import Path
+import sys
+
+ROOT = Path('@@SOURCE@@')
+RUNS = Path('@@EXPERIMENT_ROOT@@/runs/section178/unsw-nb15/ecbrs-paper')
+PAPER = 'https://proceedings.neurips.cc/paper_files/paper/2023/file/3755a02b1035fbadd5f93a022170e46f-Paper-Conference.pdf'
+SUPPLEMENT = 'https://proceedings.neurips.cc/paper_files/paper/2023/file/3755a02b1035fbadd5f93a022170e46f-Supplemental-Conference.pdf'
+sys.path.insert(0, str(ROOT))
+import torch
+from ncd.ecbrs_memory import PaperECBRS
+
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def decimal_gamma(encounters, capacity):
+    # Decimal retains tiny strictly positive weights that float64 underflows.
+    with localcontext() as ctx:
+        ctx.prec = 60
+        ctx.Emin = -9999999
+        ctx.Emax = 9999999
+        minimum = min(encounters.values())
+        weights = {c: Decimal(-(n-minimum)).exp() for c, n in encounters.items()}
+        total = sum(weights.values())
+        return {c: Decimal(capacity)*w/total for c, w in weights.items()}
+
+
+def edge_fixture():
+    # A reachable-shaped buffer with two historically full classes and a new
+    # nonfull class. All count differences are small enough to avoid underflow.
+    memory = PaperECBRS(4, seed=1)
+    memory.rows = [0, 1, 2, 3]
+    memory.labels = [0, 1, 1, 1]
+    memory.encounters = {0: 100, 1: 3}
+    memory.full = {0, 1}
+    before = memory.counts()
+    outcome = memory.offer(4, 2)
+    gamma = memory.gamma()[0]
+    assert 0 < gamma < 1  # Crucially: no numerical zero in this fixture.
+    assert before[0] == 1 and before[1] == 3
+    assert outcome['victim_class'] == 0 and memory.counts()[0] == 0
+    assert not memory.offer(5, 0)['admitted']
+    assert memory.counts()[0] == 0
+    return dict(scientific_result=False, gamma_before_zeroing=gamma,
+        global_rank_victim=0, strict_local_max_victim=1,
+        complete_eviction_without_float_underflow=True,
+        full_class_cannot_reenter_at_capacity=True,
+        caveat='Synthetic transition, not a replay of the training trajectory; growth can admit rows again.')
+
+
+def main():
+    rows = []
+    for seed in range(10, 15):
+        directory = RUNS/f'seed{seed}'
+        result = json.loads((directory/'result.json').read_text(encoding='utf-8'))
+        identity = result['identity']
+        assert result['completed'] and result['scientific_result']
+        for file, digest in identity['source_sha256'].items():
+            assert sha(ROOT/file) == digest, ('bound source changed', file)
+        assert len(result['checkpoints']) == 5
+        for cp in result['checkpoints']:
+            path = directory/cp['checkpoint_file']
+            assert sha(path) == cp['checkpoint_sha256']
+            state = torch.load(path, map_location='cpu', weights_only=True)
+            assert state['identity'] == identity
+            memory = PaperECBRS.restore(state['memory'])
+            assert memory.counts() == state['memory_class_counts']
+            assert memory.gamma() == state['memory_gamma']
+            exact = decimal_gamma(memory.encounters, memory.capacity)
+            assert all(g > 0 for g in exact.values())
+            float_zeros = [c for c, g in memory.gamma().items() if g == 0]
+            assert all(exact[c] < 1 for c in float_zeros)
+            assert Counter(memory.labels) == Counter({c: n for c, n in memory.counts().items() if n})
+            rows.append(dict(seed=seed, stage=state['task_index'],
+                class_counts=memory.counts(), encounters=memory.encounters,
+                zero_count_classes=[identity['class_order'][c] for c, n in memory.counts().items() if not n],
+                float_zero_gamma_classes=float_zeros,
+                decimal_gamma_scientific={c: format(g, '.6E') for c, g in exact.items()},
+                all_float_zero_gammas_are_positive_but_less_than_one=True))
+    print(json.dumps(dict(verified_checkpoints=len(rows), fixture=edge_fixture(), stages=rows,
+        sources=dict(main=dict(url=PAPER, printed_page=4, algorithm=1, equation=1,
+            short_excerpt='select a class that is the largest, having higher running statistics value and non-zero samples'),
+            supplement=dict(url=SUPPLEMENT, sections=['A.3', 'A.14'], printed_pages=[3, 19])),
+        interpretation_status='Global-ranking interpretation matches supplement A.3 replacement sequence; Algorithm 1 also uses locally defined largest. Unique paper fidelity is not established.',
+        conclusion='A fractional positive gamma with the implemented pre-decrement m>=gamma test can allow last-row eviction. Underflow alone is not necessary. This does not identify the whole performance loss causally.'), indent=2))
+
+
+if __name__ == '__main__':
+    main()
