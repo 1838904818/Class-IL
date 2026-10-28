@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATASETS = [('unsw-nb15', 'UNSW'), ('cic-ids-2017', 'CIC-2017'),
             ('cse-cic-ids2018', 'CSE-2018')]
 METHODS = [('derpp', 'DER++'), ('icarl', 'iCaRL (adapt.)'),
-           ('ecbrs-paper', 'ECBRS (paper)'), ('cer', 'CER')]
+           ('ecbrs-paper', 'ECBRS (paper)'), ('cer-bic', 'BiC (flow adapt.)')]
 VIEWS = ('default', '0.01', '0.02', '0.05')
 
 
@@ -142,7 +142,7 @@ def main():
                                fmt(s['bacc']), fmt(s['fpr'])])+r'\\')
     out += [r'\bottomrule\end{tabular}\end{table*}',
             r'\begin{table}[htbp]\centering\small',
-            rf'\caption{{Added-baseline execution/publication coverage: {completed}/60 primary cells. Each entry is completed seeds out of five; zero means not run, not a negative result. The five author-memory sensitivity cells are additional.}}',
+            rf'\caption{{Added-baseline execution/publication coverage: {completed}/60 primary cells. Each entry is completed seeds out of five; zero means no completed published seed, not a negative result. The five author-memory sensitivity cells are additional.}}',
             r'\label{tab:published-baselines-coverage}',
             r'\begin{tabular}{lrrrr}\toprule',
             r'Dataset & DER++ & iCaRL & ECBRS & CER\\\midrule']
