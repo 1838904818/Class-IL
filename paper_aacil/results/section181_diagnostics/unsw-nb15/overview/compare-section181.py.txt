@@ -1,0 +1,65 @@
+"""Five-seed post-hoc diagnostics versus published exact-C1 AR-Stateless."""
+import argparse
+import json
+from pathlib import Path
+import statistics
+
+p = argparse.ArgumentParser()
+p.add_argument('--method', required=True, choices=('D1-joint','D2-matched','D3-memory2x','D3-memory4x'))
+a = p.parse_args()
+BASE = Path('EXPERIMENT_ROOT/runs/section181/diagnostic')
+AR = Path('SOURCE/paper_aacil/results/section165_confirmation/unsw-nb15')
+
+
+def measure(result, view):
+    recalls, finals = [], []
+    normal = result['class_order'].index('Normal')
+    for cp in result['checkpoints']:
+        m = cp['default_decision'] if view == 'default' else cp['operating_points'][view]
+        cm = m['confusion_matrix']
+        rec = {c: cm[c][c]/sum(cm[c]) for c in cp['seen_classes']}
+        recalls.append(rec)
+        finals.append(dict(bacc=sum(rec.values())/len(rec), normal_fpr=1-rec[normal],
+                           accuracy=sum(cm[c][c] for c in rec)/sum(map(sum,cm))))
+    perclass = []
+    for i, task in enumerate(result['tasks']):
+        for c in task:
+            prior = [r[c] for r in recalls[i:-1]]
+            perclass.append(dict(name=result['class_order'][c], first=recalls[i][c],
+                peak=max(r[c] for r in recalls[i:]), final=recalls[-1][c],
+                forgetting=max(prior)-recalls[-1][c] if prior else None))
+    old = [r['forgetting'] for r in perclass if r['forgetting'] is not None]
+    return dict(**finals[-1], forgetting=statistics.mean(old), per_class=perclass)
+
+
+rows = []
+for seed in range(10,15):
+    d = json.loads((BASE/a.method/f'seed{seed}/cell/result.json').read_text())
+    b = json.loads((AR/f'R3-A_seed{seed}/result.json').read_text())
+    assert d['completed'] and b['completed'] and d['scientific_result'] and b['scientific_result']
+    assert d['identity']['seed'] == b['identity']['seed'] == seed
+    assert d['identity']['data_binding'] == b['identity']['data_binding']
+    assert d['tasks'] == b['tasks'] and d['class_order'] == b['class_order']
+    assert b['identity']['effective_config']['section165_memory'] == 'exact_c1'
+    assert len(d['checkpoints']) == len(b['checkpoints']) == 5
+    for x,y in zip(d['checkpoints'],b['checkpoints']):
+        assert x['seen_classes'] == y['seen_classes']
+        assert x['gate_schedule']['backend'] == y['gate_schedule']['backend'] == 'histgb'
+        for alpha in ('0.01','0.02','0.05'):
+            assert x['calibration'][alpha]['row_ids_sha256'] == y['calibration'][alpha]['row_ids_sha256']
+        for v in ('default','0.01'):
+            xcm = (x['default_decision'] if v == 'default' else x['operating_points'][v])['confusion_matrix']
+            ycm = (y['default_decision'] if v == 'default' else y['operating_points'][v])['confusion_matrix']
+            assert list(map(sum,xcm)) == list(map(sum,ycm))
+    rows.append(dict(seed=seed, views={v:{'diagnostic':measure(d,v),'AR-Stateless':measure(b,v)}
+                                      for v in ('default','0.01')}))
+aggregate = {}
+for v in ('default','0.01'):
+    aggregate[v] = {}
+    for group in ('diagnostic','AR-Stateless'):
+        aggregate[v][group] = {metric:{'mean':statistics.mean(r['views'][v][group][metric] for r in rows),
+            'sample_sd':statistics.stdev(r['views'][v][group][metric] for r in rows)}
+            for metric in ('bacc','accuracy','normal_fpr','forgetting')}
+print(json.dumps(dict(method=a.method,post_hoc=True,seeds=list(range(10,15)),
+    matched_data_tasks_test_support_and_calibration=True, aggregate=aggregate, per_seed=rows,
+    limits='D1 changes benign sample count and old-class stopping access as well as attack retention; D2 changes optimization and stopping sample counts. Neither isolates every causal component. No S1 or novelty-gate conclusion.'), sort_keys=True))

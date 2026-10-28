@@ -1,0 +1,88 @@
+"""Read-only independent §181 calibrated/default CM and trajectory calculation."""
+import argparse
+import json
+import math
+from pathlib import Path
+
+p = argparse.ArgumentParser()
+p.add_argument('result', type=Path)
+a = p.parse_args()
+r = json.loads(a.result.read_text())
+assert r['completed'] and len(r['checkpoints']) == len(r['tasks']) == 5
+normal = r['class_order'].index('Normal')
+
+
+def close(x, y):
+    assert abs(x-y) < 1e-10, (x, y)
+
+
+def cm_metrics(d, seen):
+    cm = d['confusion_matrix']
+    n = len(r['class_order'])
+    assert len(cm) == n and all(len(row) == n for row in cm)
+    assert all(type(v) is int and v >= 0 for row in cm for v in row)
+    rows = list(map(sum, cm))
+    cols = [sum(cm[i][j] for i in range(n)) for j in range(n)]
+    assert all(rows[c] > 0 for c in seen)
+    assert all(rows[c] == cols[c] == 0 for c in range(n) if c not in seen)
+    rec = {str(c): cm[c][c]/rows[c] for c in seen}
+    acc = sum(cm[c][c] for c in seen)/sum(rows)
+    bacc = sum(rec.values())/len(seen)
+    f1 = sum(2*cm[c][c]/(rows[c]+cols[c]) for c in seen)/len(seen)
+    fpr = 1-rec[str(normal)]
+    attacks = [c for c in seen if c != normal]
+    detection = 1-sum(cm[c][normal] for c in attacks)/sum(rows[c] for c in attacks)
+    close(d['macro_f1'], f1)
+    close(d['normal_fpr'], fpr)
+    if 'per_class_recall' in d:
+        close(d['accuracy'], acc)
+        close(d['attack_detection'], detection)
+        assert d['evaluated_test_rows'] == sum(rows)
+        for c, recall in rec.items():
+            close(d['per_class_recall'][c], recall)
+    else:
+        close(d['balanced_accuracy'], bacc)
+        close(d['attack_recall'], detection)
+        assert d['evaluated_rows'] == sum(rows)
+        for row in d['per_class']:
+            close(row['recall'], rec[str(row['class_id'])])
+    return dict(accuracy=acc, balanced_accuracy=bacc, macro_f1=f1,
+                normal_fpr=fpr, attack_detection=detection, recall=rec)
+
+
+views = {'default': []}
+for i, cp in enumerate(r['checkpoints']):
+    assert cp['task_index'] == i
+    seen = [c for task in r['tasks'][:i+1] for c in task]
+    assert cp['seen_classes'] == seen
+    views['default'].append(cm_metrics(cp['default_decision'], seen))
+    assert set(cp['calibration']) == set(cp['operating_points']) == {'0.01','0.02','0.05'}
+    for alpha, cal in cp['calibration'].items():
+        n = cal['calibration_rows']
+        assert n > 0 and math.isfinite(cal['threshold'])
+        assert cal['allowed_false_alarms'] == math.floor(float(alpha)*n)
+        assert 0 <= cal['actual_false_alarms'] <= cal['allowed_false_alarms']
+        close(cal['actual_fpr'], cal['actual_false_alarms']/n)
+        views.setdefault(alpha, []).append(cm_metrics(cp['operating_points'][alpha], seen))
+
+report = {'method': r['identity']['method'], 'seed': r['identity']['seed'],
+          'smoke': r['identity']['smoke'], 'post_hoc': True, 'verified_calibrated_points':15,
+          'training_seconds': sum(c['gate_training_seconds']+c['family_training_seconds']
+                                  for c in r['checkpoints']), 'views': {}}
+for name, stages in views.items():
+    perclass = []
+    for i, task in enumerate(r['tasks']):
+        for c in task:
+            key = str(c)
+            first = stages[i]['recall'][key]
+            final = stages[-1]['recall'][key]
+            prior = [s['recall'][key] for s in stages[i:-1]]
+            perclass.append(dict(class_id=c, class_name=r['class_order'][c], introduction_stage=i,
+                first=first, peak=max(s['recall'][key] for s in stages[i:]),
+                best_prior=max(prior) if prior else None, final=final,
+                signed_forgetting=max(prior)-final if prior else None))
+    old = [x['signed_forgetting'] for x in perclass if x['signed_forgetting'] is not None]
+    report['views'][name] = dict(final={k:v for k,v in stages[-1].items() if k != 'recall'},
+        incremental_balanced_accuracy=sum(s['balanced_accuracy'] for s in stages)/len(stages),
+        signed_forgetting_all_old_including_normal=sum(old)/len(old), per_class=perclass)
+print(json.dumps(report, ensure_ascii=False, sort_keys=True))

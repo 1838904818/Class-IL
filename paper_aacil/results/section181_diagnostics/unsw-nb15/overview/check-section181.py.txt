@@ -1,0 +1,90 @@
+"""Read-only independent row-role and confusion-matrix checks for §181."""
+import argparse
+import hashlib
+import json
+import math
+from pathlib import Path
+import sys
+
+SOURCE = Path('SOURCE')
+sys.path.insert(0, str(SOURCE))
+import numpy as np
+import torch
+from ncd.prepare_problem_scout_data import prepare_setting
+from ncd.run_problem_scout import smoke_subset
+from ncd.section81_exposure import ERExposure
+
+p = argparse.ArgumentParser()
+p.add_argument('result', type=Path)
+a = p.parse_args()
+r = json.loads(a.result.read_text())
+assert r['completed'] and len(r['checkpoints']) == 5
+ident = r['identity']
+data, _, _, _ = prepare_setting(ident['dataset'], ident['effective_config'])
+if ident['smoke']:
+    data, _, _ = smoke_subset(data, None, None, 64)
+exp = ERExposure(data, ident['seed'])
+normal = exp.normal
+previous = {}
+method = ident['method']
+for record in r['checkpoints']:
+    path = a.result.parent / record['checkpoint_file']
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == record['checkpoint_sha256']
+    s = torch.load(path, map_location='cpu', weights_only=False)
+    assert s['identity'] == ident
+    t, seen = s['task_index'], s['seen_classes']
+    ids, stop = s['optimization_ids'].numpy(), s['stopping_ids'].numpy()
+    assert len(np.unique(ids)) == len(ids) and len(np.unique(stop)) == len(stop)
+    assert not np.intersect1d(ids, stop).size
+    assert not np.intersect1d(np.union1d(ids, stop), exp.calibration_ids).size
+    assert set(data.y_train[ids]).issubset(seen)
+    attacks = sorted(c for c in seen if c != normal)
+    multiplier = 2 if method == 'D3-memory2x' else 4 if method == 'D3-memory4x' else 1
+    q, rem = divmod(200 * multiplier * len(seen), len(attacks))
+    quotas = {c: q + (j < rem) for j, c in enumerate(attacks)}
+    new = set(data.tasks[t]) - {normal}
+    for c in seen:
+        got = ids[data.y_train[ids] == c]
+        got_stop = stop[data.y_train[stop] == c]
+        if method == 'D1-joint':
+            expected = exp.train[c]
+            if c == normal:
+                expected = np.setdiff1d(expected, exp.normal_stopping_ids)
+            assert set(got) == set(expected)
+            expected_stop = exp.normal_stopping_ids if c == normal else exp.valid[c]
+            assert set(got_stop) == set(expected_stop)
+        elif c != normal and c not in new:
+            assert set(got) == set(previous[str(c)]['train_ids'].tolist())
+            assert set(got_stop) == set(previous[str(c)]['validation_ids'].tolist())
+        elif c != normal and method == 'D2-matched':
+            nv = max(5, math.ceil(quotas[c] * .1))
+            assert len(got) == min(len(exp.train[c]), quotas[c]-nv)
+            assert len(got_stop) == min(len(exp.valid[c]), nv)
+            assert set(got).issubset(exp.train[c]) and set(got_stop).issubset(exp.valid[c])
+        elif c != normal:
+            assert set(got) == set(exp.train[c])
+            assert set(got_stop) == set(exp.valid[c])
+    for c in attacks:
+        mem = s['attack_memory'][str(c)]
+        ti, vi = mem['train_ids'].numpy(), mem['validation_ids'].numpy()
+        nv = max(5, math.ceil(quotas[c] * .1))
+        assert len(ti) <= quotas[c]-nv and len(vi) <= nv
+        assert not np.intersect1d(ti, vi).size
+        if c not in new:
+            assert set(ti).issubset(previous[str(c)]['train_ids'].tolist())
+            assert set(vi).issubset(previous[str(c)]['validation_ids'].tolist())
+        if c in new and method == 'D2-matched':
+            assert set(ti).issubset(ids) and set(vi).issubset(stop)
+    previous = s['attack_memory']
+    d = record['default_decision']
+    cm = np.asarray(d['confusion_matrix'])
+    support, predicted, tp = cm.sum(1), cm.sum(0), cm.diagonal()
+    for actual, expected in ((d['accuracy'], tp.sum()/support.sum()),
+        (d['macro_f1'], np.mean([2*tp[c]/(support[c]+predicted[c]) for c in seen])),
+        (d['normal_fpr'], 1-tp[normal]/support[normal])):
+        assert abs(actual-expected) < 1e-12
+    for alpha, cal in record['calibration'].items():
+        assert cal['allowed_false_alarms'] == math.floor(float(alpha)*cal['calibration_rows'])
+        assert cal['actual_false_alarms'] <= cal['allowed_false_alarms']
+    print('VERIFIED_STAGE', method, ident['seed'], t, len(ids), len(stop), flush=True)
+print('VERIFIED_ROW_ROLES_DEFAULT_CM_CHECKPOINTS', method, ident['seed'], 'smoke=', ident['smoke'])
