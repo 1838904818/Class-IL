@@ -453,7 +453,27 @@ Fuzzers and Analysis contribute 5.531 pp (26.82\%). Their final predictions are 
 
 Lower forgetting need not imply better final retention: neural AR starts DoS, Reconnaissance and Backdoor at 27.83\%, 67.28\% and 34.00\%, versus 89.05\%, 98.55\% and 76.57\% here. Lower peaks leave less recall to lose. AR-Stateless has higher final recall for six of seven old attack classes; Exploits is slightly lower (50.83\% versus 51.20\%), not an established tie. These are descriptive comparisons, not per-class significance or equivalence tests. CIC-2017 contrasts with UNSW: mean forgetting is 0.417 pp and each old class's five-seed mean final recall is at least 98.25\%. This does not prove absence of overlap or a bound for every individual seed.
 
-Three post-hoc diagnostics remain unrun because of the storage constraint: D1, matched joint HistGB with all seen-class training rows; D2, current attacks subsampled to the old-class memory share; and D3, attack memory multiplied by two and four. D1 tests the task-difficulty explanation, D2 the current-class full-data advantage, and D3 memory sensitivity. Both views and final performance must accompany forgetting. These diagnostics are not new candidates and do not change S1 or R1--R5. Until they run, the arithmetic decomposition is verified but a causal allocation of the loss is not.
+The post-hoc diagnostics are now complete for UNSW seeds 10--14 (20 runs): D1, the same HistGB trained on all seen-class optimization rows; D2, new attacks subsampled to the current memory share; and D3, attack-memory budgets multiplied by two and four. Permanent calibration rows remain excluded from optimization. Published Section 181 artifacts include checkpoint hashes, row-role checks, both decision views, and per-class first, peak and final recalls. Table~\ref{tab:retention-diagnostics} reports five-seed means; these diagnostics are not new candidates and do not change S1 or R1--R5.
+
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\caption{Post-hoc UNSW retention diagnostics, seeds 10--14. BAcc and test FPR are percentages; signed forgetting (F) is in percentage points. The 1\% column group is a calibration target, not a guarantee of test FPR. D1 is an offline reference with expanded old-data access.}
+\label{tab:retention-diagnostics}
+\begin{tabular}{lrrrrrr}\toprule
+&\multicolumn{3}{c}{1\% calibration target}&\multicolumn{3}{c}{Default decision}\\
+Method &BAcc&F&FPR&BAcc&F&FPR\\\midrule
+AR-Stateless &65.41&20.62&1.02&65.99&27.42&1.26\\
+D2 matched exposure &64.51&7.53&1.02&64.60&4.64&1.05\\
+D3 memory $\times2$ &67.27&15.71&0.92&69.98&21.34&1.88\\
+D3 memory $\times4$ &67.46&12.03&0.96&71.77&17.25&2.77\\
+D1 all-seen HistGB &66.14&2.85&1.05&73.41&3.93&14.26\\\bottomrule
+\end{tabular}
+\end{table}
+
+D2 reduces measured forgetting from 20.62 to 7.53 pp while final BAcc changes from 65.41\% to 64.51\%. The reduction is about 64\% of the original forgetting value, but is a descriptive between-condition contrast, not an identified causal fraction. It supports sensitivity of peak-minus-final forgetting to the full-data advantage at new-class introduction: reducing early recall peaks can lower forgetting without improving final performance. D2 changes both optimization and stopping samples, so the residual cannot be assigned entirely to finite memory. D3 supplies complementary memory-budget evidence: forgetting decreases monotonically at the evaluated budgets, while final BAcc increases. This supports memory sensitivity in this implementation, not a complete causal decomposition of forgetting.
+
+D1 reaches final Exploits/DoS recalls of 83.30\%/45.54\% at the 1\% target, compared with 50.83\%/41.32\% for AR-Stateless. Thus, the historical joint-MLP observation cannot justify an intrinsically inseparable-pair claim; we reject that interpretation. D1 is an offline reference, not a valid bounded-memory incremental competitor: it revisits old optimization data and also changes benign volume and old-class stopping access. AR-Stateless is 0.73 pp below D1 in calibrated final BAcc, but 7.42 pp below it in the default view, where D1's FPR is 14.26\% rather than 1.26\%. Neither the small calibrated gap nor the larger default gap should be reported without its decision policy and alarm burden. These are bounded RQ2 diagnostics; RQ1, RQ3 and the substantive-innovation gate remain unresolved.
 
 \subsection{Design-space study and negative variants}
 The complete 48-configuration screen used seeds 1--2, with three selected configurations evaluated on seeds 10--14. None met K1 on either dataset; no configuration was confirmed, and no further method round follows. Tables~\ref{tab:design-space-screen}--\ref{tab:design-space-confirm} preserve every screening configuration and the confirmation-stage comparators. T1/T2 were registered but not run (time), before scoring; they are not failed model results.
