@@ -36,7 +36,7 @@ def build():
     for dataset, slug in [('unsw-nb15','unsw'), ('cic-ids-2017','cic')]:
         groups = {}
         out += [r'\begin{table*}[t]\centering\scriptsize',
-                r'\caption{'+dataset.upper()+r': literature-comparable view (default decision, no FPR calibration). Seeds 10--14, mean $\pm$ sample SD; percentages or percentage points. ACC is mean stage micro accuracy; BWT is mean old-class recall change since introduction; forgetting is signed best pre-final minus final old-class recall, including Normal. NA denotes no published default view in this seed block, not a zero or an omitted failed seed.}',
+                r'\caption{'+dataset.upper()+r': historical confirmation-source snapshot (default decision, no FPR calibration). Seeds 10--14, mean $\pm$ sample SD; percentages or percentage points. ACC is mean stage micro accuracy; BWT is mean old-class recall change since introduction; forgetting is signed best pre-final minus final old-class recall, including Normal. NA denotes absence from these historical confirmation/default-export collections, not a zero or an omitted failed seed. Later completed added-baseline blocks are reported separately in Table~\ref{tab:published-baselines-default}.}',
                 r'\label{tab:default-'+slug+'}',r'\begin{tabular}{lrrrrrrr}\toprule',
                 r'Method & $n/5$ & Accuracy & Macro-F1 & Weighted-F1 & ACC & BWT & Forgetting \\\midrule']
         for method, label in [('R3-A','AR-Stateless'),('R3-L','R3-L'),('replay','Replay'),('derpp','DER++'),('wacb','WACB'),('freq','Freq'),('replay_bs','Replay-BS'),('aa_cil','AA-CIL'),('kdwa','KD+WA'),('akd','AKD'),('joint','Joint (offline)'),('ar','AR'),('ar_joint','AR-Joint'),('er_bal_tabt','ER-Bal-TabT')]:
@@ -71,7 +71,7 @@ def build():
             out.append(label+' & '+str(len(rows))+' & '+' & '.join(columns)+r' \\')
         out += [r'\bottomrule\end{tabular}\end{table*}']
         out += [r'\begin{table*}[t]\centering\scriptsize',
-                r'\caption{'+dataset.upper()+r': exploratory paired default-decision comparisons, AR minus comparator, seeds 10--14. Two-sided paired $t$ and exact sign-flip $p$ values (all 32 assignments), unadjusted for multiple comparisons. Only complete paired blocks are tested; these tests do not replace historical decisions. Positive accuracy/F1/ACC/BWT differences favor AR; negative forgetting differences favor AR.}',
+                r'\caption{'+dataset.upper()+r': exploratory paired default-decision comparisons within the historical source collections, historical neural AR minus comparator, seeds 10--14. Two-sided paired $t$ and exact sign-flip $p$ values (all 32 assignments), unadjusted for multiple comparisons. Only complete paired blocks are tested; these tests do not replace historical decisions. Positive accuracy/F1/ACC/BWT differences favor AR; negative forgetting differences favor AR.}',
                 r'\begin{tabular}{llrrr}\toprule Comparator & Endpoint & Mean difference (pp) & $p_t$ & $p_{flip}$ \\\midrule']
         for label, rows in groups.items():
             if label == 'AR':
