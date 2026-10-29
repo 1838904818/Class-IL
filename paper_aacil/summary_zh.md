@@ -6,7 +6,7 @@
 
 引言与贡献列表现以AR-Stateless的无状态多类重训、良性数据访问、双决策视图、已完成与待完成基线块及同学习器事后诊断为主线。文献差异明确：攻击记忆之外使用新良性数据已有先例，不作为创新；独立二元门与分离家族学习仅属于历史神经设计，不能读成当前方法组件。跨方法结果同时包含骨干与访问差异，不单独识别良性refresh的因果效果。历史Replay-BS、neural AR的负面结果、数值和原始证据全部保留；这是叙述一致性整理，不是新增实验或创新门验收。
 
-正文方法章仅保留AR-Stateless及共享数据访问假设。历史AA-CIL双网络、算法、校准公式、KD/ISO和后续保持候选集中移至“Historical neural design-space study”附录，原公式、算法、选择规则与负面结果均保留，不能作为AR-Stateless的训练方法解读。本次仅结构整理，没有新增实验或重跑；全文历史叙述的一致性清理与视觉QA仍未完成，当前已完成40/60主格，RQ1/RQ3及实质创新门仍未关闭。
+正文方法章仅保留AR-Stateless及共享数据访问假设。历史AA-CIL双网络、算法、校准公式、KD/ISO和后续保持候选集中移至“Historical neural design-space study”附录，原公式、算法、选择规则与负面结果均保留，不能作为AR-Stateless的训练方法解读。本次仅结构整理，没有新增实验或重跑；全文历史叙述的一致性清理与视觉QA仍未完成，当前已完成45/60主格，RQ1/RQ3及实质创新门仍未关闭。
 
 历史讨论现将神经配置筛选的终止、gate/family与TS-mem/Replay-BS观察及fixed-capacity外部检查明确限定在各自历史实验，不作为AR-Stateless的组件、主结论或整体研究完成声明。原“全部配对检验未校正”缩限为历史神经研究；后续新增基线遵循单独注册的数据集内Holm校正。全部历史数值、阴性结果、检验及选择/暴露限制均保留，未新增实验或关闭未完成要求。
 
@@ -14,7 +14,9 @@
 
 ## §178：新增基线的已发布范围（2026-10-28）
 
-共同预算主矩阵已完成并双发布40/60：UNSW与CIC17的DER++、iCaRL适配、ECBRS论文语义均各5seed，另有共同预算UNSW与CIC17 BiC flow适配各5seed。UNSW作者-memory另5seed、原native-stage1 BiC另5seed均为额外敏感性，不计主60格或Holm族。剩余20格全为CSE且未完成，不是负面结果；UNSW和CIC17四方法块及注册S1 Holm比较已完成，CSE四方法块与对应S1比较仍未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed或日程补空白。
+共同预算主矩阵已完成并双发布45/60：UNSW与CIC17的DER++、iCaRL适配、ECBRS论文语义均各5seed，另有共同预算UNSW与CIC17 BiC flow适配各5seed。UNSW作者-memory另5seed、原native-stage1 BiC另5seed均为额外敏感性，不计主60格或Holm族。CSE DER++另5seed已完成；剩余15格全为CSE且未完成，不是负面结果；UNSW和CIC17四方法块及注册S1 Holm比较已完成，CSE四方法块与对应S1比较仍未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed或日程补空白。
+
+CSE DER++ seeds10–14已完成并双发布。默认BAcc为81.65±2.06%（样本SD），Accuracy 73.19%、macro-F1 61.41%、FPR 30.37%、signed forgetting 16.93pp；1%校准目标下BAcc 14.37±0.12%、实测test FPR 1.04%、attack recall仅0.35%、忘却38.01pp。2%/5%目标的BAcc/FPR分别为14.56/2.04%与15.71/5.02%。高默认误报与低FPR下极弱攻击识别均保留，不能将整组完成当作CSE S1族已通过。五seed checkpoint训练合计8855.73s、summary elapsed合计9310.39s、sampled peak child RSS 9.910GB（十进制）；重叠耗时不相加。各final memory均1400slots，1171/1179/1182/1180/1177为不同class-feature pairs，不能当作唯一来源rowID。原checkpoint SHA、398源绑定与完整执行日志保留。
 
 ### 注册S1：仅两个完整数据集块（2026-10-29）
 
@@ -101,7 +103,7 @@ D1在1%目标下最终Exploits/DoS召回为83.30%/45.54%，AR-Stateless为50.83%
 
 UNSW校准池6,825条良性样本，严格≤1%最多68次误报，≤0.1%最多6次（不是7次）；CIC-2017池181,176条。尾部样本数说明更低工作点的分辨率限制，不说明1%适用于真实部署。2%和5%作为敏感性工作点保留。历史§27主工作点2%，§48改为低FPR主张1%，§165在seeds10–14确认运行前注册R1–R5；这不把既往开发证据变成未暴露证据。
 
-共同预算比较覆盖ER-Bal-TabT（官方代码基础上的适配）、Freq、WACB、Replay-BS、R3-L和neural AR，保留各自数据访问差异。§178新增基线仅将完成并核验的40/60共同族主格加入，不提前称齐全；ECBRS论文主实现的UNSW/CIC17块及UNSW/CIC17 BiC common flow适配已完成，UNSW作者-memory和native-stage1 BiC另列历史敏感性，CSE块仍未运行，语义差异与弱结果按本页§178保留。本协议是评估选择而非创新机制；默认决策视图、precision/recall与预算视图并列保留。
+共同预算比较覆盖ER-Bal-TabT（官方代码基础上的适配）、Freq、WACB、Replay-BS、R3-L和neural AR，保留各自数据访问差异。§178新增基线仅将完成并核验的45/60共同族主格加入，不提前称齐全；ECBRS论文主实现的UNSW/CIC17块及UNSW/CIC17 BiC common flow适配已完成，UNSW作者-memory和native-stage1 BiC另列历史敏感性，CSE DER++块已完成、其余三方法块未完成，语义差异与弱结果按本页§178保留。本协议是评估选择而非创新机制；默认决策视图、precision/recall与预算视图并列保留。
 
 ## AR-Stateless 确认结果补充（2026-10-27，§165–178）
 

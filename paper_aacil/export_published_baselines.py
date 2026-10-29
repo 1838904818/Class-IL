@@ -69,7 +69,11 @@ def measure(result, view):
 
 def group(dataset, method, ref, reference=False):
     prefix = 'section165_confirmation' if reference else 'section178_literature'
-    paths = [f'paper_aacil/results/{prefix}/{dataset}/{method}_seed{s}/result.json'
+    # The published CSE confirmation and added-baseline collections use
+    # different directory names. Keep the reference on its original path.
+    stored_dataset = ('cic-ids-2018' if dataset == 'cse-cic-ids2018' and not reference
+                      else dataset)
+    paths = [f'paper_aacil/results/{prefix}/{stored_dataset}/{method}_seed{s}/result.json'
              for s in range(10, 15)]
     runs = [read_result(path, ref) for path in paths]
     count = sum(r is not None and r.get('completed', False) for r in runs)
