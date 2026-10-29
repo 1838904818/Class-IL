@@ -1,0 +1,316 @@
+"""Export all five verified CSE ECBRS paper-memory cells; never retrain or overwrite evidence."""
+import difflib
+import importlib.util
+import os
+import gzip
+import hashlib
+import json
+from pathlib import Path
+import re
+import statistics
+import subprocess
+import sys
+import numpy as np
+import torch
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+DEST = BASE/'admin/cse-ecbrs-paper-publication'
+ADMIN = BASE/'admin'
+VIEWS = ('default','0.01','0.02','0.05')
+REPLACEMENTS = [(REPO.as_posix(), '@@SOURCE@@'), (BASE.as_posix(), '@@EXPERIMENT_ROOT@@'),
+    ('@@WORKSPACE@@', '@@WORKSPACE@@'),
+    ('@@PYTHON_ENV@@', '@@PYTHON_ENV@@'),
+    ('@@RESULT_DRIVE@@/', '@@RESULT_DRIVE@@/')]
+
+def read(path):
+    return json.loads(path.read_text(encoding='utf-8'))
+
+def redact(text):
+    for old, token in REPLACEMENTS:
+        text = text.replace(old, token).replace(old.replace('/', '\\\\'), token).replace(old.replace('/', '\\'), token)
+    assert not re.search(r'(?<![A-Za-z])[A-Za-z]:[/\\]|github_' r'pat_|ghp_[A-Za-z0-9]+|' r'-----BE' r'GIN .*PRI' r'VATE KEY', text)
+    return text
+
+def write_json(path, obj):
+    path.write_text(redact(json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2))+'\n', encoding='utf-8', newline='\n')
+
+def metrics(result, view):
+    histories, points = [], []
+    for cp, default, calibrated in zip(result['checkpoints'], result['default_stages'], result['calibrated_stages']):
+        point = default['metrics'] if view == 'default' else calibrated['operating_points'][view]
+        cm = point['confusion_matrix']
+        rows = [sum(row) for row in cm]
+        cols = [sum(row[c] for row in cm) for c in range(len(cm))]
+        seen = cp['seen_classes']
+        recalls = {c: cm[c][c]/rows[c] for c in seen}
+        histories.append(recalls)
+        points.append(dict(bacc=statistics.mean(recalls.values()),
+            accuracy=sum(cm[c][c] for c in seen)/sum(rows),
+            macro_f1=statistics.mean(2*cm[c][c]/(rows[c]+cols[c]) for c in seen),
+            normal_fpr=1-cm[0][0]/rows[0],
+            attack_recall=1-sum(cm[c][0] for c in range(1,len(cm)))/(sum(rows)-rows[0])))
+    per_class = []
+    for first_stage, task in enumerate(result['identity']['tasks']):
+        for c in task:
+            prior = [h[c] for h in histories[first_stage:-1]]
+            per_class.append(dict(class_id=c, name=result['identity']['class_order'][c],
+                first=histories[first_stage][c], peak=max(h[c] for h in histories[first_stage:]),
+                best_prior=max(prior) if prior else None, final=histories[-1][c],
+                forgetting=max(prior)-histories[-1][c] if prior else None))
+    return dict(**points[-1], incremental_bacc=statistics.mean(p['bacc'] for p in points),
+        incremental_accuracy=statistics.mean(p['accuracy'] for p in points),
+        forgetting=statistics.mean(p['forgetting'] for p in per_class if p['forgetting'] is not None),
+        stages=points, per_class=per_class)
+
+def log_export(out, names):
+    records = []
+    for name in names:
+        raw = (BASE/'logs'/name).read_bytes()
+        if raw.startswith((b'\xff\xfe', b'\xfe\xff')):
+            text = raw.decode('utf-16')
+        else:
+            try:
+                text = raw.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                text = raw.decode('gb18030')
+        clean = redact(text)
+        (out/(name+'.gz')).write_bytes(gzip.compress(clean.encode('utf-8'), mtime=0))
+        records.append(dict(file=name+'.gz', original_sha256=hashlib.sha256(raw).hexdigest(), redacted=True))
+    return records
+
+def per_class_aggregate(rows):
+    assert len(rows) == 5 and [r['seed'] for r in rows] == list(range(10,15))
+    output = {}
+    for view in ('default','0.01','0.02','0.05'):
+        reference = rows[0]['views'][view]['per_class']
+        combined = []
+        for index, first in enumerate(reference):
+            records = [r['views'][view]['per_class'][index] for r in rows]
+            assert all((r['class_id'],r['name']) == (first['class_id'],first['name']) for r in records)
+            record = dict(class_id=first['class_id'],name=first['name'])
+            for key in ('first','peak','best_prior','final','forgetting'):
+                values = [r[key] for r in records]
+                if values[0] is None:
+                    assert all(v is None for v in values)
+                    record[key] = None
+                else:
+                    assert all(v is not None for v in values)
+                    record[key] = dict(mean=statistics.mean(values),sample_sd=statistics.stdev(values),n=5)
+            combined.append(record)
+        output[view] = combined
+    return output
+
+MANAGEMENT = (
+    'check-ecbrs-extended-completed.py', 'check-ecbrs-extended-smoke.py',
+    'run-ecbrs-extended-smokes.py', 'run-cse-literature-smokes.py', 'check-cse-literature-smoke.py',
+    'monitor-cse-ecbrs-first.py', 'check-cse-ecbrs-completed.py',
+    'monitor-cse-ecbrs-followup.py', 'queue-cse-ecbrs-11-14.py', 'test-cse-ecbrs-followup.py',
+    'monitor-cse-ecbrs-recovery.py', 'check-cse-ecbrs-recovery-completed.py',
+    'queue-cse-ecbrs-recovery-13-14.py', 'test-cse-ecbrs-recovery.py',
+    'export-cse-ecbrs-paper-completed.py', 'publish-cse-ecbrs-paper-completed.py',
+    'test-cse-ecbrs-publication.py', 'check-cse-ecbrs-export-metrics.py')
+
+def manager():
+    spec = importlib.util.spec_from_file_location('cse_recovery', ADMIN/'monitor-cse-ecbrs-recovery.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def overview_logs():
+    names = []
+    for prefix in ('ecbrs-paper-cse-queue-11-14', 'ecbrs-paper-cse-recovery-queue-13-14',
+                   'ecbrs-extended-smokes', 'cse-literature-smokes'):
+        names += [prefix+'.'+stream+'.log' for stream in ('stdout','stderr')]
+    names += [f'ecbrs-paper-cse-seed13.{kind}{stream}.log'
+              for kind in ('','monitor.') for stream in ('stdout','stderr')]
+    names += [f'ecbrs-paper-{slug}-extended-seed10.smoke.{kind}{stream}.log'
+              for slug in ('cic-ids-2017','cic-ids-2018')
+              for kind in ('','validation.') for stream in ('stdout','stderr')]
+    names += [f'{method}-cse-seed10.smoke.{kind}{stream}.log'
+              for method in ('derpp','icarl') for kind in ('','validation.') for stream in ('stdout','stderr')]
+    names += ['cse-input-copy.log']
+    # All original paper-memory smoke/resume evidence, including superseded software attempts.
+    names += [p.name for p in (BASE/'logs').glob('ecbrs-paper-unsw-seed10.smoke*.log')]
+    for prefix in ('cse-ecbrs-first-', 'cse-ecbrs-followup-', 'cse-ecbrs-recovery-',
+                   'cse-ecbrs-publication-preparation'):
+        names += [p.name for p in (BASE/'logs').glob(prefix+'*.log')]
+    assert len(names) == len(set(names)), 'Duplicate archive log'
+    return sorted(names)
+
+def source_patch(reference):
+    paths = list(reference['source_sha256'])
+    assert len(paths) == 400
+    patch = subprocess.check_output(['git','-C',str(REPO),'diff',reference['git_commit'],'--',*paths], text=True, encoding='utf-8')
+    for path in paths:
+        exists = subprocess.run(['git','-C',str(REPO),'cat-file','-e',reference['git_commit']+':'+path], capture_output=True)
+        if exists.returncode:
+            content = (REPO/path).read_text(encoding='utf-8')
+            patch += f'diff --git a/{path} b/{path}\nnew file mode 100644\n'
+            patch += ''.join(difflib.unified_diff([],content.splitlines(keepends=True),fromfile='/dev/null',tofile='b/'+path))
+    checked = subprocess.run(['git','-C',str(REPO),'apply','--check','--reverse','-'], input=patch.encode('utf-8'), capture_output=True)
+    assert checked.returncode == 0, checked.stderr.decode('utf-8',errors='replace')
+    public = redact(patch)
+    restored = public
+    for old, token in REPLACEMENTS:
+        restored = restored.replace(token,old)
+    assert restored == patch, 'Source patch redaction must be reversible'
+    return public
+
+def checkpoint_records(src, result):
+    records, memory = [], []
+    for cp in result['checkpoints']:
+        file = src/cp['checkpoint_file']
+        digest = hashlib.sha256(file.read_bytes()).hexdigest()
+        assert digest == cp['checkpoint_sha256']
+        metadata = read(file.with_suffix('.json'))
+        assert metadata == cp
+        records.append(dict(file=cp['checkpoint_file'], bytes=file.stat().st_size,
+                            sha256=digest, metadata=metadata))
+        state = torch.load(file, map_location='cpu', weights_only=True)
+        assert state['identity'] == result['identity']
+        mem = state['memory']
+        rows = [int(v) for v in mem['rows']]
+        labels = [int(v) for v in mem['labels']]
+        assert len(rows) == len(labels) <= 200*len(cp['seen_classes'])
+        memory.append(dict(stage=cp['task_index'], slots=len(rows), unique_rows=len(set(rows)),
+            retained_row_ids=rows, retained_labels=labels, capacity=mem['capacity'],
+            per_class=[dict(class_id=c, slots=labels.count(c),
+                unique_rows=len({row for row,label in zip(rows,labels) if label == c}))
+                for c in cp['seen_classes']],
+            interpretation='True training-array row IDs; duplicate presentation slots are not independent samples.'))
+    return records, memory
+
+def preflight():
+    assert not DEST.exists(), 'Existing exports must not be overwritten'
+    m = manager()
+    m.volume_check()
+    assert m.psutil.virtual_memory().available > 12*m.GIB
+    for proc in m.psutil.process_iter(['pid','name']):
+        assert proc.info['pid'] == os.getpid() or (proc.info['name'] or '').lower() != 'python.exe', 'Wait for serial training/checkers to exit'
+    queue = m.events(BASE/'logs/ecbrs-paper-cse-recovery-queue-13-14.stdout.log')
+    completed = [e for e in queue if e.get('event') == 'ALL_COMPLETE']
+    assert len(completed) == 1 and completed[0]['seeds'] == list(range(10,15))
+    assert completed[0]['dataset'] == 'CSE-CIC-IDS2018' and completed[0]['method'] == 'ecbrs-paper-literal'
+    assert (BASE/'logs/ecbrs-paper-cse-recovery-queue-13-14.stderr.log').stat().st_size == 0
+    bound = m.hashes()
+    m.preserve_interrupted(bound)
+    for seed in range(10,15):
+        m.validated(seed,bound)
+        prefix,_ = m.cell_paths(seed)
+        for stream in ('stdout','stderr'):
+            assert not Path(str(prefix)+'.export-validation.'+stream+'.log').exists(), 'Preserve prior validation attempt'
+    smoke = m.events(BASE/'logs/ecbrs-extended-smokes.stdout.log')
+    original = next(e['source_sha256'] for e in smoke if e.get('event') == 'START')
+    assert len(original) == 394 and len(bound) == 400
+    assert all(bound.get(k) == v for k,v in original.items())
+    assert any(e.get('event') == 'ALL_SMOKES_COMPLETE' for e in smoke)
+    for name in MANAGEMENT:
+        redact((ADMIN/name).read_text(encoding='utf-8'))
+    for name in overview_logs():
+        raw = (BASE/'logs'/name).read_bytes()
+        if raw.startswith((b'\xff\xfe',b'\xfe\xff')):
+            content = raw.decode('utf-16')
+        else:
+            try:
+                content = raw.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                content = raw.decode('gb18030')
+        redact(content)
+    return m,bound
+
+def main():
+    m,bound = preflight()
+    reference = next(e for e in m.events(Path(str(m.cell_paths(10)[0])+'.monitor.stdout.log')) if e.get('event') == 'START')
+    public_patch = source_patch(reference)
+    validated = []
+    env = os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'), TMP=str(BASE/'tmp'), PYTHONDONTWRITEBYTECODE='1',
+               OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    for seed in range(10,15):
+        prefix,src = m.cell_paths(seed)
+        summary, result = read(src/'summary.json'), read(src/'result.json')
+        check = ADMIN/('check-cse-ecbrs-recovery-completed.py' if seed >= 13 else 'check-cse-ecbrs-completed.py')
+        validation_out = Path(str(prefix)+'.export-validation.stdout.log')
+        validation_err = Path(str(prefix)+'.export-validation.stderr.log')
+        with validation_out.open('x',encoding='utf-8') as stdout, validation_err.open('x',encoding='utf-8') as stderr:
+            checked = subprocess.run([sys.executable,'-I','-B','-u',str(check),str(src)],
+                cwd=REPO,env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+        assert checked.returncode == 0, f'Checker failed seed {seed}; preserve logs, no automatic retry'
+        assert validation_err.stat().st_size == 0
+        verification = validation_out.read_text(encoding='utf-8')
+        checks = [json.loads(line) for line in verification.splitlines() if line.startswith('{')]
+        assert len(checks) == 2
+        assert checks[0]['verified_checkpoints'] == 4 and checks[0]['verified_calibrated_points'] == 12
+        assert checks[0]['scientific_result'] and not checks[0]['smoke']
+        assert checks[1]['verified_source_files'] == 400 and checks[1]['verified_calibration_points'] == 12
+        start = next(e for e in m.events(Path(str(prefix)+'.monitor.stdout.log')) if e.get('event') == 'START')
+        terminal = m.validated(seed,bound)
+        assert start['source_sha256'] == reference['source_sha256'] and start['git_commit'] == reference['git_commit']
+        assert start['git_commit'] == result['identity']['git_commit']
+        assert checks[1]['wall_seconds'] == terminal['elapsed_seconds']
+        assert checks[1]['sampled_peak_rss_bytes'] == terminal['peak_rss_bytes']
+        if validated:
+            for key in ('tasks','class_order','data_binding','data_metadata_sha256'):
+                assert result['identity'][key] == validated[0][2]['identity'][key]
+        records,memory = checkpoint_records(src,result)
+        assert [{k:item[k] for k in ('stage','slots','unique_rows')} for item in memory] == checks[0]['memory_slots_and_unique_rows']
+        assert result['training_seconds_total'] == summary['training_seconds_total'] == checks[0]['training_seconds']
+        validated.append((seed,src,result,summary,verification,checks,start,records,memory,terminal))
+        print(json.dumps(dict(event='VERIFIED_SEED',seed=seed,checkpoints=4,calibration_points=12)),flush=True)
+    assert m.hashes() == bound
+    m.preserve_interrupted(bound)
+    DEST.mkdir()
+    rows = []
+    for seed,src,result,summary,verification,checks,start,records,memory,terminal in validated:
+        out = DEST/f'ecbrs-paper_seed{seed}'
+        out.mkdir()
+        prefix,_ = m.cell_paths(seed)
+        result.update(execution_summary=summary,command=start['command'],
+            source_state=dict(base_commit=start['git_commit'],source_sha256=bound,dirty_patch='execution_source.patch'),
+            resource_verification=checks[1],independent_verification=checks[0],
+            memory_slot_diagnostics=memory,
+            execution_attempt=dict(output=src.as_posix(),checkpoint_resume=False,
+                attempt='attempt1-after-reboot' if seed == 13 else 'original',
+                prior_interrupted_attempt_retained=(seed == 13)),
+            publication_scope='Matched multiclass paper-memory adaptation on registered CSE-CIC-IDS2018 arrays, not native binary reproduction. Main-text local-max and supplement repeated global-majority rules differ; implemented global ranking has supplement support but is not uniquely faithful. Author-rule sensitivity is separate. Seed13 uses a fresh post-reboot attempt, not checkpoint resume; old partial and all failure logs are preserved. No completed cell was retrained for export.')
+        names = [prefix.name+'.'+kind+stream+'.log'
+                 for kind in ('','monitor.','validation.','export-validation.') for stream in ('stdout','stderr')]
+        result['log_artifacts'] = log_export(out,names)
+        write_json(out/'checkpoint_records.json',records)
+        write_json(out/'result.json',result)
+        (out/'execution_source.patch').write_text(public_patch,encoding='utf-8',newline='\n')
+        (out/'verification.txt').write_text(redact(verification),encoding='utf-8',newline='\n')
+        row = dict(seed=seed,views={v:metrics(result,v) for v in VIEWS},
+            training_seconds=checks[0]['training_seconds'],elapsed_seconds=summary['elapsed_seconds'],
+            resource=checks[1],memory_slot_diagnostics=memory,execution_attempt=result['execution_attempt'])
+        write_json(out/'independent_metrics.json',row)
+        rows.append(row)
+    overview = DEST/'overview'
+    overview.mkdir()
+    write_json(overview/'per_seed_metrics.json',rows)
+    aggregate = {v:{key:dict(mean=statistics.mean(r['views'][v][key] for r in rows),
+        sample_sd=statistics.stdev(r['views'][v][key] for r in rows))
+        for key in ('bacc','accuracy','macro_f1','normal_fpr','attack_recall','incremental_bacc','incremental_accuracy','forgetting')} for v in VIEWS}
+    write_json(overview/'aggregate.json',aggregate)
+    write_json(overview/'per_class_aggregate.json',per_class_aggregate(rows))
+    write_json(overview/'costs.json',dict(training_seconds=sum(r['training_seconds'] for r in rows),
+        summary_elapsed_seconds=sum(r['elapsed_seconds'] for r in rows),
+        monitor_wall_seconds=sum(r['resource']['wall_seconds'] for r in rows),
+        sampled_peak_rss_bytes=max(r['resource']['sampled_peak_rss_bytes'] for r in rows),
+        scope='Successful full attempts only; costs overlap and must not be added. Interrupted seed13 last resource sample is incomplete, not full-attempt wall or peak; its raw logs are retained separately.'))
+    write_json(overview/'log_artifacts.json',log_export(overview,overview_logs()))
+    old = BASE/'runs/section178/cic-ids-2018/ecbrs-paper/seed13/identity.json'
+    write_json(overview/'interrupted_seed13_identity.json',read(old))
+    write_json(overview/'interrupted_attempt.json',dict(status='interrupted_by_system_reboot',scientific_result=False,
+        checkpoint_resume=False,old_evidence_sha256=m.OLD_EVIDENCE,old_files=['identity.json'],
+        successful_replacement=m.cell_paths(13)[1].as_posix(),
+        limitation='Old attempt has no complete checkpoint and no TERMINAL/CELL_VALIDATED; zero train stderr is not success.'))
+    for name in MANAGEMENT:
+        (overview/(name+'.txt')).write_text(redact((ADMIN/name).read_text(encoding='utf-8')),encoding='utf-8',newline='\n')
+    assert m.hashes() == bound
+    m.preserve_interrupted(bound)
+    print(json.dumps(dict(event='EXPORT_COMPLETE',output=str(DEST),checkpoints=20,calibrated_points=60,aggregate=aggregate)),flush=True)
+
+if __name__ == '__main__':
+    main()

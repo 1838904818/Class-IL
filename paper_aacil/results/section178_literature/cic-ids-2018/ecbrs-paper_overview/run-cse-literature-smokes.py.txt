@@ -1,0 +1,129 @@
+"""Stage registered input, then run two bounded serial CSE software smokes only."""
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+base = Path('@@EXPERIMENT_ROOT@@')
+workspace = Path('@@WORKSPACE@@')
+repo = workspace/'work/section151_publish'
+src = workspace/'work/exp_h_section21_data/clean_v1/cic-ids-2018'
+data = base/'data/derived/section21_clean_v1'
+dst = data/'cic-ids-2018'
+python = Path('@@PYTHON_ENV@@/python.exe')
+expected = {'data_quality.json','train_x.npy','train_y.npy','test_x.npy','test_y.npy'}
+def emit(event, **kwargs):
+    print(json.dumps({'event':event,'time':time.strftime('%Y-%m-%dT%H:%M:%S%z'),**kwargs}), flush=True)
+def drive():
+    volume = ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/',volume,100)
+    assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    assert psutil.disk_usage('@@RESULT_DRIVE@@/').free > 20*1024**3
+def hashfile(path):
+    h = hashlib.sha256()
+    with path.open('rb') as handle:
+        for chunk in iter(lambda:handle.read(4*1024**2),b''):
+            h.update(chunk)
+    return h.hexdigest()
+def idle():
+    for process in psutil.process_iter(['pid','name','cmdline']):
+        if process.info['pid'] == os.getpid() or process.info['name'] != 'python.exe':
+            continue
+        command = ' '.join(process.info['cmdline'] or [])
+        assert not any(s in command for s in ['run_section123_fixed.py','run_section178_ecbrs','monitor-cic17-cell.py','run-cse-literature-smokes.py']), 'Another literature worker is active'
+drive()
+idle()
+assert psutil.virtual_memory().available > 12*1024**3
+assert not dst.exists(), 'Existing input destination must be inspected; do not overwrite or recopy'
+assert {x.name for x in src.iterdir()} == expected
+for method in ['derpp','icarl']:
+    assert not (base/f'runs/section178/cic-ids-2018/{method}-smoke-seed10').exists()
+    for suffix in ['stdout','stderr','validation.stdout','validation.stderr']:
+        assert not (base/f'logs/{method}-cse-seed10.smoke.{suffix}.log').exists()
+copylog = base/'logs/cse-input-copy.log'
+assert not copylog.exists()
+env = os.environ.copy()
+env.update(TEMP=str(base/'tmp'),TMP=str(base/'tmp'),PYTHONDONTWRITEBYTECODE='1',OMP_NUM_THREADS='2',MKL_NUM_THREADS='2')
+emit('START',scientific_result=False,full_cells_authorized=False,source=str(src),destination=str(dst))
+copied = subprocess.run(['robocopy',str(src),str(dst),'/E','/COPY:DAT','/DCOPY:DAT','/XJ','/R:1','/W:2','/NP',f'/LOG:{copylog}'],
+                        env=env,creationflags=subprocess.CREATE_NO_WINDOW)
+assert 0 <= copied.returncode < 8, f'Input copy failed: {copied.returncode}'
+assert {x.name for x in dst.iterdir()} == expected
+receipt = json.loads((src/'data_quality.json').read_text(encoding='utf-8'))
+assert receipt['status'] == 'complete' and receipt['dataset'] == 'CSE-CIC-IDS2018'
+registered = {Path(x['path']).name:x for x in receipt['cache_files']}
+assert set(registered) == expected-{'data_quality.json'}
+for name in sorted(expected):
+    source, target = src/name, dst/name
+    before = source.stat()
+    digest = hashfile(source)
+    assert hashfile(target) == digest and target.stat().st_size == before.st_size
+    after = source.stat()
+    assert (before.st_size,before.st_mtime_ns) == (after.st_size,after.st_mtime_ns)
+    if name in registered:
+        item = registered[name]
+        assert before.st_size == item['bytes'] and digest == item['sha256']
+    emit('INPUT_FILE_VERIFIED',file=name,bytes=before.st_size,sha256=digest)
+emit('INPUT_BYTES_VERIFIED')
+files = sorted(set(repo.glob('ncd/**/*.py')) | set(repo.glob('ncd/configs/*.json')) |
+               {repo/'src/methods/replay_dpmeans.py',repo/'paper_aacil/results/section123_schedule_selection.json'})
+def sourcehashes():
+    return {f.relative_to(repo).as_posix():hashfile(f) for f in files}
+bound = sourcehashes()
+reference = base/'logs/derpp-cic17-seed10.monitor.stdout.log'
+events = [json.loads(line) for line in reference.read_text(encoding='utf-8').splitlines() if line.startswith('{')]
+assert bound == next(row['source_sha256'] for row in events if row.get('event') == 'START'), 'Published training source changed; inspect before smoke'
+emit('SOURCE_BOUND',source_sha256=bound,git_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=repo,text=True).strip())
+for method in ['derpp','icarl']:
+    drive()
+    idle()
+    assert psutil.virtual_memory().available > 12*1024**3
+    assert sourcehashes() == bound
+    out = base/f'runs/section178/cic-ids-2018/{method}-smoke-seed10'
+    assert not out.exists()
+    prefix = base/f'logs/{method}-cse-seed10.smoke'
+    command = [str(python),'-I','-B','-u','ncd/run_section123_fixed.py','--method',method,
+               '--dataset','CSE-CIC-IDS2018','--seed','10','--threads','2','--data-root',str(data),'--output-dir',str(out),'--smoke']
+    peak, samples, reason = 0, 0, None
+    started = time.monotonic()
+    with Path(str(prefix)+'.stdout.log').open('x',encoding='utf-8') as stdout, Path(str(prefix)+'.stderr.log').open('x',encoding='utf-8') as stderr:
+        child = subprocess.Popen(command,cwd=repo,env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+        tracked = psutil.Process(child.pid)
+        emit('SMOKE_STARTED',method=method,pid=child.pid,command=command,max_wall_seconds=600,max_rss_bytes=10*1024**3,min_available_bytes=2*1024**3)
+        try:
+            while child.poll() is None:
+                try:
+                    rss = tracked.memory_info().rss
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak,rss)
+                elapsed = time.monotonic()-started
+                available = psutil.virtual_memory().available
+                if samples % 10 == 0:
+                    emit('RESOURCE',method=method,pid=child.pid,elapsed_seconds=elapsed,rss_bytes=rss,system_available_bytes=available)
+                if elapsed > 600 or rss > 10*1024**3 or available < 2*1024**3:
+                    reason = 'Smoke resource budget exceeded; retained evidence, no automatic retry'
+                    child.terminate()
+                    break
+                samples += 1
+                time.sleep(1)
+        finally:
+            if child.poll() is None:
+                child.terminate()
+            try:
+                code = child.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                code = child.wait()
+    emit('SMOKE_TERMINAL',method=method,exit_code=code,elapsed_seconds=time.monotonic()-started,sampled_peak_rss_bytes=peak,reason=reason,source_unchanged=sourcehashes()==bound)
+    assert sourcehashes() == bound
+    assert code == 0 and reason is None
+    with Path(str(prefix)+'.validation.stdout.log').open('x',encoding='utf-8') as stdout, Path(str(prefix)+'.validation.stderr.log').open('x',encoding='utf-8') as stderr:
+        subprocess.run([str(python),'-I','-B','-u',str(base/'admin/check-cse-literature-smoke.py'),str(out)],
+                       env=env,stdout=stdout,stderr=stderr,check=True,creationflags=subprocess.CREATE_NO_WINDOW)
+    emit('SMOKE_CHECKED',method=method,scientific_result=False,full_cell_feasibility_unverified=True)
+emit('ALL_SMOKES_COMPLETE',scientific_result=False,full_cells_started=False)

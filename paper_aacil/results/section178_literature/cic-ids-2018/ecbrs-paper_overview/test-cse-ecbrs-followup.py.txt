@@ -1,0 +1,29 @@
+"""Validate CSE ECBRS followup orchestration without starting training."""
+import ast
+import importlib.util
+from pathlib import Path
+
+ADMIN = Path('@@EXPERIMENT_ROOT@@/admin')
+first = ast.parse((ADMIN/'monitor-cse-ecbrs-first.py').read_text(encoding='utf-8'))
+new = ast.parse((ADMIN/'monitor-cse-ecbrs-followup.py').read_text(encoding='utf-8'))
+queue = ast.parse((ADMIN/'queue-cse-ecbrs-11-14.py').read_text(encoding='utf-8'))
+for name in ('hashes', 'volume_check', 'events', 'emit'):
+    old_node = next(n for n in first.body if isinstance(n, ast.FunctionDef) and n.name == name)
+    new_node = next(n for n in new.body if isinstance(n, ast.FunctionDef) and n.name == name)
+    assert ast.dump(old_node) == ast.dump(new_node), name
+old_loops = [ast.dump(n) for n in ast.walk(first) if isinstance(n, ast.While)]
+new_loops = [ast.dump(n) for n in ast.walk(new) if isinstance(n, ast.While)]
+assert len(old_loops) == 1 and old_loops == new_loops
+spec = importlib.util.spec_from_file_location('followup', ADMIN/'monitor-cse-ecbrs-followup.py')
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+bound = m.hashes()
+terminal = m.validated(10, bound)
+assert len(bound) == 400
+for seed in range(11, 15):
+    assert not (m.BASE/f'runs/section178/cic-ids-2018/ecbrs-paper/seed{seed}').exists()
+    for suffix in ('.stdout.log', '.stderr.log', '.monitor.stdout.log', '.monitor.stderr.log',
+                   '.validation.stdout.log', '.validation.stderr.log'):
+        assert not (m.BASE/f'logs/ecbrs-paper-cse-seed{seed}{suffix}').exists()
+m.emit('FOLLOWUP_PREPARATION_CHECKED', source_files=len(bound), first_cell=terminal,
+       resource_loop_exact_ast=True, helpers_exact_ast=True, training_started=False)

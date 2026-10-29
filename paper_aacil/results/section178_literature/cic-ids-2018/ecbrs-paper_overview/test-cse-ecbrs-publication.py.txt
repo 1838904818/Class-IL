@@ -1,0 +1,70 @@
+"""Software-only preparation checks for new CSE ECBRS export; never train or publish."""
+import ast
+import importlib.util
+import io
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+ADMIN = Path(__file__).resolve().parent
+def load(name,label):
+    spec = importlib.util.spec_from_file_location(label,ADMIN/name)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def function(name,key):
+    tree = ast.parse((ADMIN/name).read_text(encoding='utf-8'))
+    return ast.dump(next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==key),include_attributes=False)
+
+e = load('export-cse-ecbrs-paper-completed.py','export')
+p = load('publish-cse-ecbrs-paper-completed.py','publish')
+ind = load('check-cse-ecbrs-export-metrics.py','independent')
+for name in e.MANAGEMENT:
+    ast.parse((ADMIN/name).read_text(encoding='utf-8'))
+for key in ('metrics','per_class_aggregate','redact'):
+    assert function('export-cse-ecbrs-paper-completed.py',key)==function('export-cse-derpp-completed.py',key)
+m,bound = e.preflight()
+assert len(bound)==400
+reference = next(item for item in m.events(Path(str(m.cell_paths(10)[0])+'.monitor.stdout.log')) if item.get('event')=='START')
+public_patch = e.source_patch(reference)
+assert public_patch
+rows = []
+for seed in range(10,15):
+    prefix,root = m.cell_paths(seed)
+    result = e.read(root/'result.json')
+    assert root.name==('seed13-attempt1-after-reboot' if seed==13 else f'seed{seed}')
+    views = {}
+    for view in e.VIEWS:
+        views[view] = e.metrics(result,view)
+        ind.compare(views[view],ind.compute(result,view))
+    records,memory = e.checkpoint_records(root,result)
+    assert len(records)==len(memory)==4
+    rows.append(dict(seed=seed,views=views))
+assert all(row['forgetting'] is None for row in e.per_class_aggregate(rows)['default'] if row['class_id']==6)
+for bad in (rows[:4],list(reversed(rows))):
+    try:
+        e.per_class_aggregate(bad)
+        raise RuntimeError('Bad seed set accepted')
+    except AssertionError:
+        pass
+for text in ('Z'+':/private', 'github_'+'pat_'+'dummy', '-----BE'+'GIN '+'PRI'+'VATE KEY'):
+    try:
+        e.redact(text)
+        raise RuntimeError('Sensitive fixture accepted')
+    except AssertionError:
+        pass
+with patch.object(p,'git',return_value='existing/artifact'):
+    try:
+        p.assert_new_scope(Path('.'),'HEAD')
+        raise RuntimeError('Existing publication accepted')
+    except AssertionError:
+        pass
+m.preserve_interrupted(bound)
+assert m.hashes()==bound
+assert not e.DEST.exists()
+print(json.dumps(dict(event='CSE_ECBRS_PUBLICATION_SOFTWARE_TESTED',source_files=400,
+    source_patch_reversible=True,all_five_completed=True,old_evidence_files=7,
+    stage_view_metrics=80,all_management_sources_redacted=len(e.MANAGEMENT),
+    no_training=True,no_full_data_checker=True,no_export=True,no_publish=True)),flush=True)
+

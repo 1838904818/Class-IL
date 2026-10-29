@@ -1,0 +1,45 @@
+"""Recovery manager structural tests; no training or full-data checker execution."""
+import ast
+import importlib.util
+import json
+from pathlib import Path
+
+ADMIN = Path(__file__).resolve().parent
+def tree(name):
+    return ast.parse((ADMIN/name).read_text(encoding='utf-8'))
+def function(t, name):
+    return next(n for n in t.body if isinstance(n, ast.FunctionDef) and n.name == name)
+def dump(n):
+    return ast.dump(n, include_attributes=False)
+old = tree('monitor-cse-ecbrs-followup.py')
+new = tree('monitor-cse-ecbrs-recovery.py')
+for name in ('emit','events','hashes','volume_check'):
+    assert dump(function(old,name)) == dump(function(new,name)), name
+assert [dump(n) for n in ast.walk(old) if isinstance(n, ast.While)] == [dump(n) for n in ast.walk(new) if isinstance(n, ast.While)]
+# The entire child launch/resource/cleanup try/finally is identical.
+def child_try(t):
+    return next(n for n in ast.walk(function(t,'main')) if isinstance(n,ast.Try) and n.finalbody)
+assert dump(child_try(old)) == dump(child_try(new))
+vold, vnew = function(old,'validated'), function(new,'validated')
+# Only the explicit path routing changes in validation; every assertion remains.
+assert [dump(n) for n in ast.walk(vold) if isinstance(n,ast.Assert)] == [dump(n) for n in ast.walk(vnew) if isinstance(n,ast.Assert)]
+checker = tree('check-cse-ecbrs-recovery-completed.py')
+queue = tree('queue-cse-ecbrs-recovery-13-14.py')
+spec = importlib.util.spec_from_file_location('recovery', ADMIN/'monitor-cse-ecbrs-recovery.py')
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+assert m.cell_paths(13)[1].name == 'seed13-attempt1-after-reboot'
+assert m.cell_paths(14)[1].name == 'seed14'
+bound = m.hashes()
+assert len(bound) == 400
+for seed in (10,11,12):
+    m.validated(seed,bound)
+m.preserve_interrupted(bound)
+for seed in (13,14):
+    prefix, root = m.cell_paths(seed)
+    assert not root.exists()
+    for suffix in ('.stdout.log','.stderr.log','.monitor.stdout.log','.monitor.stderr.log','.validation.stdout.log','.validation.stderr.log'):
+        assert not Path(str(prefix)+suffix).exists()
+assert 'range(13, 15)' in (ADMIN/'queue-cse-ecbrs-recovery-13-14.py').read_text()
+assert "choices=(13, 14)" in (ADMIN/'monitor-cse-ecbrs-recovery.py').read_text()
+print(json.dumps(dict(event='RECOVERY_MANAGER_TESTED', resource_loop_and_child_cleanup_exact=True, prior_completed_seeds=[10,11,12], source_files=400, old_evidence_files=len(m.OLD_EVIDENCE), independent_attempt=True, training_executed=False)))

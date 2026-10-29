@@ -1,0 +1,60 @@
+"""Authorized reboot recovery: new seed13 attempt, then seed14, strictly serial; completed10..12 untouched."""
+import argparse
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ADMIN = Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location('cse_followup', ADMIN/'monitor-cse-ecbrs-recovery.py')
+followup = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(followup)
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--validate-only', action='store_true')
+    args = parser.parse_args()
+    base, python = followup.BASE, followup.PYTHON
+    followup.volume_check()
+    assert followup.psutil.virtual_memory().available > 12*followup.GIB
+    for proc in followup.psutil.process_iter(['pid', 'name']):
+        assert proc.info['pid'] == os.getpid() or (proc.info['name'] or '').lower() != 'python.exe', 'Another Python process exists'
+    bound = followup.hashes()
+    first = followup.validated(10, bound)
+    followup.validated(11, bound)
+    followup.validated(12, bound)
+    followup.preserve_interrupted(bound)
+    for seed in range(13, 15):
+        prefix, root = followup.cell_paths(seed)
+        assert not root.exists()
+        for suffix in ('.stdout.log', '.stderr.log', '.monitor.stdout.log', '.monitor.stderr.log',
+                       '.validation.stdout.log', '.validation.stderr.log'):
+            assert not Path(str(prefix)+suffix).exists(), 'Preserve existing evidence'
+    followup.emit('RECOVERY_PREFLIGHT_VALIDATED', completed_seeds=[10,11,12], new_attempt=str(followup.cell_paths(13)[1]), old_evidence_sha256=followup.OLD_EVIDENCE, source_files=len(bound), system_available_bytes=followup.psutil.virtual_memory().available, wd_free_bytes=followup.volume_check(), checkpoint_resume=False, strict_serial=True)
+    if args.validate_only:
+        return
+    env = os.environ.copy()
+    env.update(TEMP=str(base/'tmp'), TMP=str(base/'tmp'), PYTHONDONTWRITEBYTECODE='1',
+               OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    followup.emit('QUEUE_START', seeds=list(range(13, 15)), first_cell=first,
+                  source_files=len(bound), strict_serial=True, automatic_retry=False, max_wall_seconds=None)
+    for seed in range(13, 15):
+        assert followup.hashes() == bound
+        followup.validated(seed-1, bound)
+        command = [str(python), '-I', '-B', '-u', str(ADMIN/'monitor-cse-ecbrs-recovery.py'), '--seed', str(seed)]
+        prefix = Path(str(followup.cell_paths(seed)[0])+'.monitor')
+        followup.emit('SEED_START', seed=seed, command=command)
+        with Path(str(prefix)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(prefix)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+            run = subprocess.run(command, cwd=followup.REPO, env=env, stdout=stdout, stderr=stderr,
+                                 creationflags=subprocess.CREATE_NO_WINDOW)
+        followup.emit('MONITOR_EXIT', seed=seed, exit_code=run.returncode)
+        assert run.returncode == 0, 'Preserve partial/log; queue stops without automatic retry'
+        terminal = followup.validated(seed, bound)
+        followup.emit('SEED_VALIDATED', seed=seed, terminal=terminal)
+    followup.preserve_interrupted(bound)
+    followup.emit('ALL_COMPLETE', dataset='CSE-CIC-IDS2018', method='ecbrs-paper-literal', seeds=list(range(10, 15)))
+
+if __name__ == '__main__':
+    main()
+

@@ -1,0 +1,208 @@
+"""Validate a complete CSE ECBRS paper-memory export, then optionally publish its new scope."""
+import argparse
+import gzip
+import hashlib
+import importlib.util
+import sys
+import json
+import msvcrt
+from pathlib import Path
+import re
+import shutil
+import statistics
+import subprocess
+
+ROOT = Path('@@WORKSPACE@@')
+BASE = Path('@@EXPERIMENT_ROOT@@')
+SOURCE = BASE/'admin/cse-ecbrs-paper-publication'
+EXECUTION = ROOT/'work/section151_publish'
+REPOS = [(ROOT/'work/section165_paper_publish','https://github.com/1838904818/Class-IL-in-IDS.git',''),
+         (ROOT/'work/github_supervisor_sync_20261010','https://github.com/1838904818/Class-IL.git','main')]
+REL = 'paper_aacil/results/section178_literature/cic-ids-2018'
+NAMES = [f'ecbrs-paper_seed{s}' for s in range(10,15)] + ['ecbrs-paper_overview']
+SCOPES = [REL+'/'+n for n in NAMES]
+VIEWS = ('default','0.01','0.02','0.05')
+
+def git(repo,*argv):
+    result = subprocess.run(['git','-C',str(repo),*argv],text=True,encoding='utf-8',
+                            stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    if result.returncode:
+        print(result.stdout,flush=True)
+        raise subprocess.CalledProcessError(result.returncode,result.args,output=result.stdout)
+    return result.stdout.strip()
+
+def read(path):
+    return json.loads(path.read_text(encoding='utf-8'))
+
+def exporter():
+    spec = importlib.util.spec_from_file_location('cse_export',BASE/'admin/export-cse-ecbrs-paper-completed.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+def validate():
+    exp = exporter()
+    manager = exp.manager()
+    bound_current = manager.hashes()
+    manager.preserve_interrupted(bound_current)
+    for seed in range(10,15):
+        manager.validated(seed,bound_current)
+    assert SOURCE.is_dir(), 'Wait for successful complete five-seed export'
+    assert sorted(p.name for p in SOURCE.iterdir()) == sorted(NAMES[:-1]+['overview'])
+    files, walls, identities = {}, [], []
+    for name in NAMES:
+        directory = SOURCE/('overview' if name.endswith('_overview') else name)
+        for p in directory.rglob('*'):
+            if not p.is_file():
+                continue
+            raw = p.read_bytes()
+            text = (gzip.decompress(raw) if p.suffix=='.gz' else raw).decode('utf-8')
+            assert not re.search(r'(?<![A-Za-z])[A-Za-z]:[/\\]|github_' r'pat_|ghp_[A-Za-z0-9]+|' r'-----BE' r'GIN .*PRI' r'VATE KEY',text), p
+            files[REL+'/'+name+'/'+p.relative_to(directory).as_posix()] = raw
+        if name.endswith('_overview'):
+            continue
+        seed = int(name.removeprefix('ecbrs-paper_seed'))
+        result = read(directory/'result.json')
+        identity = result['identity']
+        assert result['completed'] and result['scientific_result'] and not identity['smoke']
+        assert identity['method']=='ecbrs-paper-literal' and identity['dataset']=='CSE-CIC-IDS2018' and identity['seed']==seed
+        assert len(identity['class_order'])==7 and identity['tasks']==[[0,1],[2,3],[4,5],[6]]
+        assert len(result['checkpoints'])==len(result['default_stages'])==len(result['calibrated_stages'])==4
+        identities.append(identity)
+        verified = [json.loads(line) for line in (directory/'verification.txt').read_text(encoding='utf-8').splitlines() if line.startswith('{')]
+        assert verified[0]['verified_checkpoints']==4 and verified[0]['verified_calibrated_points']==12
+        assert verified[-1]['verified_source_files']==400 and verified[-1]['verified_checkpoints']==4 and verified[-1]['verified_calibration_points']==12
+        assert verified[0]==result['independent_verification']
+        assert verified[-1]==result['resource_verification']
+        walls.append(verified[-1]['wall_seconds'])
+        summary = result['execution_summary']
+        assert summary['method']=='ecbrs-paper-literal' and summary['seed']==seed
+        prefix,root = manager.cell_paths(seed)
+        original_result = read(root/'result.json')
+        public_original = json.loads(exp.redact(json.dumps(original_result)))
+        for key,value in public_original.items():
+            assert result[key]==value, ('Original result changed in export',seed,key)
+        assert result['execution_attempt']['checkpoint_resume'] is False
+        assert result['execution_attempt']['attempt']==('attempt1-after-reboot' if seed==13 else 'original')
+        assert result['execution_attempt']['output']==exp.redact(root.as_posix())
+        assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+        bound = result['source_state']['source_sha256']
+        assert len(bound)==400
+        for path,digest in bound.items():
+            assert hashlib.sha256((EXECUTION/path).read_bytes()).hexdigest()==digest,path
+        cp_records = read(directory/'checkpoint_records.json')
+        assert len(cp_records)==4
+        for cp,record in zip(result['checkpoints'],cp_records):
+            assert record['file']==cp['checkpoint_file'] and record['sha256']==cp['checkpoint_sha256']
+            original = root/record['file']
+            assert original.stat().st_size==record['bytes']
+            assert hashlib.sha256(original.read_bytes()).hexdigest()==record['sha256']
+        expected = {prefix.name+f'.{kind}{stream}.log.gz' for kind in ('','monitor.','validation.','export-validation.') for stream in ('stdout','stderr')}
+        assert {item['file'] for item in result['log_artifacts']}==expected
+        for item in result['log_artifacts']:
+            assert hashlib.sha256((BASE/'logs'/item['file'][:-3]).read_bytes()).hexdigest()==item['original_sha256']
+            if '.stderr.log.gz' in item['file']:
+                assert gzip.decompress((directory/item['file']).read_bytes())==b''
+        patch = (directory/'execution_source.patch').read_text(encoding='utf-8')
+        for token,path in [('@@SOURCE@@',str(EXECUTION)),('@@EXPERIMENT_ROOT@@',str(BASE)),
+            ('@@WORKSPACE@@',str(ROOT)),('@@PYTHON_ENV@@','@@PYTHON_ENV@@'),('@@RESULT_DRIVE@@','E:')]:
+            patch = patch.replace(token,path.replace('\\','/'))
+        checked = subprocess.run(['git','-C',str(EXECUTION),'apply','--check','--reverse','-'],input=patch.encode('utf-8'),capture_output=True)
+        assert checked.returncode==0,checked.stderr.decode('utf-8',errors='replace')
+    for identity in identities[1:]:
+        for key in ('tasks','class_order','data_binding','data_metadata_sha256'):
+            assert identity[key]==identities[0][key]
+    overview = SOURCE/'overview'
+    rows = read(overview/'per_seed_metrics.json')
+    assert [r['seed'] for r in rows]==list(range(10,15))
+    aggregate = read(overview/'aggregate.json')
+    perclass = read(overview/'per_class_aggregate.json')
+    for view in VIEWS:
+        for key,item in aggregate[view].items():
+            values = [r['views'][view][key] for r in rows]
+            assert abs(item['mean']-statistics.mean(values))<1e-12
+            assert abs(item['sample_sd']-statistics.stdev(values))<1e-12
+        assert len(perclass[view])==7
+        for index,item in enumerate(perclass[view]):
+            records = [r['views'][view]['per_class'][index] for r in rows]
+            assert all((r['class_id'],r['name'])==(item['class_id'],item['name']) for r in records)
+            for key in ('first','peak','best_prior','final','forgetting'):
+                values = [r[key] for r in records]
+                if item[key] is None:
+                    assert all(v is None for v in values)
+                else:
+                    assert item[key]['n']==5
+                    assert abs(item[key]['mean']-statistics.mean(values))<1e-12
+                    assert abs(item[key]['sample_sd']-statistics.stdev(values))<1e-12
+    for item in read(overview/'log_artifacts.json'):
+        assert (overview/item['file']).is_file()
+        assert hashlib.sha256((BASE/'logs'/item['file'][:-3]).read_bytes()).hexdigest()==item['original_sha256']
+    assert set(item['file'] for item in read(overview/'log_artifacts.json')) == {n+'.gz' for n in exp.overview_logs()}
+    for name in exp.MANAGEMENT:
+        assert (overview/(name+'.txt')).read_text(encoding='utf-8') == exp.redact((BASE/'admin'/name).read_text(encoding='utf-8'))
+    interrupted = read(overview/'interrupted_attempt.json')
+    assert interrupted['scientific_result'] is False and interrupted['checkpoint_resume'] is False
+    assert interrupted['old_evidence_sha256'] == json.loads(exp.redact(json.dumps(manager.OLD_EVIDENCE)))
+    old = BASE/'runs/section178/cic-ids-2018/ecbrs-paper/seed13/identity.json'
+    assert read(overview/'interrupted_seed13_identity.json') == json.loads(exp.redact(json.dumps(read(old))))
+    costs = read(overview/'costs.json')
+    assert costs['training_seconds'] == sum(r['training_seconds'] for r in rows)
+    assert costs['summary_elapsed_seconds'] == sum(r['elapsed_seconds'] for r in rows)
+    assert costs['monitor_wall_seconds'] == sum(walls)
+    assert costs['sampled_peak_rss_bytes'] == max(r['resource']['sampled_peak_rss_bytes'] for r in rows)
+    # Independent NumPy computation from original CMs, not the exporter's helpers.
+    checked = subprocess.run([sys.executable,'-I','-B','-u',str(BASE/'admin/check-cse-ecbrs-export-metrics.py')],check=True)
+    print('VALIDATED_EXPORT',len(files),'CELL_WALL_SECONDS',walls,flush=True)
+    return files,walls
+
+def assert_new_scope(repo,revision):
+    assert not git(repo,'ls-tree','-r','--name-only',revision,'--',*SCOPES), 'Existing published scope: inspect, never overwrite or republish'
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--publish',action='store_true')
+    args = parser.parse_args()
+    files,walls = validate()
+    if not args.publish:
+        return
+    with (ROOT/'work/section151_local/publication.lock').open('r+b') as lock:
+        msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
+        try:
+            heads = []
+            for repo,url,branch in REPOS:
+                assert git(repo,'remote','get-url','origin')==url and git(repo,'branch','--show-current')==branch
+                assert not git(repo,'diff','--name-only') and not git(repo,'diff','--cached','--name-only')
+                git(repo,'fetch','origin')
+                assert_new_scope(repo,'origin/main')
+                git(repo,'rebase','origin/main')
+                assert_new_scope(repo,'HEAD')
+                for name in NAMES:
+                    target = repo/REL/name
+                    assert not target.exists(), 'Preserve existing local scope'
+                    shutil.copytree(SOURCE/('overview' if name.endswith('_overview') else name),target)
+                git(repo,'add','--sparse','--',*SCOPES)
+                assert sorted(git(repo,'diff','--cached','--name-only').splitlines())==sorted(files)
+                git(repo,'diff','--cached','--check','--',*SCOPES,':(exclude)**/execution_source.patch')
+                git(repo,'commit','-m','Publish five completed CSE-CIC-IDS2018 ECBRS paper-memory runs','-m',
+                    'CSE ECBRS paper-memory 5/5 complete: 20 checkpoints, 60 calibration points, four decision views, per-class retention and sample SD, source400 and execution logs. Cell wall seconds for seeds10-14: '+', '.join(f'{w:.3f}' for w in walls)+'. No completed cell was retrained for export. Seed13 is a fresh post-reboot attempt, not resume; old partial and failure logs remain separate. True row IDs and duplicate slots are retained. Paper-memory semantic ambiguity and multiclass adaptation limits remain. Main execution 51/60; published main cells 50/60 after this block. BiC common 0/5 and scoped iCaRL 1/5 (not yet published); overall CSE S1 pending. The 70-cell Section194 extension is unregistered and separate. RQ1/RQ3, innovation and current-source visual QA remain open.')
+                git(repo,'fetch','origin')
+                assert_new_scope(repo,'origin/main')
+                git(repo,'rebase','origin/main')
+                for path,raw in files.items():
+                    assert (repo/path).read_bytes()==raw
+                print(git(repo,'push','origin','HEAD:main'),flush=True)
+                head = git(repo,'rev-parse','HEAD')
+                assert git(repo,'ls-remote','origin','refs/heads/main').split()[0]==head
+                for path in files:
+                    assert git(repo,'hash-object',str(repo/path))==git(repo,'rev-parse',head+':'+path)
+                heads.append(head)
+                print(url,head,flush=True)
+            for path in files:
+                assert git(REPOS[0][0],'rev-parse',heads[0]+':'+path)==git(REPOS[1][0],'rev-parse',heads[1]+':'+path)
+            print('DUAL_REMOTE_HEAD_AND_ALL_CSE_ECBRS_ARTIFACT_BLOBS_VERIFIED',flush=True)
+        finally:
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(),msvcrt.LK_UNLCK,1)
+
+if __name__=='__main__':
+    main()

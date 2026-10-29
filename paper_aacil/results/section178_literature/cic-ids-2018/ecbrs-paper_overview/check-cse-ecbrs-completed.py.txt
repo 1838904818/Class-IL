@@ -1,0 +1,46 @@
+"""CSE ECBRS first/full-cell identity, all-source and resource validation."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('directory', type=Path)
+a = p.parse_args()
+root = a.directory.resolve(strict=True)
+r = json.loads((root/'result.json').read_text(encoding='utf-8'))
+i = r['identity']
+seed = i['seed']
+assert seed in range(10,15)
+assert root == (BASE/f'runs/section178/cic-ids-2018/ecbrs-paper/seed{seed}').resolve()
+assert i['dataset'] == 'CSE-CIC-IDS2018' and i['method'] == 'ecbrs-paper-literal'
+assert not i['smoke'] and r['completed'] and r['scientific_result']
+assert i['tasks'] == [[0,1],[2,3],[4,5],[6]]
+assert i['class_order'] == ['Normal','DoS','DDoS','Bruteforce','WebAttack','Infiltration','Botnet']
+assert len(r['checkpoints']) == 4 and len(i['source_sha256']) == 9
+assert i['command'][0] == 'ncd/run_section178_ecbrs_extended.py'
+assert '--smoke' not in i['command'] and '--resume' not in i['command']
+prefix = BASE/f'logs/ecbrs-paper-cse-seed{seed}'
+events = [json.loads(s) for s in Path(str(prefix)+'.monitor.stdout.log').read_text().splitlines() if s.startswith('{')]
+starts = [e for e in events if e.get('event') == 'START']
+terminals = [e for e in events if e.get('event') == 'TERMINAL']
+assert len(starts) == len(terminals) == 1
+start, terminal = starts[0], terminals[0]
+assert len(start['source_sha256']) == 400
+assert terminal['exit_code'] == 0 and terminal['reason'] is None and terminal['source_unchanged']
+assert 0 < terminal['peak_rss_bytes'] < 10*1024**3
+assert terminal['elapsed_seconds'] > 0
+assert start['max_wall_seconds'] is None and start['max_rss_bytes'] == 10*1024**3
+assert start['min_available_memory_bytes'] == 2*1024**3 and start['min_wd_free_bytes'] == 20*1024**3
+for name, digest in start['source_sha256'].items():
+    assert hashlib.sha256((REPO/name).read_bytes()).hexdigest() == digest, name
+for name, digest in i['source_sha256'].items():
+    assert start['source_sha256'][name] == digest
+subprocess.run([sys.executable, '-I', '-B', '-u', str(BASE/'admin/check-ecbrs-extended-completed.py'), str(root)], check=True)
+print(json.dumps({'event': 'CSE_ECBRS_COMPLETED_CHECKED', 'verified_source_files': 400,
+                  'verified_checkpoints': 4, 'verified_calibration_points': 12,
+                  'wall_seconds': terminal['elapsed_seconds'], 'sampled_peak_rss_bytes': terminal['peak_rss_bytes']}))

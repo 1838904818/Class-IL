@@ -1,0 +1,98 @@
+"""Two serial, bounded software smokes; never starts a full scientific cell."""
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+base = Path('@@EXPERIMENT_ROOT@@')
+repo = Path('@@SOURCE@@')
+python = Path('@@PYTHON_ENV@@/python.exe')
+entry = 'ncd/run_section178_ecbrs_extended.py'
+def emit(event, **kwargs):
+    print(json.dumps({'event':event,'time':time.strftime('%Y-%m-%dT%H:%M:%S%z'),**kwargs}),flush=True)
+def digest(path):
+    h = hashlib.sha256()
+    with path.open('rb') as f:
+        for chunk in iter(lambda:f.read(4*1024**2),b''):
+            h.update(chunk)
+    return h.hexdigest()
+def guard():
+    volume = ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/',volume,100)
+    assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    assert psutil.disk_usage('@@RESULT_DRIVE@@/').free > 20*1024**3
+    assert psutil.virtual_memory().available > 12*1024**3
+    for process in psutil.process_iter(['pid','name','cmdline']):
+        if process.info['pid'] == os.getpid() or process.info['name'] != 'python.exe':
+            continue
+        command = ' '.join(process.info['cmdline'] or [])
+        assert not any(s in command for s in ['run_section123_fixed.py','run_section178_ecbrs','monitor-cic17-cell.py','run-cse-literature-smokes.py','run-ecbrs-extended-smokes.py']), 'Another literature worker is active'
+guard()
+reference = base/'logs/derpp-cic17-seed10.monitor.stdout.log'
+events = [json.loads(line) for line in reference.read_text(encoding='utf-8').splitlines() if line.startswith('{')]
+original = next(row['source_sha256'] for row in events if row.get('event') == 'START')
+assert all(digest(repo/name) == sha for name,sha in original.items()), 'A previously bound source changed'
+bound = {**original,entry:digest(repo/entry)}
+env = os.environ.copy()
+env.update(TEMP=str(base/'tmp'),TMP=str(base/'tmp'),PYTHONDONTWRITEBYTECODE='1',OMP_NUM_THREADS='2',MKL_NUM_THREADS='2')
+emit('START',source_sha256=bound,scientific_result=False,full_cells_authorized=False)
+for dataset,slug in [('CIC-IDS-2017','cic-ids-2017'),('CSE-CIC-IDS2018','cic-ids-2018')]:
+    guard()
+    out = base/f'runs/section178/{slug}/ecbrs-paper-extended-smoke-seed10'
+    prefix = base/f'logs/ecbrs-paper-{slug}-extended-seed10.smoke'
+    assert not out.exists(), 'Existing result must not be overwritten or retrained'
+    for suffix in ['stdout','stderr','validation.stdout','validation.stderr']:
+        assert not Path(str(prefix)+f'.{suffix}.log').exists()
+    data = base/'data/derived/section21_clean_v1'
+    receipt = json.loads((data/slug/'data_quality.json').read_text(encoding='utf-8'))
+    assert receipt['status'] == 'complete' and receipt['dataset'] == dataset
+    for item in receipt['cache_files']:
+        path = data/slug/item['path']
+        assert path.stat().st_size == item['bytes'] and digest(path) == item['sha256']
+    emit('INPUT_RECEIPT_VERIFIED',dataset=dataset)
+    guard()
+    command = [str(python),'-I','-B','-u',entry,'--dataset',dataset,'--seed','10',
+               '--data-root',str(data),'--output-dir',str(out),'--log-prefix',str(prefix),'--smoke']
+    peak, samples, reason = 0, 0, None
+    started = time.monotonic()
+    with Path(str(prefix)+'.stdout.log').open('x',encoding='utf-8') as stdout, Path(str(prefix)+'.stderr.log').open('x',encoding='utf-8') as stderr:
+        child = subprocess.Popen(command,cwd=repo,env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+        tracked = psutil.Process(child.pid)
+        emit('SMOKE_STARTED',dataset=dataset,pid=child.pid,command=command,max_wall_seconds=600,max_rss_bytes=10*1024**3)
+        try:
+            while child.poll() is None:
+                try:
+                    rss = tracked.memory_info().rss
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak,rss)
+                elapsed = time.monotonic()-started
+                available = psutil.virtual_memory().available
+                if samples % 10 == 0:
+                    emit('RESOURCE',dataset=dataset,rss_bytes=rss,elapsed_seconds=elapsed,system_available_bytes=available)
+                if elapsed > 600 or rss > 10*1024**3 or available < 2*1024**3:
+                    reason = 'Smoke budget exceeded; retain evidence, no automatic retry'
+                    child.terminate()
+                    break
+                samples += 1
+                time.sleep(1)
+        finally:
+            if child.poll() is None:
+                child.terminate()
+            try:
+                code = child.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                code = child.wait()
+    unchanged = all(digest(repo/name)==sha for name,sha in bound.items())
+    emit('SMOKE_TERMINAL',dataset=dataset,exit_code=code,elapsed_seconds=time.monotonic()-started,sampled_peak_rss_bytes=peak,reason=reason,source_unchanged=unchanged)
+    assert unchanged and code == 0 and reason is None
+    with Path(str(prefix)+'.validation.stdout.log').open('x',encoding='utf-8') as stdout, Path(str(prefix)+'.validation.stderr.log').open('x',encoding='utf-8') as stderr:
+        subprocess.run([str(python),'-I','-B','-u',str(base/'admin/check-ecbrs-extended-smoke.py'),str(out)],env=env,
+                       stdout=stdout,stderr=stderr,check=True,creationflags=subprocess.CREATE_NO_WINDOW)
+    emit('SMOKE_CHECKED',dataset=dataset,scientific_result=False,full_cell_feasibility_unverified=True)
+emit('ALL_SMOKES_COMPLETE',scientific_result=False,full_cells_started=False)

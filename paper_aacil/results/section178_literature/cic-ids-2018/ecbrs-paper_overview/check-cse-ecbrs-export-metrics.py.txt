@@ -1,0 +1,122 @@
+"""Independent NumPy recomputation from original CMs; no exporter math is imported."""
+import argparse
+import json
+from pathlib import Path
+import numpy as np
+import torch
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+DEST = BASE/'admin/cse-ecbrs-paper-publication'
+VIEWS = ('default','0.01','0.02','0.05')
+KEYS = ('bacc','accuracy','macro_f1','normal_fpr','attack_recall','incremental_bacc','incremental_accuracy','forgetting')
+
+def read(path):
+    return json.loads(path.read_text(encoding='utf-8'))
+
+def close(a,b):
+    assert a is not None and b is not None
+    assert abs(float(a)-float(b)) < 1e-12, (a,b)
+
+def compute(result,view):
+    histories,stages = [],[]
+    for t,cp in enumerate(result['checkpoints']):
+        point = result['default_stages'][t]['metrics'] if view=='default' else result['calibrated_stages'][t]['operating_points'][view]
+        cm = np.asarray(point['confusion_matrix'],dtype=np.int64)
+        assert cm.shape==(7,7) and np.all(cm>=0)
+        support,predicted = cm.sum(1),cm.sum(0)
+        seen = np.asarray(cp['seen_classes'])
+        assert np.all(support[seen]>0)
+        recall = np.full(7,np.nan)
+        recall[seen] = np.diag(cm)[seen]/support[seen]
+        histories.append(recall)
+        stages.append(dict(bacc=float(np.mean(recall[seen])),accuracy=float(np.trace(cm)/cm.sum()),
+            macro_f1=float(np.mean(2*np.diag(cm)[seen]/(support[seen]+predicted[seen]))),
+            normal_fpr=float((support[0]-cm[0,0])/support[0]),
+            attack_recall=float((cm[1:,:].sum()-cm[1:,0].sum())/cm[1:,:].sum())))
+    history = np.stack(histories)
+    perclass = []
+    for first,task in enumerate(result['identity']['tasks']):
+        for c in task:
+            best = float(np.max(history[first:-1,c])) if first<3 else None
+            perclass.append(dict(class_id=c,name=result['identity']['class_order'][c],
+                first=float(history[first,c]),peak=float(np.max(history[first:,c])),
+                best_prior=best,final=float(history[-1,c]),
+                forgetting=best-float(history[-1,c]) if best is not None else None))
+    totals = dict(stages[-1])
+    totals.update(incremental_bacc=float(np.mean([s['bacc'] for s in stages])),
+        incremental_accuracy=float(np.mean([s['accuracy'] for s in stages])),
+        forgetting=float(np.mean([p['forgetting'] for p in perclass if p['forgetting'] is not None])))
+    return dict(**totals,stages=stages,per_class=perclass)
+
+def compare(actual,expected):
+    for key in KEYS:
+        close(actual[key],expected[key])
+    assert len(actual['stages'])==4 and len(actual['per_class'])==7
+    for a,b in zip(actual['stages'],expected['stages']):
+        assert set(a)==set(b)
+        for key in b:
+            close(a[key],b[key])
+    for a,b in zip(actual['per_class'],expected['per_class']):
+        assert (a['class_id'],a['name'])==(b['class_id'],b['name'])
+        for key in ('first','peak','best_prior','final','forgetting'):
+            if b[key] is None:
+                assert a[key] is None
+            else:
+                close(a[key],b[key])
+
+def main():
+    rows = read(DEST/'overview/per_seed_metrics.json')
+    assert [r['seed'] for r in rows]==list(range(10,15))
+    expected_rows = []
+    for seed,row in zip(range(10,15),rows):
+        suffix = '-attempt1-after-reboot' if seed==13 else ''
+        root = BASE/f'runs/section178/cic-ids-2018/ecbrs-paper/seed{seed}{suffix}'
+        original = read(root/'result.json')
+        assert original['identity']['seed']==seed and original['identity']['dataset']=='CSE-CIC-IDS2018'
+        expected = {v:compute(original,v) for v in VIEWS}
+        exported = read(DEST/f'ecbrs-paper_seed{seed}/independent_metrics.json')
+        public_result = read(DEST/f'ecbrs-paper_seed{seed}/result.json')
+        assert exported==row
+        for view in VIEWS:
+            compare(row['views'][view],expected[view])
+        assert len(row['memory_slot_diagnostics'])==4
+        assert public_result['memory_slot_diagnostics']==row['memory_slot_diagnostics']
+        for cp,item in zip(original['checkpoints'],row['memory_slot_diagnostics']):
+            state = torch.load(root/cp['checkpoint_file'],map_location='cpu',weights_only=True)
+            mem = state['memory']
+            ids = np.asarray(mem['rows'],dtype=np.int64)
+            labels = np.asarray(mem['labels'],dtype=np.int64)
+            assert item['retained_row_ids']==ids.tolist() and item['retained_labels']==labels.tolist()
+            assert item['slots']==len(ids) and item['unique_rows']==len(np.unique(ids))
+            assert item['capacity']==mem['capacity'] and item['stage']==cp['task_index']
+            for c,record in zip(cp['seen_classes'],item['per_class']):
+                assert record['class_id']==c and record['slots']==int((labels==c).sum())
+                assert record['unique_rows']==len(np.unique(ids[labels==c]))
+        expected_rows.append(expected)
+    aggregate = read(DEST/'overview/aggregate.json')
+    perclass = read(DEST/'overview/per_class_aggregate.json')
+    for view in VIEWS:
+        assert set(aggregate[view])==set(KEYS)
+        for key in KEYS:
+            values = np.asarray([r[view][key] for r in expected_rows])
+            close(aggregate[view][key]['mean'],np.mean(values))
+            close(aggregate[view][key]['sample_sd'],np.std(values,ddof=1))
+        assert len(perclass[view])==7
+        for index,item in enumerate(perclass[view]):
+            original = expected_rows[0][view]['per_class'][index]
+            assert (item['class_id'],item['name'])==(original['class_id'],original['name'])
+            for key in ('first','peak','best_prior','final','forgetting'):
+                values = [r[view]['per_class'][index][key] for r in expected_rows]
+                if values[0] is None:
+                    assert all(v is None for v in values) and item[key] is None
+                else:
+                    assert item[key]['n']==5
+                    close(item[key]['mean'],np.mean(values))
+                    close(item[key]['sample_sd'],np.std(values,ddof=1))
+    print(json.dumps(dict(event='INDEPENDENT_CSE_ECBRS_METRICS_VERIFIED',seeds=5,stage_views=80,
+        class_views=140,checkpoint_row_id_records=20,sample_sd_ddof=1,
+        max_absolute_difference_bound=1e-12,source='original_confusion_matrices_and_checkpoint_row_ids')),flush=True)
+
+if __name__=='__main__':
+    main()
+

@@ -1,0 +1,79 @@
+"""Read-only checks for CSE same-entry software smokes, never full-cell evidence."""
+import argparse
+import hashlib
+import json
+import math
+from pathlib import Path
+import numpy as np
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('directory', type=Path)
+a = p.parse_args()
+root = a.directory.resolve(strict=True)
+def read(name):
+    return json.loads((root/name).read_text(encoding='utf-8'))
+def equal(x, y):
+    assert math.isclose(float(x), float(y), rel_tol=0, abs_tol=1e-10), (x, y)
+summary, result = read('summary.json'), read('cell/result.json')
+identity = result['identity']
+assert summary['completed'] and summary['smoke'] and summary['scientific_result'] is False
+assert result['completed'] and identity['dataset'] == 'CSE-CIC-IDS2018'
+assert identity['method'] in ('derpp', 'icarl') and identity['seed'] == 10
+config = identity['effective_config']
+assert config['smoke'] and config['epochs_per_task'] == 1 and config['min_steps_per_task'] == 0
+classes, tasks = identity['class_order'], identity['tasks']
+assert classes == ['Normal','DoS','DDoS','Bruteforce','WebAttack','Infiltration','Botnet']
+assert tasks == [[0,1],[2,3],[4,5],[6]]
+normal = classes.index('Normal')
+holdout = identity['section26_holdout']
+assert set(holdout) == set(map(str, range(len(classes))))
+for value in holdout.values():
+    n = value['train_count'] + value['validation_count']
+    assert n == 64 and value['validation_count'] == max(5, math.ceil(.1*n))
+default, calibrated = read('default_stages.json'), read('calibrated_stages.json')
+assert len(default) == len(calibrated) == len(result['checkpoints']) == len(tasks)
+def check_metrics(metrics, seen):
+    raw = np.asarray(metrics['confusion_matrix'])
+    assert np.isfinite(raw).all() and np.equal(raw, np.floor(raw)).all()
+    cm = raw.astype(np.int64)
+    assert cm.shape == (len(classes),len(classes)) and (cm >= 0).all()
+    rows, columns, diagonal = cm.sum(1), cm.sum(0), cm.diagonal()
+    assert all(rows[c] == 64 for c in seen)
+    unseen = sorted(set(range(len(classes))) - set(seen))
+    assert rows[unseen].sum() == columns[unseen].sum() == 0
+    equal(1-diagonal[normal]/rows[normal], metrics['normal_fpr'])
+    equal(np.mean(2*diagonal[seen]/(rows[seen]+columns[seen])), metrics['macro_f1'])
+    if 'accuracy' in metrics:
+        equal(diagonal.sum()/rows.sum(), metrics['accuracy'])
+    if 'balanced_accuracy' in metrics:
+        equal(np.mean(diagonal[seen]/rows[seen]), metrics['balanced_accuracy'])
+    if 'attack_recall' in metrics:
+        attack = [c for c in seen if c != normal]
+        equal(1-cm[attack,normal].sum()/rows[attack].sum(), metrics['attack_recall'])
+    return rows.tolist()
+points = 0
+for index, (cp, d, c) in enumerate(zip(result['checkpoints'],default,calibrated)):
+    assert cp['task_index'] == d['task_index'] == c['task_index'] == index
+    seen = [label for task in tasks[:index+1] for label in task]
+    assert cp['seen_classes'] == seen
+    path = root/'cell'/cp['checkpoint_file']
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert digest == cp['checkpoint_sha256'] == d['checkpoint_sha256'] == c['checkpoint_sha256']
+    assert json.loads(path.with_suffix('.json').read_text(encoding='utf-8')) == cp
+    support = check_metrics(d['metrics'], seen)
+    assert set(c['operating_points']) == {'0.01','0.02','0.05'}
+    cal = c['calibration']
+    assert cal['calibration_rows'] == holdout[str(normal)]['validation_count']
+    assert cal['calibration_indices_sha256'] == holdout[str(normal)]['validation_indices_sha256']
+    for alpha, value in c['operating_points'].items():
+        selected = cal['operating_points'][alpha]
+        assert selected['status'] == 'available'
+        n, fp = selected['calibration_count'], selected['calibration_false_positives']
+        assert n == cal['calibration_rows']
+        assert 0 <= fp <= selected['maximum_false_positives'] == math.floor(float(alpha)*n+1e-9)
+        equal(fp/n, selected['calibration_fpr'])
+        assert check_metrics(value, seen) == support
+        points += 1
+print(json.dumps({'method':identity['method'],'verified_checkpoints':len(tasks),
+                  'verified_calibration_points':points,'scientific_result':False,
+                  'scope':'Software smoke only; no claim of full-cell resource feasibility or unique origin row IDs.'}))

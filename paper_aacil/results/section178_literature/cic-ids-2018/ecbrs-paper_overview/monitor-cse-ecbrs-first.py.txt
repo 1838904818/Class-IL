@@ -1,0 +1,149 @@
+"""Sections193/196 CSE ECBRS first cell only; original source and safety limits."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import psutil
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+PYTHON = Path('@@PYTHON_ENV@@/python.exe')
+PREFIX = BASE/'logs/ecbrs-paper-cse-seed10'
+OUT = BASE/'runs/section178/cic-ids-2018/ecbrs-paper/seed10'
+GIB = 1024**3
+
+def emit(event, **fields):
+    print(json.dumps(dict(event=event, time=time.strftime('%Y-%m-%dT%H:%M:%S%z'), **fields)), flush=True)
+
+def events(path):
+    return [json.loads(s) for s in path.read_text(encoding='utf-8').splitlines() if s.startswith('{')]
+
+def hashes():
+    files = sorted(set(REPO.glob('ncd/**/*.py')) | set(REPO.glob('ncd/configs/*.json')) |
+                   {REPO/'src/methods/replay_dpmeans.py', REPO/'paper_aacil/results/section123_schedule_selection.json'})
+    return {f.relative_to(REPO).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+
+def volume_check():
+    volume = ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/', volume, 100)
+    assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    free = psutil.disk_usage('@@RESULT_DRIVE@@/').free
+    assert free > 20*GIB
+    return free
+
+def preflight():
+    free = volume_check()
+    available = psutil.virtual_memory().available
+    assert available > 12*GIB, 'Insufficient initial system memory'
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        if proc.info['pid'] != os.getpid() and (proc.info['name'] or '').lower() == 'python.exe':
+            raise AssertionError('Another Python process requires identity review before serial launch')
+    assert not OUT.exists(), 'Preserve existing output; no automatic retry'
+    for suffix in ('.stdout.log', '.stderr.log', '.validation.stdout.log', '.validation.stderr.log'):
+        assert not Path(str(PREFIX)+suffix).exists(), 'Existing evidence must not be overwritten'
+    bound = hashes()
+    assert len(bound) == 400
+    active_attempt = events(BASE/'logs/icarl-cse-scoped-seed10.monitor.stdout.log')
+    assert next(e['source_sha256'] for e in active_attempt if e.get('event') == 'START') == bound
+    terminal = [e for e in active_attempt if e.get('event') == 'TERMINAL']
+    assert len(terminal) == 1 and terminal[0]['source_unchanged'], 'Already running iCaRL must reach terminal first'
+    if terminal[0]['exit_code'] == 0:
+        assert any(e.get('event') == 'CELL_VALIDATED' for e in active_attempt), 'Do not bypass unfinished iCaRL validation'
+    old = events(BASE/'logs/ecbrs-extended-smokes.stdout.log')
+    original = next(e['source_sha256'] for e in old if e.get('event') == 'START')
+    assert len(original) == 394 and all(bound.get(k) == v for k,v in original.items())
+    assert any(e.get('event') == 'ALL_SMOKES_COMPLETE' for e in old)
+    for name in ('ecbrs-extended-smokes.stderr.log', 'ecbrs-paper-cic-ids-2018-extended-seed10.smoke.stderr.log',
+                 'ecbrs-paper-cic-ids-2018-extended-seed10.smoke.validation.stderr.log'):
+        assert (BASE/'logs'/name).stat().st_size == 0, name
+    smoke = BASE/'runs/section178/cic-ids-2018/ecbrs-paper-extended-smoke-seed10'
+    subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/check-ecbrs-extended-smoke.py'), str(smoke)], check=True)
+    completed_queue = events(BASE/'logs/derpp-cse-queue-11-14.stdout.log')
+    assert any(e.get('event') == 'ALL_COMPLETE' for e in completed_queue)
+    for seed in range(10,15):
+        previous = events(BASE/f'logs/derpp-cse-seed{seed}.monitor.stdout.log')
+        source = next(e['source_sha256'] for e in previous if e.get('event') == 'START')
+        assert len(source) == 398 and all(bound.get(k) == v for k,v in source.items())
+        assert any(e.get('event') == 'CELL_VALIDATED' for e in previous)
+    emit('PREFLIGHT_VALIDATED', source_files=400, historical_smoke_source_files=394,
+         system_available_bytes=available, wd_free_bytes=free,
+         work_order_commit='3d2ab6df6e4637f6cce20c597f0db24bdfb952ba', work_order_section=196,
+         full_cell_resource_feasibility='unverified')
+    return bound
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--validate-only', action='store_true')
+    args = parser.parse_args()
+    bound = preflight()
+    if args.validate_only:
+        return
+    command = [str(PYTHON), '-I', '-B', '-u', 'ncd/run_section178_ecbrs_extended.py',
+               '--dataset', 'CSE-CIC-IDS2018', '--seed', '10',
+               '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(OUT), '--log-prefix', str(PREFIX)]
+    env = os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'), TMP=str(BASE/'tmp'), PYTHONDONTWRITEBYTECODE='1', OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    emit('START', command=command, source_sha256=bound,
+         git_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip(),
+         max_wall_seconds=None, report_wall_seconds=21600, max_rss_bytes=10*GIB,
+         min_available_memory_bytes=2*GIB, min_wd_free_bytes=20*GIB,
+         authority='Section193: identical method, local serial first cell; report beyond six hours without walltime termination')
+    child = None
+    peak = 0
+    samples = 0
+    reported = False
+    reason = None
+    started = time.monotonic()
+    with Path(str(PREFIX)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+        try:
+            child = subprocess.Popen(command, cwd=REPO, env=env, stdout=stdout, stderr=stderr, creationflags=subprocess.CREATE_NO_WINDOW)
+            tracked = psutil.Process(child.pid)
+            emit('CHILD_STARTED', pid=child.pid)
+            while child.poll() is None:
+                try:
+                    rss = tracked.memory_info().rss
+                    cpu = tracked.cpu_times()
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak, rss)
+                elapsed = time.monotonic()-started
+                available = psutil.virtual_memory().available
+                free = psutil.disk_usage('@@RESULT_DRIVE@@/').free
+                if samples % 6 == 0:
+                    emit('RESOURCE', pid=child.pid, elapsed_seconds=elapsed, rss_bytes=rss, peak_rss_bytes=peak,
+                         cpu_seconds=cpu.user+cpu.system, system_available_bytes=available, wd_free_bytes=free)
+                if elapsed > 21600 and not reported:
+                    emit('SIX_HOUR_REPORT_CONTINUING', elapsed_seconds=elapsed, peak_rss_bytes=peak)
+                    reported = True
+                if rss > 10*GIB or available < 2*GIB or free < 20*GIB:
+                    reason = 'RAM or WD safety boundary; preserve partial and logs; diagnose before checkpoint resume'
+                    break
+                samples += 1
+                time.sleep(5)
+        except BaseException as exc:
+            reason = 'Monitor exception: '+repr(exc)
+            raise
+        finally:
+            if child is not None:
+                if child.poll() is None:
+                    child.terminate()
+                exit_code = child.wait()
+                unchanged = hashes() == bound
+                emit('TERMINAL', exit_code=exit_code, elapsed_seconds=time.monotonic()-started,
+                     peak_rss_bytes=peak, reason=reason, source_unchanged=unchanged)
+    assert unchanged and exit_code == 0 and reason is None, 'Preserve partial/log; no automatic retry'
+    summary = json.loads((OUT/'summary.json').read_text(encoding='utf-8'))
+    assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+    with Path(str(PREFIX)+'.validation.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.validation.stderr.log').open('x', encoding='utf-8') as stderr:
+        subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/check-cse-ecbrs-completed.py'), str(OUT)],
+                       cwd=REPO, env=env, stdout=stdout, stderr=stderr, check=True)
+    emit('CELL_VALIDATED', dataset='CSE-CIC-IDS2018', method='ecbrs-paper-literal', seed=10, output=str(OUT))
+
+if __name__ == '__main__':
+    main()

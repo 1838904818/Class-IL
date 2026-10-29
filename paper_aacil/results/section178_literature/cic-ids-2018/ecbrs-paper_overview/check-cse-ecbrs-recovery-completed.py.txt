@@ -1,0 +1,88 @@
+"""CSE ECBRS first/full-cell identity, all-source and resource validation."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+
+# Direct user authorization 2026-10-30: preserve interrupted seed13; new attempt, not resume.
+OLD_EVIDENCE = {
+    "@@EXPERIMENT_ROOT@@/logs/ecbrs-paper-cse-seed13.monitor.stdout.log": "a7ac26d0567dfcacf0e692c774b4be8b94dcf72366b497a55d1c78fd73aadafa",
+    "@@EXPERIMENT_ROOT@@/logs/ecbrs-paper-cse-seed13.monitor.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "@@EXPERIMENT_ROOT@@/logs/ecbrs-paper-cse-seed13.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "@@EXPERIMENT_ROOT@@/logs/ecbrs-paper-cse-queue-11-14.stdout.log": "a744244479298b0e6146350b040cda033ab5103d05cd4b3d59701b0b5c58a9db",
+    "@@EXPERIMENT_ROOT@@/logs/ecbrs-paper-cse-seed13.stdout.log": "60633771ae81ceeb5b893e0a6f21ee0f20ea5225498bbb89389eadc93be16922",
+    "@@EXPERIMENT_ROOT@@/logs/ecbrs-paper-cse-queue-11-14.stderr.log": "20f5c3b2d592b6a3d008d0f398fa4b38fcf483d6aa76702893f04f39f8c50370",
+    "@@EXPERIMENT_ROOT@@/runs/section178/cic-ids-2018/ecbrs-paper/seed13/identity.json": "8fc2b29d8b7d435895d91a5fbd626546d54874d5fed1fb4514d84299caac5845"
+}
+ATTEMPT = 'attempt1-after-reboot'
+def cell_paths(seed):
+    suffix = '-'+ATTEMPT if seed == 13 else ''
+    return (BASE/f'logs/ecbrs-paper-cse-seed{seed}{suffix}',
+            BASE/f'runs/section178/cic-ids-2018/ecbrs-paper/seed{seed}{suffix}')
+
+def preserve_interrupted(bound):
+    for name, digest in OLD_EVIDENCE.items():
+        assert hashlib.sha256(Path(name).read_bytes()).hexdigest() == digest, ('Old evidence changed', name)
+    old_root = BASE/'runs/section178/cic-ids-2018/ecbrs-paper/seed13'
+    assert sorted(p.relative_to(old_root).as_posix() for p in old_root.rglob('*') if p.is_file()) == ['identity.json']
+    old_prefix = BASE/'logs/ecbrs-paper-cse-seed13'
+    actual = {p.as_posix() for p in (BASE/'logs').glob('ecbrs-paper-cse-seed13.*.log')}
+    expected = {p for p in OLD_EVIDENCE if p.startswith(old_prefix.as_posix()+'.')}
+    assert actual == expected
+    old = [json.loads(s) for s in Path(str(old_prefix)+'.monitor.stdout.log').read_text().splitlines() if s.startswith('{')]
+    starts = [e for e in old if e.get('event') == 'START']
+    assert len(starts) == 1 and starts[0]['source_sha256'] == bound
+    assert not any(e.get('event') in ('TERMINAL', 'CELL_VALIDATED') for e in old)
+    identity = json.loads((old_root/'identity.json').read_text())
+    assert identity['seed'] == 13 and identity['dataset'] == 'CSE-CIC-IDS2018' and not identity['smoke']
+    queue = [json.loads(s) for s in (BASE/'logs/ecbrs-paper-cse-queue-11-14.stdout.log').read_text().splitlines() if s.startswith('{')]
+    assert queue[-1]['event'] == 'MONITOR_EXIT' and queue[-1]['seed'] == 13 and queue[-1]['exit_code'] == 1073807364
+    return OLD_EVIDENCE
+
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('directory', type=Path)
+a = p.parse_args()
+root = a.directory.resolve(strict=True)
+r = json.loads((root/'result.json').read_text(encoding='utf-8'))
+i = r['identity']
+seed = i['seed']
+assert seed in (13,14)
+prefix, expected_root = cell_paths(seed)
+assert root == expected_root.resolve()
+assert i['dataset'] == 'CSE-CIC-IDS2018' and i['method'] == 'ecbrs-paper-literal'
+assert not i['smoke'] and r['completed'] and r['scientific_result']
+assert i['tasks'] == [[0,1],[2,3],[4,5],[6]]
+assert i['class_order'] == ['Normal','DoS','DDoS','Bruteforce','WebAttack','Infiltration','Botnet']
+assert len(r['checkpoints']) == 4 and len(i['source_sha256']) == 9
+assert i['command'][0] == 'ncd/run_section178_ecbrs_extended.py'
+assert '--smoke' not in i['command'] and '--resume' not in i['command']
+events = [json.loads(s) for s in Path(str(prefix)+'.monitor.stdout.log').read_text().splitlines() if s.startswith('{')]
+starts = [e for e in events if e.get('event') == 'START']
+terminals = [e for e in events if e.get('event') == 'TERMINAL']
+assert len(starts) == len(terminals) == 1
+start, terminal = starts[0], terminals[0]
+assert len(start['source_sha256']) == 400
+preserve_interrupted(start['source_sha256'])
+expected_command = [sys.executable, '-I', '-B', '-u', 'ncd/run_section178_ecbrs_extended.py', '--dataset', 'CSE-CIC-IDS2018', '--seed', str(seed), '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(expected_root), '--log-prefix', str(prefix)]
+assert start['command'] == expected_command and i['command'] == expected_command[4:]
+assert start['report_wall_seconds'] == 21600
+assert terminal['exit_code'] == 0 and terminal['reason'] is None and terminal['source_unchanged']
+assert 0 < terminal['peak_rss_bytes'] < 10*1024**3
+assert terminal['elapsed_seconds'] > 0
+assert start['max_wall_seconds'] is None and start['max_rss_bytes'] == 10*1024**3
+assert start['min_available_memory_bytes'] == 2*1024**3 and start['min_wd_free_bytes'] == 20*1024**3
+for name, digest in start['source_sha256'].items():
+    assert hashlib.sha256((REPO/name).read_bytes()).hexdigest() == digest, name
+for name, digest in i['source_sha256'].items():
+    assert start['source_sha256'][name] == digest
+subprocess.run([sys.executable, '-I', '-B', '-u', str(BASE/'admin/check-ecbrs-extended-completed.py'), str(root)], check=True)
+print(json.dumps({'event': 'CSE_ECBRS_COMPLETED_CHECKED', 'verified_source_files': 400,
+                  'verified_checkpoints': 4, 'verified_calibration_points': 12,
+                  'wall_seconds': terminal['elapsed_seconds'], 'sampled_peak_rss_bytes': terminal['peak_rss_bytes']}))
+
