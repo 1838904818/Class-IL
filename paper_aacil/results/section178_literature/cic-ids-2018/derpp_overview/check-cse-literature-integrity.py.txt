@@ -1,0 +1,85 @@
+"""Read-only CSE output integrity checks; smoke is never scientific evidence."""
+import argparse
+import hashlib
+import json
+import math
+from pathlib import Path
+import numpy as np
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument('directory', type=Path)
+p.add_argument('--formal', action='store_true', help='Check a completed full cell instead of software smoke')
+a = p.parse_args()
+root = a.directory.resolve(strict=True)
+def read(name):
+    return json.loads((root / name).read_text(encoding='utf-8'))
+def equal(x, y):
+    assert math.isclose(float(x), float(y), rel_tol=0, abs_tol=1e-10), (x, y)
+summary = read('summary.json')
+result = read('cell/result.json')
+identity = result['identity']
+assert summary['completed'] and summary['smoke'] == (not a.formal) and summary['scientific_result'] == a.formal
+assert result['completed'] and identity['dataset'] == 'CSE-CIC-IDS2018'
+assert identity['method'] in ('derpp', 'icarl') and identity['seed'] in range(10, 15)
+config = identity['effective_config']
+assert config['smoke'] == (not a.formal)
+assert config['epochs_per_task'] == (8 if a.formal else 1)
+assert config['min_steps_per_task'] == (2000 if a.formal else 0)
+classes, tasks = identity['class_order'], identity['tasks']
+assert classes == ['Normal','DoS','DDoS','Bruteforce','WebAttack','Infiltration','Botnet']
+assert tasks == [[0,1],[2,3],[4,5],[6]]
+normal = classes.index('Normal')
+holdout = identity['section26_holdout']
+for class_id, value in holdout.items():
+    n = value['train_count'] + value['validation_count']
+    assert (a.formal or n <= 64) and value['validation_count'] == max(5, math.ceil(.1 * n))
+    if a.formal:
+        assert n == identity['original_train_counts'][int(class_id)]
+default, calibrated = read('default_stages.json'), read('calibrated_stages.json')
+assert len(default) == len(calibrated) == len(result['checkpoints']) == len(tasks)
+def check_metrics(metrics, seen):
+    raw = np.asarray(metrics['confusion_matrix'])
+    assert np.isfinite(raw).all() and np.equal(raw, np.floor(raw)).all()
+    cm = raw.astype(np.int64)
+    assert cm.shape == (len(classes), len(classes)) and (cm >= 0).all()
+    rows, columns = cm.sum(1), cm.sum(0)
+    assert all(0 < rows[c] and (a.formal or rows[c] <= 64) for c in seen)
+    unseen = sorted(set(range(len(classes))) - set(seen))
+    assert rows[unseen].sum() == 0 and columns[unseen].sum() == 0
+    diagonal = cm.diagonal()
+    equal(1 - diagonal[normal] / rows[normal], metrics['normal_fpr'])
+    equal(np.mean(2 * diagonal[seen] / (rows[seen] + columns[seen])), metrics['macro_f1'])
+    if 'accuracy' in metrics:
+        equal(diagonal.sum() / rows.sum(), metrics['accuracy'])
+    if 'balanced_accuracy' in metrics:
+        equal(np.mean(diagonal[seen] / rows[seen]), metrics['balanced_accuracy'])
+    if 'attack_recall' in metrics:
+        attack = [c for c in seen if c != normal]
+        equal(1 - cm[attack, normal].sum() / rows[attack].sum(), metrics['attack_recall'])
+    return rows.tolist()
+points = 0
+for index, (cp, d, c) in enumerate(zip(result['checkpoints'], default, calibrated)):
+    assert cp['task_index'] == d['task_index'] == c['task_index'] == index
+    seen = [label for task in tasks[:index + 1] for label in task]
+    assert cp['seen_classes'] == seen
+    path = root / 'cell' / cp['checkpoint_file']
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert digest == cp['checkpoint_sha256'] == d['checkpoint_sha256'] == c['checkpoint_sha256']
+    assert json.loads(path.with_suffix('.json').read_text()) == cp
+    support = check_metrics(d['metrics'], seen)
+    assert set(c['operating_points']) == {'0.01', '0.02', '0.05'}
+    cal = c['calibration']
+    assert cal['calibration_rows'] == holdout[str(normal)]['validation_count']
+    assert cal['calibration_indices_sha256'] == holdout[str(normal)]['validation_indices_sha256']
+    for alpha, value in c['operating_points'].items():
+        selected = cal['operating_points'][alpha]
+        assert selected['status'] == 'available'
+        n, fp = selected['calibration_count'], selected['calibration_false_positives']
+        assert n == cal['calibration_rows']
+        assert fp <= selected['maximum_false_positives'] == math.floor(float(alpha) * n + 1e-9)
+        equal(fp / n, selected['calibration_fpr'])
+        assert check_metrics(value, seen) == support
+        points += 1
+print(json.dumps({'method': identity['method'], 'verified_checkpoints': len(tasks),
+                  'verified_calibration_points': points, 'scientific_result': a.formal,
+                  'scope': 'Checkpoint bytes, saved metadata, default/calibrated CM and permanent holdout; resource feasibility requires the separate full-cell monitor.'}))

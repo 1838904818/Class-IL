@@ -1,0 +1,144 @@
+"""Section193 first CSE DER++ cell; serial, measured resources, no walltime kill."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import psutil
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+PYTHON = Path('@@PYTHON_ENV@@/python.exe')
+PREFIX = BASE/'logs/derpp-cse-seed10'
+OUT = BASE/'runs/section178/cic-ids-2018/derpp/seed10'
+GIB = 1024**3
+
+def emit(event, **fields):
+    print(json.dumps(dict(event=event, time=time.strftime('%Y-%m-%dT%H:%M:%S%z'), **fields)), flush=True)
+
+def events(path):
+    return [json.loads(s) for s in path.read_text(encoding='utf-8').splitlines() if s.startswith('{')]
+
+def hashes():
+    files = sorted(set(REPO.glob('ncd/**/*.py')) | set(REPO.glob('ncd/configs/*.json')) |
+                   {REPO/'src/methods/replay_dpmeans.py', REPO/'paper_aacil/results/section123_schedule_selection.json'})
+    return {f.relative_to(REPO).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+
+def volume_check():
+    volume = ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/', volume, 100)
+    assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    free = psutil.disk_usage('@@RESULT_DRIVE@@/').free
+    assert free > 20*GIB
+    return free
+
+def preflight():
+    free = volume_check()
+    available = psutil.virtual_memory().available
+    assert available > 12*GIB, 'Insufficient initial system memory'
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        if proc.info['pid'] != os.getpid() and (proc.info['name'] or '').lower() == 'python.exe':
+            raise AssertionError('Another Python process requires identity review before starting this serial cell')
+    assert not OUT.exists(), 'Preserve existing cell; diagnose and resume, never restart'
+    for suffix in ('.stdout.log', '.stderr.log', '.validation.stdout.log', '.validation.stderr.log'):
+        assert not Path(str(PREFIX)+suffix).exists(), 'Existing evidence must not be overwritten'
+    bound = hashes()
+    assert len(bound) == 398
+    prior = events(BASE/'logs/cer-bic-common-cic17-seed14.monitor.stdout.log')
+    assert next(e['source_sha256'] for e in prior if e.get('event') == 'START') == bound
+    old = events(BASE/'logs/cse-literature-smokes.stdout.log')
+    assert any(e.get('event') == 'ALL_SMOKES_COMPLETE' for e in old)
+    original = next(e['source_sha256'] for e in old if e.get('event') == 'SOURCE_BOUND')
+    assert len(original) == 393
+    assert all(bound.get(k) == v for k, v in original.items()), 'Historical smoke source changed'
+    assert (BASE/'logs/cse-literature-smokes.stderr.log').stat().st_size == 0
+    for method in ('derpp', 'icarl'):
+        for suffix in ('.smoke.stderr.log', '.smoke.validation.stderr.log'):
+            assert (BASE/f'logs/{method}-cse-seed10{suffix}').stat().st_size == 0
+        terminal = next(e for e in old if e.get('event') == 'SMOKE_TERMINAL' and e.get('method') == method)
+        assert terminal['exit_code'] == 0 and terminal['reason'] is None and terminal['source_unchanged']
+        subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/check-cse-literature-smoke.py'),
+                        str(BASE/f'runs/section178/cic-ids-2018/{method}-smoke-seed10')], check=True)
+    receipt = BASE/'data/derived/section21_clean_v1/cic-ids-2018/data_quality.json'
+    receipt_sha = hashlib.sha256(receipt.read_bytes()).hexdigest()
+    assert receipt_sha == next(e['sha256'] for e in old if e.get('event') == 'INPUT_FILE_VERIFIED' and e.get('file') == 'data_quality.json')
+    # The unchanged entry rechecks all cache file hashes, shapes, class counts and finite values before training.
+    emit('PREFLIGHT_VALIDATED', source_files=len(bound), original_smoke_source_files=len(original),
+         data_receipt_sha256=receipt_sha, system_available_bytes=available, wd_free_bytes=free,
+         source_unchanged=True, full_cell_feasibility_unverified=True)
+    return bound
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--validate-only', action='store_true')
+    args = parser.parse_args()
+    bound = preflight()
+    if args.validate_only:
+        return
+    command = [str(PYTHON), '-I', '-B', '-u', 'ncd/run_section123_fixed.py', '--method', 'derpp',
+               '--dataset', 'CSE-CIC-IDS2018', '--seed', '10', '--threads', '2',
+               '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(OUT)]
+    env = os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'), TMP=str(BASE/'tmp'), PYTHONDONTWRITEBYTECODE='1', OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    emit('START', command=command, source_sha256=bound,
+         git_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip(),
+         max_wall_seconds=None, report_wall_seconds=21600, max_rss_bytes=10*GIB,
+         min_available_memory_bytes=2*GIB, min_wd_free_bytes=20*GIB,
+         authority='Section193: identical method, local serial first cell; report beyond six hours without walltime termination')
+    child = None
+    peak = 0
+    samples = 0
+    reported = False
+    reason = None
+    started = time.monotonic()
+    with Path(str(PREFIX)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+        try:
+            child = subprocess.Popen(command, cwd=REPO, env=env, stdout=stdout, stderr=stderr, creationflags=subprocess.CREATE_NO_WINDOW)
+            tracked = psutil.Process(child.pid)
+            emit('CHILD_STARTED', pid=child.pid)
+            while child.poll() is None:
+                try:
+                    rss = tracked.memory_info().rss
+                    cpu = tracked.cpu_times()
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak, rss)
+                elapsed = time.monotonic()-started
+                available = psutil.virtual_memory().available
+                free = psutil.disk_usage('@@RESULT_DRIVE@@/').free
+                if samples % 6 == 0:
+                    emit('RESOURCE', pid=child.pid, elapsed_seconds=elapsed, rss_bytes=rss, peak_rss_bytes=peak,
+                         cpu_seconds=cpu.user+cpu.system, system_available_bytes=available, wd_free_bytes=free)
+                if elapsed > 21600 and not reported:
+                    emit('SIX_HOUR_REPORT_CONTINUING', elapsed_seconds=elapsed, peak_rss_bytes=peak)
+                    reported = True
+                if rss > 10*GIB or available < 2*GIB or free < 20*GIB:
+                    reason = 'RAM or WD safety boundary; preserve partial and logs; diagnose before checkpoint resume'
+                    break
+                samples += 1
+                time.sleep(5)
+        except BaseException as exc:
+            reason = 'Monitor exception: '+repr(exc)
+            raise
+        finally:
+            if child is not None:
+                if child.poll() is None:
+                    child.terminate()
+                exit_code = child.wait()
+                unchanged = hashes() == bound
+                emit('TERMINAL', exit_code=exit_code, elapsed_seconds=time.monotonic()-started,
+                     peak_rss_bytes=peak, reason=reason, source_unchanged=unchanged)
+    assert unchanged and exit_code == 0 and reason is None, 'Preserve partial/log; no automatic retry'
+    summary = json.loads((OUT/'summary.json').read_text(encoding='utf-8'))
+    assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+    with Path(str(PREFIX)+'.validation.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.validation.stderr.log').open('x', encoding='utf-8') as stderr:
+        subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/check-cse-derpp-completed.py'), str(OUT)],
+                       cwd=REPO, env=env, stdout=stdout, stderr=stderr, check=True)
+    emit('CELL_VALIDATED', dataset='CSE-CIC-IDS2018', method='derpp', seed=10, output=str(OUT))
+
+if __name__ == '__main__':
+    main()

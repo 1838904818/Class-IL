@@ -1,0 +1,47 @@
+"""Run only CSE DER++ seeds 11..14 sequentially after complete first-cell validation."""
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ADMIN = Path(__file__).resolve().parent
+spec = importlib.util.spec_from_file_location('cse_followup', ADMIN/'monitor-cse-derpp-followup.py')
+followup = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(followup)
+
+def main():
+    base, python = followup.BASE, followup.PYTHON
+    followup.volume_check()
+    assert followup.psutil.virtual_memory().available > 12*followup.GIB
+    for proc in followup.psutil.process_iter(['pid', 'name']):
+        assert proc.info['pid'] == os.getpid() or (proc.info['name'] or '').lower() != 'python.exe', 'Another Python process exists'
+    bound = followup.hashes()
+    first = followup.validated(10, bound)
+    for seed in range(11, 15):
+        assert not (base/f'runs/section178/cic-ids-2018/derpp/seed{seed}').exists()
+        for suffix in ('.stdout.log', '.stderr.log', '.monitor.stdout.log', '.monitor.stderr.log',
+                       '.validation.stdout.log', '.validation.stderr.log'):
+            assert not (base/f'logs/derpp-cse-seed{seed}{suffix}').exists(), 'Preserve existing evidence'
+    env = os.environ.copy()
+    env.update(TEMP=str(base/'tmp'), TMP=str(base/'tmp'), PYTHONDONTWRITEBYTECODE='1',
+               OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    followup.emit('QUEUE_START', seeds=list(range(11, 15)), first_cell=first,
+                  source_files=len(bound), strict_serial=True, automatic_retry=False, max_wall_seconds=None)
+    for seed in range(11, 15):
+        assert followup.hashes() == bound
+        followup.validated(seed-1, bound)
+        command = [str(python), '-I', '-B', '-u', str(ADMIN/'monitor-cse-derpp-followup.py'), '--seed', str(seed)]
+        prefix = base/f'logs/derpp-cse-seed{seed}.monitor'
+        followup.emit('SEED_START', seed=seed, command=command)
+        with Path(str(prefix)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(prefix)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+            run = subprocess.run(command, cwd=followup.REPO, env=env, stdout=stdout, stderr=stderr,
+                                 creationflags=subprocess.CREATE_NO_WINDOW)
+        followup.emit('MONITOR_EXIT', seed=seed, exit_code=run.returncode)
+        assert run.returncode == 0, 'Preserve partial/log; queue stops without automatic retry'
+        terminal = followup.validated(seed, bound)
+        followup.emit('SEED_VALIDATED', seed=seed, terminal=terminal)
+    followup.emit('ALL_COMPLETE', dataset='CSE-CIC-IDS2018', method='derpp', seeds=list(range(10, 15)))
+
+if __name__ == '__main__':
+    main()

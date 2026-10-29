@@ -1,0 +1,182 @@
+"""Section193 CSE DER++ followup cells; serial, unchanged training, no walltime kill."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import psutil
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+PYTHON = Path('@@PYTHON_ENV@@/python.exe')
+SEED = None
+PREFIX = None
+OUT = None
+GIB = 1024**3
+
+def emit(event, **fields):
+    print(json.dumps(dict(event=event, time=time.strftime('%Y-%m-%dT%H:%M:%S%z'), **fields)), flush=True)
+
+def events(path):
+    return [json.loads(s) for s in path.read_text(encoding='utf-8').splitlines() if s.startswith('{')]
+
+def hashes():
+    files = sorted(set(REPO.glob('ncd/**/*.py')) | set(REPO.glob('ncd/configs/*.json')) |
+                   {REPO/'src/methods/replay_dpmeans.py', REPO/'paper_aacil/results/section123_schedule_selection.json'})
+    return {f.relative_to(REPO).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+
+def volume_check():
+    volume = ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/', volume, 100)
+    assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    free = psutil.disk_usage('@@RESULT_DRIVE@@/').free
+    assert free > 20*GIB
+    return free
+
+def validated(seed, bound=None):
+    assert seed in range(10, 15)
+    prefix = BASE/f'logs/derpp-cse-seed{seed}'
+    root = BASE/f'runs/section178/cic-ids-2018/derpp/seed{seed}'
+    ev = events(Path(str(prefix)+'.monitor.stdout.log'))
+    def one(name):
+        found = [e for e in ev if e.get('event') == name]
+        assert len(found) == 1, (seed, name)
+        return found[0]
+    start, terminal, done = one('START'), one('TERMINAL'), one('CELL_VALIDATED')
+    expected_command = [str(PYTHON), '-I', '-B', '-u', 'ncd/run_section123_fixed.py', '--method', 'derpp',
+                        '--dataset', 'CSE-CIC-IDS2018', '--seed', str(seed), '--threads', '2',
+                        '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(root)]
+    assert start['command'] == expected_command
+    assert start['max_wall_seconds'] is None and start['report_wall_seconds'] == 21600
+    assert terminal['exit_code'] == 0 and terminal['reason'] is None and terminal['source_unchanged']
+    assert 0 < terminal['peak_rss_bytes'] <= 10*GIB and terminal['elapsed_seconds'] > 0
+    assert done['dataset'] == 'CSE-CIC-IDS2018' and done['method'] == 'derpp' and done['seed'] == seed
+    if bound is None:
+        bound = hashes()
+    assert len(bound) == 398 and start['source_sha256'] == bound
+    summary = json.loads((root/'summary.json').read_text(encoding='utf-8'))
+    result = json.loads((root/'cell/result.json').read_text(encoding='utf-8'))
+    identity = result['identity']
+    assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+    assert summary['dataset'] == identity['dataset'] == 'CSE-CIC-IDS2018'
+    assert summary['method'] == identity['method'] == 'derpp'
+    assert summary['seed'] == identity['seed'] == seed
+    assert summary['checkpoint_count'] == len(result['checkpoints']) == 4
+    assert len(identity['class_order']) == 7 and identity['tasks'] == [[0, 1], [2, 3], [4, 5], [6]]
+    assert identity['effective_config']['section178_literature']
+    assert not identity['effective_config']['smoke']
+    assert identity['effective_config']['derpp_alpha'] == .3 and identity['effective_config']['derpp_beta'] == .5
+    for suffix in ('.stderr.log', '.monitor.stderr.log', '.validation.stderr.log'):
+        assert Path(str(prefix)+suffix).stat().st_size == 0
+    checks = events(Path(str(prefix)+'.validation.stdout.log'))
+    assert any(e.get('method') == 'derpp' and e.get('verified_checkpoints') == 4
+               and e.get('verified_calibration_points') == 12 and e.get('scientific_result') is True for e in checks)
+    assert any(e.get('verified_source_files') == 398 and e.get('verified_checkpoint_states') == 4
+               and e.get('sampled_peak_rss_bytes') == terminal['peak_rss_bytes'] for e in checks)
+    return terminal
+
+def preflight():
+    free = volume_check()
+    available = psutil.virtual_memory().available
+    assert available > 12*GIB, 'Insufficient initial system memory'
+    queue_command = [str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/queue-cse-derpp-11-14.py')]
+    def canonical_command(command):
+        command = list(command or [])
+        if len(command) == 5:
+            for index in (0, 4):
+                command[index] = os.path.normcase(os.path.abspath(command[index]))
+        return command
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        if proc.info['pid'] == os.getpid() or (proc.info['name'] or '').lower() != 'python.exe':
+            continue
+        assert proc.info['pid'] == os.getppid() and canonical_command(proc.info['cmdline']) == canonical_command(queue_command), 'Unexpected Python process'
+    assert not OUT.exists(), 'Preserve existing cell; diagnose and resume, never restart'
+    for suffix in ('.stdout.log', '.stderr.log', '.validation.stdout.log', '.validation.stderr.log'):
+        assert not Path(str(PREFIX)+suffix).exists(), 'Existing evidence must not be overwritten'
+    bound = hashes()
+    for prior_seed in range(10, SEED):
+        validated(prior_seed, bound)
+    emit('PREFLIGHT_VALIDATED', seed=SEED, source_files=len(bound),
+         system_available_bytes=available, wd_free_bytes=free, source_unchanged=True,
+         first_cell_fully_validated=True, strictly_serial=True)
+    return bound
+
+def main():
+    global SEED, PREFIX, OUT
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--validate-only', action='store_true')
+    parser.add_argument('--seed', type=int, choices=range(11, 15), required=True)
+    args = parser.parse_args()
+    SEED = args.seed
+    PREFIX = BASE/f'logs/derpp-cse-seed{SEED}'
+    OUT = BASE/f'runs/section178/cic-ids-2018/derpp/seed{SEED}'
+    bound = preflight()
+    if args.validate_only:
+        return
+    command = [str(PYTHON), '-I', '-B', '-u', 'ncd/run_section123_fixed.py', '--method', 'derpp',
+               '--dataset', 'CSE-CIC-IDS2018', '--seed', str(SEED), '--threads', '2',
+               '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(OUT)]
+    env = os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'), TMP=str(BASE/'tmp'), PYTHONDONTWRITEBYTECODE='1', OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    emit('START', command=command, source_sha256=bound,
+         git_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip(),
+         max_wall_seconds=None, report_wall_seconds=21600, max_rss_bytes=10*GIB,
+         min_available_memory_bytes=2*GIB, min_wd_free_bytes=20*GIB,
+         authority='Section193: identical method, local serial followup cell; report beyond six hours without walltime termination')
+    child = None
+    peak = 0
+    samples = 0
+    reported = False
+    reason = None
+    started = time.monotonic()
+    with Path(str(PREFIX)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+        try:
+            child = subprocess.Popen(command, cwd=REPO, env=env, stdout=stdout, stderr=stderr, creationflags=subprocess.CREATE_NO_WINDOW)
+            tracked = psutil.Process(child.pid)
+            emit('CHILD_STARTED', pid=child.pid)
+            while child.poll() is None:
+                try:
+                    rss = tracked.memory_info().rss
+                    cpu = tracked.cpu_times()
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak, rss)
+                elapsed = time.monotonic()-started
+                available = psutil.virtual_memory().available
+                free = psutil.disk_usage('@@RESULT_DRIVE@@/').free
+                if samples % 6 == 0:
+                    emit('RESOURCE', pid=child.pid, elapsed_seconds=elapsed, rss_bytes=rss, peak_rss_bytes=peak,
+                         cpu_seconds=cpu.user+cpu.system, system_available_bytes=available, wd_free_bytes=free)
+                if elapsed > 21600 and not reported:
+                    emit('SIX_HOUR_REPORT_CONTINUING', elapsed_seconds=elapsed, peak_rss_bytes=peak)
+                    reported = True
+                if rss > 10*GIB or available < 2*GIB or free < 20*GIB:
+                    reason = 'RAM or WD safety boundary; preserve partial and logs; diagnose before checkpoint resume'
+                    break
+                samples += 1
+                time.sleep(5)
+        except BaseException as exc:
+            reason = 'Monitor exception: '+repr(exc)
+            raise
+        finally:
+            if child is not None:
+                if child.poll() is None:
+                    child.terminate()
+                exit_code = child.wait()
+                unchanged = hashes() == bound
+                emit('TERMINAL', exit_code=exit_code, elapsed_seconds=time.monotonic()-started,
+                     peak_rss_bytes=peak, reason=reason, source_unchanged=unchanged)
+    assert unchanged and exit_code == 0 and reason is None, 'Preserve partial/log; no automatic retry'
+    summary = json.loads((OUT/'summary.json').read_text(encoding='utf-8'))
+    assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+    with Path(str(PREFIX)+'.validation.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.validation.stderr.log').open('x', encoding='utf-8') as stderr:
+        subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/check-cse-derpp-completed.py'), str(OUT)],
+                       cwd=REPO, env=env, stdout=stdout, stderr=stderr, check=True)
+    emit('CELL_VALIDATED', dataset='CSE-CIC-IDS2018', method='derpp', seed=SEED, output=str(OUT))
+
+if __name__ == '__main__':
+    main()

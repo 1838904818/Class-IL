@@ -1,0 +1,253 @@
+"""Export all five verified CSE DER++ cells; never retrain or overwrite evidence."""
+import difflib
+import importlib.util
+import os
+import gzip
+import hashlib
+import json
+from pathlib import Path
+import re
+import statistics
+import subprocess
+import sys
+import numpy as np
+import torch
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@SOURCE@@')
+DEST = BASE/'admin/cse-derpp-publication'
+CHECK = BASE/'admin/check-cse-derpp-completed.py'
+REPLACEMENTS = [(REPO.as_posix(), '@@SOURCE@@'), (BASE.as_posix(), '@@EXPERIMENT_ROOT@@'),
+    ('@@WORKSPACE@@', '@@WORKSPACE@@'),
+    ('@@PYTHON_ENV@@', '@@PYTHON_ENV@@'),
+    ('@@RESULT_DRIVE@@/', '@@RESULT_DRIVE@@/')]
+
+def read(path):
+    return json.loads(path.read_text(encoding='utf-8'))
+
+def redact(text):
+    for old, token in REPLACEMENTS:
+        text = text.replace(old, token).replace(old.replace('/', '\\\\'), token).replace(old.replace('/', '\\'), token)
+    assert not re.search(r'(?<![A-Za-z])[A-Za-z]:[/\\]|github_' r'pat_|ghp_[A-Za-z0-9]+|' r'-----BE' r'GIN .*PRI' r'VATE KEY', text)
+    return text
+
+def write_json(path, obj):
+    path.write_text(redact(json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2))+'\n', encoding='utf-8', newline='\n')
+
+def metrics(result, view):
+    histories, points = [], []
+    for cp, default, calibrated in zip(result['checkpoints'], result['default_stages'], result['calibrated_stages']):
+        point = default['metrics'] if view == 'default' else calibrated['operating_points'][view]
+        cm = point['confusion_matrix']
+        rows = [sum(row) for row in cm]
+        cols = [sum(row[c] for row in cm) for c in range(len(cm))]
+        seen = cp['seen_classes']
+        recalls = {c: cm[c][c]/rows[c] for c in seen}
+        histories.append(recalls)
+        points.append(dict(bacc=statistics.mean(recalls.values()),
+            accuracy=sum(cm[c][c] for c in seen)/sum(rows),
+            macro_f1=statistics.mean(2*cm[c][c]/(rows[c]+cols[c]) for c in seen),
+            normal_fpr=1-cm[0][0]/rows[0],
+            attack_recall=1-sum(cm[c][0] for c in range(1,len(cm)))/(sum(rows)-rows[0])))
+    per_class = []
+    for first_stage, task in enumerate(result['identity']['tasks']):
+        for c in task:
+            prior = [h[c] for h in histories[first_stage:-1]]
+            per_class.append(dict(class_id=c, name=result['identity']['class_order'][c],
+                first=histories[first_stage][c], peak=max(h[c] for h in histories[first_stage:]),
+                best_prior=max(prior) if prior else None, final=histories[-1][c],
+                forgetting=max(prior)-histories[-1][c] if prior else None))
+    return dict(**points[-1], incremental_bacc=statistics.mean(p['bacc'] for p in points),
+        incremental_accuracy=statistics.mean(p['accuracy'] for p in points),
+        forgetting=statistics.mean(p['forgetting'] for p in per_class if p['forgetting'] is not None),
+        stages=points, per_class=per_class)
+
+def log_export(out, names):
+    records = []
+    for name in names:
+        raw = (BASE/'logs'/name).read_bytes()
+        if raw.startswith((b'\xff\xfe', b'\xfe\xff')):
+            text = raw.decode('utf-16')
+        else:
+            try:
+                text = raw.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                text = raw.decode('gb18030')
+        note = None
+        if name == 'cse-derpp-management-archive-test.stderr.log':
+            assert hashlib.sha256(raw).hexdigest() == '0e0f70523fff49eb836158701d21c7fd8949fe480148bedd9a7320908366f7f4'
+            literal = 'github_' 'pat_'
+            assert text.count(literal) == 1 and 'assert not re.search' in text
+            text = text.replace(literal,'@@SCANNER_TOKEN_PREFIX_LITERAL@@')
+            note = 'Known scanner-regex literal in the original assertion traceback is tokenized; original complete raw log and its SHA256 are retained. This is a scanner self-match, not an exposed credential.'
+        clean = redact(text)
+        (out/(name+'.gz')).write_bytes(gzip.compress(clean.encode('utf-8'), mtime=0))
+        records.append(dict(file=name+'.gz', original_sha256=hashlib.sha256(raw).hexdigest(), redacted=True,
+                            redaction_note=note))
+    return records
+
+def per_class_aggregate(rows):
+    assert len(rows) == 5 and [r['seed'] for r in rows] == list(range(10,15))
+    output = {}
+    for view in ('default','0.01','0.02','0.05'):
+        reference = rows[0]['views'][view]['per_class']
+        combined = []
+        for index, first in enumerate(reference):
+            records = [r['views'][view]['per_class'][index] for r in rows]
+            assert all((r['class_id'],r['name']) == (first['class_id'],first['name']) for r in records)
+            record = dict(class_id=first['class_id'],name=first['name'])
+            for key in ('first','peak','best_prior','final','forgetting'):
+                values = [r[key] for r in records]
+                if values[0] is None:
+                    assert all(v is None for v in values)
+                    record[key] = None
+                else:
+                    assert all(v is not None for v in values)
+                    record[key] = dict(mean=statistics.mean(values),sample_sd=statistics.stdev(values),n=5)
+            combined.append(record)
+        output[view] = combined
+    return output
+
+def main():
+    assert not DEST.exists(), 'Existing exports must not be overwritten'
+    spec = importlib.util.spec_from_file_location('cse_followup', BASE/'admin/monitor-cse-derpp-followup.py')
+    followup = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(followup)
+    followup.volume_check()
+    assert followup.psutil.virtual_memory().available > 12*followup.GIB
+    for proc in followup.psutil.process_iter(['pid', 'name']):
+        assert proc.info['pid'] == os.getpid() or (proc.info['name'] or '').lower() != 'python.exe', 'Wait for serial training/checkers to exit'
+    queue = followup.events(BASE/'logs/derpp-cse-queue-11-14.stdout.log')
+    completed = [e for e in queue if e.get('event') == 'ALL_COMPLETE']
+    assert len(completed) == 1 and completed[0]['seeds'] == list(range(10,15))
+    assert completed[0]['dataset'] == 'CSE-CIC-IDS2018' and completed[0]['method'] == 'derpp'
+    assert (BASE/'logs/derpp-cse-queue-11-14.stderr.log').stat().st_size == 0
+    bound = followup.hashes()
+    for seed in range(10,15):
+        followup.validated(seed, bound)
+        for stream in ('stdout', 'stderr'):
+            assert not (BASE/f'logs/derpp-cse-seed{seed}.export-validation.{stream}.log').exists(), 'Preserve prior validation attempt'
+    smoke = followup.events(BASE/'logs/cse-literature-smokes.stdout.log')
+    original = next(e['source_sha256'] for e in smoke if e.get('event') == 'SOURCE_BOUND')
+    assert len(original) == 393 and len(bound) == 398
+    assert all(bound.get(k) == v for k,v in original.items())
+    assert any(e.get('event') == 'ALL_SMOKES_COMPLETE' for e in smoke)
+    validated = []
+    for seed in range(10,15):
+        src = BASE/f'runs/section178/cic-ids-2018/derpp/seed{seed}'
+        summary = read(src/'summary.json')
+        result = read(src/'cell/result.json')
+        assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+        assert summary['dataset'] == 'CSE-CIC-IDS2018' and summary['method'] == 'derpp' and summary['seed'] == seed
+        result['default_stages'] = read(src/'default_stages.json')
+        result['calibrated_stages'] = read(src/'calibrated_stages.json')
+        assert len(result['checkpoints']) == len(result['default_stages']) == len(result['calibrated_stages']) == 4
+        validation_out = BASE/f'logs/derpp-cse-seed{seed}.export-validation.stdout.log'
+        validation_err = BASE/f'logs/derpp-cse-seed{seed}.export-validation.stderr.log'
+        with validation_out.open('x', encoding='utf-8') as stdout, validation_err.open('x', encoding='utf-8') as stderr:
+            checked = subprocess.run([sys.executable,'-I','-B','-u',str(CHECK),str(src)],
+                                     stdout=stdout, stderr=stderr, creationflags=subprocess.CREATE_NO_WINDOW)
+        assert checked.returncode == 0, f'Independent checker failed for seed {seed}; preserve all logs'
+        assert validation_err.stat().st_size == 0
+        verification = validation_out.read_text(encoding='utf-8')
+        checks = [json.loads(line) for line in verification.splitlines() if line.startswith('{')]
+        assert checks[0]['verified_checkpoints'] == 4 and checks[0]['verified_calibration_points'] == 12
+        assert checks[-1]['verified_checkpoint_states'] == 4 and checks[-1]['verified_source_files'] == 398
+        assert len(result['identity']['class_order']) == 7
+        events = [json.loads(line) for line in (BASE/f'logs/derpp-cse-seed{seed}.monitor.stdout.log').read_text(encoding='utf-8').splitlines() if line.startswith('{')]
+        start = next(e for e in events if e.get('event') == 'START')
+        assert any(e.get('event') == 'CELL_VALIDATED' for e in events)
+        assert start['git_commit'] == summary['source_commit']
+        validated.append((seed,src,result,summary,verification,checks[-1],start))
+        print(json.dumps(dict(event='VERIFIED_SEED', seed=seed, checkpoints=4, calibration_points=12)), flush=True)
+    reference = validated[0][6]
+    for _,_,result,summary,_,_,start in validated:
+        assert start['source_sha256'] == reference['source_sha256'] and start['git_commit'] == reference['git_commit']
+        for key in ('tasks','class_order','data_binding','data_metadata_sha256'):
+            assert result['identity'][key] == validated[0][2]['identity'][key]
+    paths = list(reference['source_sha256'])
+    patch = subprocess.check_output(['git','-C',str(REPO),'diff',reference['git_commit'],'--',*paths], text=True, encoding='utf-8')
+    for path in paths:
+        exists = subprocess.run(['git','-C',str(REPO),'cat-file','-e',reference['git_commit']+':'+path], capture_output=True)
+        if exists.returncode:
+            text = (REPO/path).read_text(encoding='utf-8')
+            patch += f'diff --git a/{path} b/{path}\nnew file mode 100644\n'
+            patch += ''.join(difflib.unified_diff([],text.splitlines(keepends=True),fromfile='/dev/null',tofile='b/'+path))
+    check = subprocess.run(['git','-C',str(REPO),'apply','--check','--reverse','-'], input=patch.encode('utf-8'), capture_output=True)
+    assert check.returncode == 0, check.stderr.decode('utf-8',errors='replace')
+    public_patch = redact(patch)
+    restored = public_patch
+    for old, token in REPLACEMENTS:
+        restored = restored.replace(token,old)
+    assert restored == patch, 'Source patch redaction must be reversible'
+    DEST.mkdir()
+    rows = []
+    for seed,src,result,summary,verification,check,start in validated:
+        out = DEST/f'derpp_seed{seed}'
+        out.mkdir()
+        result.update(scientific_result=True, execution_summary=summary, command=start['command'],
+            source_state=dict(base_commit=start['git_commit'], source_sha256=start['source_sha256'], dirty_patch='execution_source.patch'),
+            training_seconds_total=check['training_seconds'], resource_verification=check,
+            publication_scope='Matched multiclass DER++ adaptation on registered CSE-CIC-IDS2018 arrays; not a claim of native-paper reproduction. Feature-memory membership is not unique row-ID provenance. No completed cell was retrained for export.')
+        names = [f'derpp-cse-seed{seed}.{kind}{stream}.log' for kind in ('','monitor.') for stream in ('stdout','stderr')]
+        names += [f'derpp-cse-seed{seed}.{kind}.{stream}.log' for kind in ('validation','export-validation') for stream in ('stdout','stderr')]
+        result['log_artifacts'] = log_export(out,names)
+        checkpoint_records = []
+        for cp in result['checkpoints']:
+            file = src/'cell'/cp['checkpoint_file']
+            digest = hashlib.sha256(file.read_bytes()).hexdigest()
+            assert digest == cp['checkpoint_sha256']
+            checkpoint_records.append(dict(file=cp['checkpoint_file'], bytes=file.stat().st_size, sha256=digest,
+                                           metadata=read(file.with_suffix('.json'))))
+        write_json(out/'checkpoint_records.json',checkpoint_records)
+        memory = []
+        for cp in result['checkpoints']:
+            state = torch.load(src/'cell'/cp['checkpoint_file'],map_location='cpu',weights_only=False)
+            buffer = state['derpp_memory']
+            classes = []
+            for c in cp['seen_classes']:
+                count = min(buffer['per_class'],buffer['observations'][c])
+                x = buffer['x'][c,:count].numpy()
+                classes.append(dict(class_id=c,slots=count,unique_feature_vectors=len(np.unique(x,axis=0))))
+            memory.append(dict(task_index=cp['task_index'],per_class=classes,
+                slots=sum(c['slots'] for c in classes),
+                unique_class_feature_pairs=sum(c['unique_feature_vectors'] for c in classes),
+                limitation='Unique feature vectors are not unique source rows; this execution path stores no row IDs.'))
+        result['memory_slot_diagnostics'] = memory
+        write_json(out/'result.json',result)
+        (out/'execution_source.patch').write_text(public_patch,encoding='utf-8',newline='\n')
+        (out/'verification.txt').write_text(redact(verification),encoding='utf-8',newline='\n')
+        row = dict(seed=seed, views={v:metrics(result,v) for v in ('default','0.01','0.02','0.05')},
+            training_seconds=check['training_seconds'], elapsed_seconds=summary['elapsed_seconds'], resource=check,
+            memory_slot_diagnostics=memory)
+        write_json(out/'independent_metrics.json',row)
+        rows.append(row)
+    overview = DEST/'overview'
+    overview.mkdir()
+    write_json(overview/'per_seed_metrics.json',rows)
+    aggregate = {v:{key:dict(mean=statistics.mean(r['views'][v][key] for r in rows), sample_sd=statistics.stdev(r['views'][v][key] for r in rows))
+        for key in ('bacc','accuracy','macro_f1','normal_fpr','attack_recall','incremental_bacc','incremental_accuracy','forgetting')} for v in ('default','0.01','0.02','0.05')}
+    write_json(overview/'aggregate.json',aggregate)
+    write_json(overview/'per_class_aggregate.json',per_class_aggregate(rows))
+    logs = [f'derpp-cse-queue-11-14.{stream}.log' for stream in ('stdout','stderr')]
+    logs += [f'cse-literature-smokes.{stream}.log' for stream in ('stdout','stderr')]
+    logs += [f'{method}-cse-seed10.smoke.{kind}{stream}.log'
+             for method in ('derpp','icarl') for kind in ('','validation.') for stream in ('stdout','stderr')]
+    logs += ['cse-input-copy.log']
+    logs += [f'{prefix}.{stream}.log' for prefix in (
+        'cse-derpp-first-preflight', 'cse-literature-integrity-tests', 'cse-derpp-followup-ast',
+        'cse-derpp-followup-preflight', 'cse-derpp-followup-preflight.final',
+        'cse-derpp-exporter-preparation', 'cse-derpp-exporter-perclass-test',
+        'cse-derpp-publisher-preparation', 'cse-derpp-management-archive-test',
+        'cse-derpp-management-archive-test.retry1') for stream in ('stdout','stderr')]
+    write_json(overview/'log_artifacts.json',log_export(overview,logs))
+    for name in ('check-cse-derpp-completed.py','check-cse-literature-integrity.py',
+                 'check-cse-literature-smoke.py','monitor-cse-derpp-first.py',
+                 'monitor-cse-derpp-followup.py','queue-cse-derpp-11-14.py','run-cse-literature-smokes.py',
+                 'export-cse-derpp-completed.py','publish-cse-derpp-completed.py'):
+        (overview/(name+'.txt')).write_text(redact((BASE/'admin'/name).read_text(encoding='utf-8')),encoding='utf-8',newline='\n')
+    assert followup.hashes() == bound
+    print(json.dumps(dict(output=str(DEST), checkpoints=20, calibrated_points=60, aggregate=aggregate)),flush=True)
+
+if __name__ == '__main__':
+    main()
