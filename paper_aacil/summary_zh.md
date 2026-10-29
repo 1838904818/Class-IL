@@ -8,6 +8,8 @@
 
 正文方法章仅保留AR-Stateless及共享数据访问假设。历史AA-CIL双网络、算法、校准公式、KD/ISO和后续保持候选集中移至“Historical neural design-space study”附录，原公式、算法、选择规则与负面结果均保留，不能作为AR-Stateless的训练方法解读。本次仅结构整理，没有新增实验或重跑；全文历史叙述的一致性清理与视觉QA仍未完成，当前已完成40/60主格，RQ1/RQ3及实质创新门仍未关闭。
 
+历史讨论现将神经配置筛选的终止、gate/family与TS-mem/Replay-BS观察及fixed-capacity外部检查明确限定在各自历史实验，不作为AR-Stateless的组件、主结论或整体研究完成声明。原“全部配对检验未校正”缩限为历史神经研究；后续新增基线遵循单独注册的数据集内Holm校正。全部历史数值、阴性结果、检验及选择/暴露限制均保留，未新增实验或关闭未完成要求。
+
 ## §178：新增基线的已发布范围（2026-10-28）
 
 共同预算主矩阵已完成并双发布40/60：UNSW与CIC17的DER++、iCaRL适配、ECBRS论文语义均各5seed，另有共同预算UNSW与CIC17 BiC flow适配各5seed。UNSW作者-memory另5seed、原native-stage1 BiC另5seed均为额外敏感性，不计主60格或Holm族。剩余20格全为CSE且未完成，不是负面结果；UNSW和CIC17四方法块及注册S1 Holm比较已完成，CSE四方法块与对应S1比较仍未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed或日程补空白。
