@@ -8,7 +8,15 @@
 
 ## §178：新增基线的已发布范围（2026-10-28）
 
-共同预算主矩阵已完成并双发布40/60：UNSW与CIC17的DER++、iCaRL适配、ECBRS论文语义均各5seed，另有共同预算UNSW与CIC17 BiC flow适配各5seed。UNSW作者-memory另5seed、原native-stage1 BiC另5seed均为额外敏感性，不计主60格或Holm族。剩余20格全为CSE且未完成，不是负面结果；UNSW和CIC17四方法块已齐，但注册S1 Holm比较尚未报告，CSE四方法块仍未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed或日程补空白。
+共同预算主矩阵已完成并双发布40/60：UNSW与CIC17的DER++、iCaRL适配、ECBRS论文语义均各5seed，另有共同预算UNSW与CIC17 BiC flow适配各5seed。UNSW作者-memory另5seed、原native-stage1 BiC另5seed均为额外敏感性，不计主60格或Holm族。剩余20格全为CSE且未完成，不是负面结果；UNSW和CIC17四方法块及注册S1 Holm比较已完成，CSE四方法块与对应S1比较仍未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed或日程补空白。
+
+### 注册S1：仅两个完整数据集块（2026-10-29）
+
+已发布的 `section178_s1` 分析以AR-Stateless（R3-A/exact C1，非R3-L）为参照，针对DER++、iCaRL适配、ECBRS论文-memory和BiC共同预算flow适配，使用seeds10–14配对单侧t检验（df=4），每个数据集内四项Holm校正；native-stage1和作者-memory敏感性不入族。端点是1%校准目标下的最终BAcc，不是默认Accuracy或忘却。八项均通过注册校正p<0.05标准，UNSW最终BAcc差值为49.98–53.63pp，CIC17为62.38–79.14pp，最大Holm p为1.53×10⁻⁴；CSE未计算，不能关闭三数据集整体要求。
+
+八项精确符号翻转的未校正p均为0.03125，是五配对可达最小单侧值；若对此敏感性检验作四项Holm校正则为0.125，不能宣称非参数整族也通过。t检验依赖seed差值的独立性及近似正态假设，五seed诊断能力有限；固定已暴露数据集上的种子重复不是独立流量总体。骨干、良性refresh访问和各方法适配边界均保留，不据此归因单一机制或声称原生复现。
+
+`generated/section178_s1.tex`直接使用已发布两表，区分final Accuracy与stage-mean ACC，并列均值增量BAcc和默认/1%有符号忘却；默认BAcc与FPR仍在原基线表并列。UNSW在1%下AR忘却20.62pp，反而高于DER++的14.01、iCaRL的17.44、ECBRS的11.13和BiC common的13.97pp；默认AR忘却27.42pp也高于BiC common的18.48pp。DER++默认BAcc优势及其高FPR不隐藏。因此S1仅支持指定端点，不代表全面优越，RQ1/RQ3与实质创新门仍未完成。本次只同步已发布分析，不新增训练。
 
 以下均为seeds10–14均值，BAcc/FPR为%，有符号忘却为pp（逐seed逐旧类取pre-final最大召回减最终召回，含Normal，不截断）：
 
@@ -99,7 +107,7 @@ UNSW校准池6,825条良性样本，严格≤1%最多68次误报，≤0.1%最多
 
 在该视图，R3-A 相对 ER-Bal-TabT 的最终 BAcc 提升为 UNSW +9.136pp、CIC-2017 +5.525pp；对应遗忘分别低4.422和2.298pp。不能推广为所有视图或所有比较方法都降低遗忘。CSE2018 最终 BAcc 为81.7±1.0%，相对 AR +2.632pp（t p=.0124407，sign-flip=.03125），相对 R3-L +2.058pp（t p=.0491421，sign-flip=.0625），后者仅注册 t 检验狭义通过、稳健性弱。CSE有符号遗忘7.3±2.7pp，高于 AR 的−3.5±8.4和 R3-L 的3.1±3.6。
 
-这些是新种子上的已暴露数据集结果，不是独立未见数据集复现；历史候选失败不变。新增基线尚未完成，S1尚不判定。RQ1、RQ3及实质创新门槛仍未关闭。以下历史章节保留其原候选、种子与视图范围；全文摘要、默认主表与结论的整体改写尚待完成。
+这些是新种子上的已暴露数据集结果，不是独立未见数据集复现；历史候选失败不变。新增基线尚未全部完成，S1仅在UNSW/CIC17两个完整块通过注册t/Holm标准，CSE仍不判定。RQ1、RQ3及实质创新门槛仍未关闭。以下历史章节保留其原候选、种子与视图范围；全文摘要、默认主表与结论的整体改写尚待完成。
 
 ## 当前结构与结果（2026-10-25，§148–149）
 
