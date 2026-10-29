@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATASETS = [('unsw-nb15', 'UNSW'), ('cic-ids-2017', 'CIC-2017'),
             ('cse-cic-ids2018', 'CSE-2018')]
 METHODS = [('derpp', 'DER++'), ('icarl', 'iCaRL (adapt.)'),
-           ('ecbrs-paper', 'ECBRS (paper)'), ('cer-bic', 'BiC (flow adapt.)')]
+           ('ecbrs-paper', 'ECBRS (paper)'), ('cer-bic-common', 'BiC (common flow)')]
 VIEWS = ('default', '0.01', '0.02', '0.05')
 
 
@@ -80,6 +80,9 @@ def group(dataset, method, ref, reference=False):
         assert (r.get('tasks') or r['identity']['tasks']) == (runs[0].get('tasks') or runs[0]['identity']['tasks'])
         config = r['identity'].get('effective_config', {})
         assert not r['identity'].get('smoke', config.get('smoke', False))
+        if method == 'cer-bic-common':
+            assert config['schedule'] == 'cer_common_adam_8epochs_min2000'
+            assert r['identity']['method'] == 'cer-bic-flow-cnn-common'
     return count, {v: {k: (mean(p[k] for p in points), stdev(p[k] for p in points))
                           for k in points[0]}
                    for v in VIEWS for points in [[measure(r, v) for r in runs]]}
@@ -116,6 +119,9 @@ def main():
             n, values = group(dataset, 'ecbrs-author', ref)
             if values is not None:
                 rows.append((label, r'ECBRS (author)$^\dagger$', values))
+            n, values = group(dataset, 'cer-bic', ref)
+            if values is not None:
+                rows.append((label, r'BiC (native sched.)$^\ddagger$', values))
     out = ['% Generated from published confusion counts; do not hand edit.',
            '% Evidence revision: '+(ref or 'result files in this checkout'),
            r'\begin{table*}[t]\centering\small',
@@ -129,6 +135,7 @@ def main():
                                fmt(p['macro_f1']), fmt(p['fpr']), fmt(p['forgetting'])])+r'\\')
     out += [r'\bottomrule\end{tabular}',
             r'\par\smallskip\footnotesize $^\dagger$UNSW-only author-memory sensitivity; not an additional primary cell or a native binary reproduction.',
+            r'\par\footnotesize $^\ddagger$Historical native-stage-1 schedule sensitivity on flow inputs; excluded from the common-budget primary family and Holm comparisons. Not native packet reproduction.',
             r'\end{table*}', r'\begin{table*}[t]\centering\scriptsize',
             r'\caption{The same completed blocks at empirical calibration budgets. Final BAcc at 1\% is mean $\pm$ sample SD; other entries are means. BAcc/FPR are percentages and signed forgetting is pp. Targets are not guarantees of test FPR.}',
             r'\label{tab:published-baselines-calibrated}',
@@ -142,7 +149,7 @@ def main():
                                fmt(s['bacc']), fmt(s['fpr'])])+r'\\')
     out += [r'\bottomrule\end{tabular}\end{table*}',
             r'\begin{table}[htbp]\centering\small',
-            rf'\caption{{Added-baseline execution/publication coverage: {completed}/60 primary cells. Each entry is completed seeds out of five; zero means no completed published seed, not a negative result. The five author-memory sensitivity cells are additional.}}',
+            rf'\caption{{Added-baseline execution/publication coverage: {completed}/60 common-family primary cells. Each entry is completed seeds out of five; zero means no completed published seed, not a negative result. The five author-memory and five historical BiC native-schedule sensitivity cells are additional and excluded from this family.}}',
             r'\label{tab:published-baselines-coverage}',
             r'\begin{tabular}{lrrrr}\toprule',
             r'Dataset & DER++ & iCaRL & ECBRS & CER\\\midrule']
