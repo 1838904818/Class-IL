@@ -1,0 +1,37 @@
+"""One serial queue: common-budget CER CIC17 seeds 11--14, stop on any failure."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+PYTHON = '@@PYTHON_ENV@@/python.exe'
+monitor = BASE/'admin/monitor-cer-bic-common-cic17-followup.py'
+spec = importlib.util.spec_from_file_location('cer_followup',monitor)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.validated(10)
+for proc in psutil.process_iter(['pid','name','cmdline']):
+    if proc.info['pid'] != os.getpid() and (proc.info['name'] or '').lower() == 'python.exe':
+        command = ' '.join(proc.info['cmdline'] or [])
+        assert not any(s in command for s in ['run_section','monitor-','run-cer','verify-longpaths','queue-cer-bic-common-cic17']),command
+for seed in range(11,15):
+    assert not (BASE/f'runs/section178/cic-ids-2017/cer-bic-common/seed{seed}').exists()
+    assert not list((BASE/'logs').glob(f'cer-bic-common-cic17-seed{seed}.*.log'))
+env = os.environ.copy()
+env.update(TEMP=str(BASE/'tmp'),TMP=str(BASE/'tmp'),PYTHONDONTWRITEBYTECODE='1',OMP_NUM_THREADS='2',MKL_NUM_THREADS='2')
+print(json.dumps({'event':'QUEUE_START','time':time.strftime('%Y-%m-%dT%H:%M:%S%z'),'seeds':[11,12,13,14],'serial':True}),flush=True)
+for seed in range(11,15):
+    module.validated(seed-1)
+    prefix = BASE/f'logs/cer-bic-common-cic17-seed{seed}.monitor'
+    with Path(str(prefix)+'.stdout.log').open('x') as stdout, Path(str(prefix)+'.stderr.log').open('x') as stderr:
+        child = subprocess.Popen([PYTHON,'-I','-B','-u',str(monitor),'--seed',str(seed)],env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+        print(json.dumps({'event':'MONITOR_STARTED','seed':seed,'pid':child.pid}),flush=True)
+        code = child.wait()
+    print(json.dumps({'event':'MONITOR_EXIT','seed':seed,'exit_code':code}),flush=True)
+    assert code == 0, 'Stop queue; preserve logs and results; no automatic retry'
+    module.validated(seed)
+print(json.dumps({'event':'ALL_COMPLETE','time':time.strftime('%Y-%m-%dT%H:%M:%S%z')}),flush=True)

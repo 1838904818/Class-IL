@@ -1,0 +1,1918 @@
+diff --git a/ncd/prepare_problem_scout_data.py b/ncd/prepare_problem_scout_data.py
+index 77b4edf..ee18904 100644
+--- a/ncd/prepare_problem_scout_data.py
++++ b/ncd/prepare_problem_scout_data.py
+@@ -50,7 +50,12 @@ def sha256(path):
+ 
+ 
+ def relative(path):
+-    return os.path.relpath(Path(path).resolve(), ROOT).replace("\\", "/")
++    resolved = Path(path).resolve()
++    try:
++        return os.path.relpath(resolved, ROOT).replace("\\", "/")
++    except ValueError:
++        # External experiment volumes cannot be relative to the code drive.
++        return resolved.as_posix()
+ 
+ 
+ def counts(y, classes):
+diff --git a/ncd/run_problem_scout.py b/ncd/run_problem_scout.py
+index 9ca1130..4604b63 100644
+--- a/ncd/run_problem_scout.py
++++ b/ncd/run_problem_scout.py
+@@ -71,7 +71,11 @@ def canonical_hash(value) -> str:
+ 
+ 
+ def path_label(path: Path) -> str:
+-    return Path(os.path.relpath(path.resolve(), ROOT)).as_posix()
++    resolved = path.resolve()
++    try:
++        return Path(os.path.relpath(resolved, ROOT)).as_posix()
++    except ValueError:
++        return resolved.as_posix()
+ 
+ 
+ def save_json(path: Path, value) -> None:
+@@ -510,8 +514,8 @@ def run_cell(data, x_shift, y_shift, metadata, config, identity, output, device,
+     if section26 and config.get("section26_access_policy") != SECTION26_POLICY:
+         raise ValueError("Section26.9 requires the new benign-only-refresh policy")
+     literature_confirmation = bool(config.get("section178_literature", False))
+-    if literature_confirmation and (section26 or method != "derpp"):
+-        raise ValueError("Section178 DER++ requires non-refresh memory path")
++    if literature_confirmation and (section26 or method not in {"derpp", "icarl"}):
++        raise ValueError("Section178 literature baselines require non-refresh memory path")
+     train_pools, valid_pools = section26_pools(data, seed) if section26 or literature_confirmation else ({}, {})
+     validation_x, validation_y = [], []
+     buffer_ids, validation_ids = {}, {}
+diff --git a/ncd/run_section123_fixed.py b/ncd/run_section123_fixed.py
+index b27cb0b..956a9d2 100644
+--- a/ncd/run_section123_fixed.py
++++ b/ncd/run_section123_fixed.py
+@@ -24,7 +24,7 @@ from ncd.source_commit import source_commit
+ def main():
+     p = argparse.ArgumentParser(description=__doc__)
+     p.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018"), required=True)
+-    p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb", "derpp"), required=True)
++    p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb", "derpp", "icarl"), required=True)
+     p.add_argument("--seed", type=int, choices=range(10, 15), required=True)
+     p.add_argument("--data-root", type=Path, required=True)
+     p.add_argument("--output-dir", type=Path, required=True)
+@@ -59,6 +59,8 @@ def main():
+             derpp_alpha=.3, derpp_beta=.5,
+             derpp_coefficient_source=ps.DERPP_REFERENCE,
+             derpp_allocation_adaptation="Classwise reservoir 200/class including Normal; no refreshed stream; permanent holdout excluded from training")
++    if a.method == "icarl":
++        config.update(section178_literature=True, section26=False)
+     output = a.output_dir.resolve()
+     output.mkdir(parents=True, exist_ok=a.resume)
+     started = time.perf_counter()
+@@ -77,6 +79,19 @@ def main():
+         offline_joint_reference=False, lambda_file=None, lambda_file_sha256=None, lambda_source_commit=None,
+         section26_holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
+             validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid})
++    if a.method == "icarl":
++        selection_path = ROOT / config["lambda_files"].get(a.dataset, config["lambda_files"]["default"])
++        kd_selection = json.loads(selection_path.read_text(encoding="utf-8"))
++        assert kd_selection["selection_seeds"] == [5, 6]
++        coefficient = float(kd_selection["lambdas"]["icarl"])
++        assert coefficient > 0, "iCaRL requires its registered nonzero KD coefficient"
++        identity.update(regularization=coefficient,
++            lambda_file=selection_path.relative_to(ROOT).as_posix(),
++            lambda_file_sha256=hashlib.sha256(selection_path.read_bytes()).hexdigest(),
++            lambda_source_commit=kd_selection["git_commit"],
++            lambda_selection_dataset=kd_selection["dataset"],
++            lambda_transferred=kd_selection["dataset"] != a.dataset,
++            inference="nme", implementation_scope="Existing herding and softmax-KL adaptation; not an exact sigmoid-BCE reproduction")
+     cell = output / "cell"
+     cell.mkdir(exist_ok=a.resume)
+     device = torch.device("cpu")
+@@ -99,7 +114,10 @@ def main():
+             family.assert_capacity()
+         else:
+             model.load_state_dict(state["model_state"], strict=True)
+-        if a.method in ("freq", "wacb", "derpp"):
++        if a.method == "icarl":
++            model = ps._scorer(model, "icarl", state["buffer_x"], state["buffer_y"],
++                len(data.class_order), device, int(config["batch_size"]))
++        if a.method in ("freq", "wacb", "derpp", "icarl"):
+             calibration, points, cal_seconds, eval_seconds = bs.evaluate(
+                 model, data, cp["seen_classes"], valid[data.class_order.index("Normal")], counts, config, device)
+             calibrated.append(dict(task_index=cp["task_index"], calibration=calibration,
+diff --git a/ncd/section138_cell.py b/ncd/section138_cell.py
+index d321e55..73150c6 100644
+--- a/ncd/section138_cell.py
++++ b/ncd/section138_cell.py
+@@ -35,6 +35,9 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
+     mapping = {c: i for i, c in enumerate(attacks)}
+     switches = configuration.switches()
+     literature_memory = config.get("section165_memory") == "literature"
++    diagnostic = config.get("section181_diagnostic")
++    if diagnostic and (configuration.identifier != "C1" or literature_memory):
++        raise ValueError("Section181 requires exact-C1 AR-Stateless, not R3-L")
+     if literature_memory and not switches.get("control", False):
+         raise ValueError("Literature-memory ablation requires the joint tree control")
+     first = exposure(0)
+@@ -65,6 +68,11 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
+         else:
+             current = exposure(index, include_normal=not literature_memory or index == 0)
+             slots = {c: current[c] if c in current else memory[c] for c in seen}
++            memory_targets = aa.attack_targets("aacil", seen, normal)
++            if diagnostic:
++                from ncd.section181_diagnostics import intervene
++                slots, memory_targets = intervene(diagnostic, data, exposure, current,
++                                                   slots, seen, new, task_seed)
+             normal_pool = exposure.train[normal]
+             if config.get("section156") and switches["normal_training_rows"] == 500000:
+                 # n2 is capped after excluding held-out roles, not before.
+@@ -75,6 +83,8 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
+                 normal_ids = normal_ids[~np.isin(normal_ids, exposure.normal_stopping_ids)]
+             if literature_memory:
+                 normal_ids = slots[normal]["train_ids"]
++            if diagnostic == "D1-joint":
++                normal_ids = slots[normal]["train_ids"]
+             ids = np.concatenate([normal_ids, *[slots[c]["train_ids"] for c in seen if c != normal]])
+             gx = data.x_train[ids].copy()
+             control = switches.get("control", False)
+@@ -120,8 +130,15 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
+                     new + ([normal] if index == 0 else []),
+                     {c: 200 for c in seen}, seed, index)
+             else:
+-                next_memory = aa.refresh_attack_memory(data, exposure.train, exposure.valid, memory, new,
+-                    aa.attack_targets("aacil", seen, normal), seed, index)
++                train_pools, valid_pools = exposure.train, exposure.valid
++                if diagnostic == "D2-matched":
++                    # No admission of attack rows excluded by the intervention.
++                    train_pools, valid_pools = dict(train_pools), dict(valid_pools)
++                    for c in new:
++                        train_pools[c] = slots[c]["train_ids"]
++                        valid_pools[c] = slots[c]["validation_ids"]
++                next_memory = aa.refresh_attack_memory(data, train_pools, valid_pools, memory, new,
++                    memory_targets, seed, index)
+             if tree_family:
+                 post = dict(operations=[], logits_stored=False, weight_alignment=False, cbf=False)
+             else:
+@@ -136,6 +153,11 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
+                 family_training_seconds=family_seconds, gate_schedule=gate_stats,
+                 family_schedule=family_stats, postprocessing=post,
+                 optimization_ids=torch.from_numpy(ids), stopping_ids=torch.from_numpy(stop_ids))
++            if diagnostic:
++                state["diagnostic"] = dict(method=diagnostic, post_hoc=True,
++                    memory_targets=memory_targets,
++                    optimization_rows_by_class={str(c): int(np.sum(data.y_train[ids] == c)) for c in seen},
++                    stopping_rows_by_class={str(c): int(np.sum(data.y_train[stop_ids] == c)) for c in seen})
+             checkpoint_save(checkpoint, state)
+         calibration = aa.calibrate_gate(gate, data.x_train[exposure.calibration_ids],
+                                         exposure.calibration_ids, device, 4096)
+@@ -154,6 +176,8 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
+             family_training_seconds=state["family_training_seconds"], postprocessing=state["postprocessing"],
+             calibration=calibration, operating_points=points, default_decision=default,
+             stage_attempt_seconds=time.perf_counter() - started)
++        if diagnostic:
++            record["diagnostic"] = state["diagnostic"]
+         save_json(checkpoint.with_suffix(".json"), record)
+         records.append(record)
+         print(f"STAGE_COMPLETE task={index}", flush=True)
+diff --git a/ncd/cer_bic.py b/ncd/cer_bic.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/cer_bic.py
+@@ -0,0 +1,210 @@
++"""BiC on flow-vector Conv1D: explicit Cerasuolo adaptation, not packet reproduction.
++
++Paper: doi:10.1016/j.comnet.2025.111228, sections 3.2, 4.3, 4.4, Table 6.
++Algorithmic reference: https://github.com/mmasana/FACIL/blob/master/src/approach/bic.py
++This is an independent implementation; no claim of exact author-code parity.
++"""
++from copy import deepcopy
++import math
++import time
++
++import numpy as np
++import torch
++from torch import nn
++from torch.nn import functional as F
++
++PAPER_URL = 'https://www.researchgate.net/publication/389901457_Attack-Adaptive_Network_Intrusion_Detection_Systems_for_IoT_Networks_through_Class_Incremental_Learning'
++MAPPING = {
++    'method_choice': {
++        'method': 'BiC', 'source': PAPER_URL, 'location': 'Table 6 and Section 5.2',
++        'metric': 'all-class macro F1 Drop, lower is better',
++        'values_percent': {'IoT-23': 10.92, 'TON-IoT': 5.48, 'IoT-NID': 18.16, 'Edge-IIoT': 12.85},
++        'reason': 'Lowest reported all-class F1 Drop among all eight CIL methods on every dataset; not a fallback or a new aggregate ranking.'},
++    'input': 'Registered preprocessed flow vector in unchanged feature order, one channel; NOT native 10-packet by 4-field input.',
++    'architecture_paper': 'Two convolutional layers with pooling and normalization, dense expanding output; native Conv2D replaced with Conv1D.',
++    'architecture_engineering_defaults': {'channels': [32, 64], 'kernel': 3, 'padding': 1,
++        'max_pool': 2, 'dense_hidden': 128, 'activation': 'ReLU',
++        'order': 'Conv1D-ReLU-MaxPool1D-BatchNorm1D twice; flatten; Linear128-ReLU; expanding class head'},
++    'native_schedule': {'epochs': 200, 'patience': 20, 'initial_lr': .1, 'decay_factor': 3., 'min_lr': .0001},
++    'algorithm': 'Stage 1: CE weighted by new/seen class count plus old-output softmax distillation weighted by old/seen. Stage 2: freeze network and older corrections, fit alpha/beta for only new logits.',
++    'engineering_defaults': {'batch_size': 256, 'optimizer': 'SGD', 'momentum': .9,
++        'weight_decay': .0002, 'temperature': 2., 'kd_temperature_squared_multiplier': False,
++        'bias_optimizer': 'SGD momentum .9, lr .1, 200 epochs, beta penalty .05*beta^2',
++        'reference': 'FACIL BiC defaults transferred, not asserted as Cerasuolo numeric settings',
++        'stopping': 'New-current-class TRAIN-only split: min(200, ceil(10% of eligible rows)); excludes permanent holdout and BiC correction; no old full-pool validation access.',
++        'correction_selection': 'Seeded random 20 rows per introduced class (10% of 200); persistent, excluded from backbone training and herding.',
++        'rare_class': 'Underfill unique replay slots when fewer than 180 eligible rows; never duplicate rows to fill memory.'},
++    'memory': '200 slots per seen class including Normal: up to 180 herded replay plus 20 correction rows. Old replay/correction rows retained without refresh. Paper uses 25/class.',
++    'other_adaptations': 'Registered multi-stage class order and splits replace native one-new-attack runs; no new input preprocessing, no TEST model selection; ordinary BiC CE, not the shared class-balanced CE.'}
++
++
++class FlowBiC(nn.Module):
++    def __init__(self, input_dim):
++        super().__init__()
++        if input_dim < 4:
++            raise ValueError('Two pooling stages require at least four features')
++        self.input_dim = input_dim
++        self.encoder = nn.Sequential(nn.Conv1d(1, 32, 3, padding=1), nn.ReLU(),
++            nn.MaxPool1d(2), nn.BatchNorm1d(32), nn.Conv1d(32, 64, 3, padding=1),
++            nn.ReLU(), nn.MaxPool1d(2), nn.BatchNorm1d(64), nn.Flatten(),
++            nn.Linear(64*(input_dim//4), 128), nn.ReLU())
++        self.heads = nn.ModuleList()
++        self.scales = nn.ParameterList()
++        self.offsets = nn.ParameterList()
++        self.groups = []
++
++    def expand(self, classes):
++        old = [c for group in self.groups for c in group]
++        if list(classes) != list(range(len(old), len(old)+len(classes))):
++            raise ValueError('Expected registered contiguous global class order')
++        self.groups.append(list(classes))
++        self.heads.append(nn.Linear(128, len(classes)))
++        self.scales.append(nn.Parameter(torch.ones(()), requires_grad=False))
++        self.offsets.append(nn.Parameter(torch.zeros(()), requires_grad=False))
++
++    def features(self, x):
++        return self.encoder(x.unsqueeze(1))
++
++    def raw(self, x):
++        f = self.features(x)
++        return [h(f) for h in self.heads]
++
++    def correct(self, raw):
++        return torch.cat([a*z+b for a, b, z in zip(self.scales, self.offsets, raw)], dim=1)
++
++    def forward(self, x):
++        return self.correct(self.raw(x))
++
++
++def bic_loss(logits, labels, old_logits, n_old, temperature=2.):
++    ce = F.cross_entropy(logits, labels)
++    if not n_old:
++        return ce
++    target = F.softmax(old_logits.detach()/temperature, dim=1)
++    # Stable softmax temperature CE. No T^2 multiplier (FACIL BiC convention).
++    kd = -(target * F.log_softmax(logits[:, :n_old]/temperature, dim=1)).sum(1).mean()
++    fraction = n_old/logits.shape[1]
++    return (1-fraction)*ce + fraction*kd
++
++
++def partition_current(rows, seed):
++    shuffled = np.random.default_rng(seed).permutation(rows)
++    n_bias = min(20, max(1, len(rows)//3))
++    n_stop = min(200, max(1, math.ceil(.1*len(rows))))
++    bias, stop, fit = shuffled[:n_bias], shuffled[n_bias:n_bias+n_stop], shuffled[n_bias+n_stop:]
++    if not len(fit):
++        raise ValueError('Insufficient current training rows')
++    return np.sort(fit), np.sort(stop), np.sort(bias)
++
++
++def tensor_batch(x, y, rows):
++    return torch.from_numpy(np.array(x[rows], dtype=np.float32, copy=True)), torch.from_numpy(np.array(y[rows], dtype=np.int64, copy=True))
++
++
++def fit_backbone(model, teacher, x, y, fit, stop, seed, smoke, progress, identity, ps):
++    """Epoch-boundary resumable native schedule; stopping data are TRAIN-only."""
++    n_old = sum(len(g) for g in teacher.groups) if teacher is not None else 0
++    model.requires_grad_(True)
++    for p in list(model.scales)+list(model.offsets):
++        p.requires_grad_(False)
++    optimizer = torch.optim.SGD([p for p in model.parameters() if p.requires_grad], lr=.1, momentum=.9, weight_decay=.0002)
++    best, best_loss, patience, steps, elapsed, begin_epoch = deepcopy(model.state_dict()), float('inf'), 20, 0, 0., 0
++    history = []
++    if progress.exists():
++        state = ps.checkpoint_load(progress, identity)
++        model.load_state_dict(state['model'])
++        optimizer.load_state_dict(state['optimizer'])
++        best, best_loss, patience, steps, elapsed = (state[k] for k in ['best', 'best_loss', 'patience', 'steps', 'seconds'])
++        history, begin_epoch = state['history'], state['next_epoch']
++        if state['done']:
++            model.load_state_dict(best)
++            return dict(epochs=len(history), optimizer_steps=steps, seconds=elapsed, history=history)
++    for epoch in range(begin_epoch, 1 if smoke else 200):
++        start = time.perf_counter()
++        model.train()
++        shuffled = np.random.default_rng(seed+epoch*1009).permutation(fit)
++        for offset in range(0, len(shuffled), 256):
++            bx, by = tensor_batch(x, y, shuffled[offset:offset+256])
++            with torch.no_grad():
++                old = teacher(bx) if teacher is not None else None
++            optimizer.zero_grad(set_to_none=True)
++            loss = bic_loss(model(bx), by, old, n_old)
++            if not torch.isfinite(loss):
++                raise ValueError('Nonfinite BiC stage-1 loss')
++            loss.backward()
++            torch.nn.utils.clip_grad_norm_(model.parameters(), 10000.)
++            optimizer.step()
++            steps += 1
++        model.eval()
++        total = 0.
++        with torch.no_grad():
++            for offset in range(0, len(stop), 256):
++                ids = stop[offset:offset+256]
++                bx, by = tensor_batch(x, y, ids)
++                old = teacher(bx) if teacher is not None else None
++                total += float(bic_loss(model(bx), by, old, n_old))*len(ids)
++        measured = total/len(stop)
++        if not math.isfinite(measured):
++            raise ValueError('Nonfinite stopping loss')
++        if measured < best_loss:
++            best_loss, best, patience = measured, deepcopy(model.state_dict()), 20
++        else:
++            patience -= 1
++        done = False
++        if patience == 0:
++            lr = optimizer.param_groups[0]['lr']/3
++            done = lr < .0001
++            if not done:
++                model.load_state_dict(best)
++                for group in optimizer.param_groups:
++                    group['lr'] = lr
++                patience = 20
++        elapsed += time.perf_counter()-start
++        history.append(dict(epoch=epoch+1, validation_loss=measured, lr=optimizer.param_groups[0]['lr']))
++        done = done or smoke or epoch == 199
++        ps.checkpoint_save(progress, dict(identity=identity, model=model.state_dict(), optimizer=optimizer.state_dict(),
++            best=best, best_loss=best_loss, patience=patience, steps=steps, seconds=elapsed, history=history,
++            next_epoch=epoch+1, done=done))
++        print(f'BIC_BACKBONE epoch={epoch+1} steps={steps} validation_loss={measured:.8g} seconds={elapsed:.2f}', flush=True)
++        if done:
++            break
++    model.load_state_dict(best)
++    return dict(epochs=len(history), optimizer_steps=steps, seconds=elapsed, history=history)
++
++
++def fit_bias(model, x, y, correction, seed, smoke):
++    """Network and older affine maps frozen, including BatchNorm buffers."""
++    if len(model.groups) == 1:
++        return dict(seconds=0., epochs=0, optimizer_steps=0)
++    start = time.perf_counter()
++    model.eval().requires_grad_(False)
++    model.scales[-1].requires_grad_(True)
++    model.offsets[-1].requires_grad_(True)
++    # Frozen raw logits may be cached without changing stage-2 gradients.
++    with torch.no_grad():
++        parts = []
++        for offset in range(0, len(correction), 256):
++            bx, _ = tensor_batch(x, y, correction[offset:offset+256])
++            raw = model.raw(bx)
++            old = torch.cat([a*z+b for a, b, z in zip(model.scales[:-1], model.offsets[:-1], raw[:-1])], 1)
++            parts.append(torch.cat([old, raw[-1]], 1))
++        cached = torch.cat(parts)
++        labels = torch.from_numpy(np.array(y[correction], dtype=np.int64))
++    n_new = len(model.groups[-1])
++    optimizer = torch.optim.SGD([model.scales[-1], model.offsets[-1]], lr=.1, momentum=.9)
++    epochs, steps = (1 if smoke else 200), 0
++    for epoch in range(epochs):
++        indices = np.random.default_rng(seed+epoch).permutation(len(correction))
++        for offset in range(0, len(indices), 256):
++            ids = indices[offset:offset+256]
++            z = cached[ids]
++            corrected = torch.cat([z[:, :-n_new], model.scales[-1]*z[:, -n_new:]+model.offsets[-1]], 1)
++            loss = F.cross_entropy(corrected, labels[ids])+.05*model.offsets[-1].square()
++            if not torch.isfinite(loss):
++                raise ValueError('Nonfinite BiC stage-2 loss')
++            optimizer.zero_grad(set_to_none=True)
++            loss.backward()
++            optimizer.step()
++            steps += 1
++    model.requires_grad_(False)
++    return dict(seconds=time.perf_counter()-start, epochs=epochs, optimizer_steps=steps)
+diff --git a/ncd/cer_bic_common.py b/ncd/cer_bic_common.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/cer_bic_common.py
+@@ -0,0 +1,89 @@
++"""Section 192 common-budget override; native implementation stays immutable."""
++from copy import deepcopy
++import math
++import time
++import numpy as np
++import torch
++from ncd.cer_bic import FlowBiC, partition_current, fit_bias, bic_loss, tensor_batch
++from ncd.cer_bic import MAPPING as NATIVE_MAPPING
++
++MAPPING = deepcopy(NATIVE_MAPPING)
++MAPPING['training_override'] = {
++    'authority': 'WORK_ORDER sections 189, 191.3 and 192; e9c11b95baf896fe3b31ec0fa6a47a33f473bf07',
++    'reason': 'CIC17 native seed10 stopped at 3304.719 s before first task completion; not an algorithm performance result.',
++    'stage1': 'Adam lr 0.001, batch 256, max(8 full epochs, 2000 optimizer steps), no early stopping or learning-rate decay; final iterate.',
++    'stage2': 'Separate BiC correction unchanged: SGD lr 0.1 momentum 0.9, 200 epochs, beta penalty 0.05; reported separately.',
++    'family': 'All new CER formal cells use this override; native UNSW remains historical sensitivity evidence, never mixed into this family.',
++    'rows': 'Same partition as native; reserved TRAIN stopping rows retained for diagnostic loss only, not model selection.'
++}
++MAPPING['engineering_defaults'].update(optimizer='Adam', momentum=None, weight_decay=0.)
++
++def target_steps(rows, smoke=False):
++    if rows <= 0:
++        raise ValueError('Empty stage-1 training pool')
++    batches = math.ceil(rows/256)
++    return batches if smoke else max(8*batches, 2000)
++
++def fit_backbone(model, teacher, x, y, fit, stop, seed, smoke, progress, identity, ps):
++    """Fixed common-budget stage 1; reserved stopping rows are diagnostic only."""
++    n_old = sum(len(g) for g in teacher.groups) if teacher is not None else 0
++    model.requires_grad_(True)
++    for p in list(model.scales)+list(model.offsets):
++        p.requires_grad_(False)
++    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=.001)
++    best, best_loss, patience, steps, elapsed, begin_epoch = deepcopy(model.state_dict()), float('inf'), 20, 0, 0., 0
++    target = target_steps(len(fit), smoke)
++    history = []
++    if progress.exists():
++        state = ps.checkpoint_load(progress, identity)
++        model.load_state_dict(state['model'])
++        optimizer.load_state_dict(state['optimizer'])
++        best, best_loss, patience, steps, elapsed = (state[k] for k in ['best', 'best_loss', 'patience', 'steps', 'seconds'])
++        history, begin_epoch = state['history'], state['next_epoch']
++        if state['done']:
++            model.load_state_dict(best)
++            return dict(epochs=len(history), optimizer_steps=steps, seconds=elapsed, history=history)
++    for epoch in range(begin_epoch, math.ceil(target/math.ceil(len(fit)/256))):
++        start = time.perf_counter()
++        model.train()
++        shuffled = np.random.default_rng(seed+epoch*1009).permutation(fit)
++        epoch_steps = 0
++        for offset in range(0, len(shuffled), 256):
++            if steps >= target:
++                break
++            bx, by = tensor_batch(x, y, shuffled[offset:offset+256])
++            with torch.no_grad():
++                old = teacher(bx) if teacher is not None else None
++            optimizer.zero_grad(set_to_none=True)
++            loss = bic_loss(model(bx), by, old, n_old)
++            if not torch.isfinite(loss):
++                raise ValueError('Nonfinite BiC stage-1 loss')
++            loss.backward()
++            torch.nn.utils.clip_grad_norm_(model.parameters(), 10000.)
++            optimizer.step()
++            steps += 1
++            epoch_steps += 1
++        model.eval()
++        total = 0.
++        with torch.no_grad():
++            for offset in range(0, len(stop), 256):
++                ids = stop[offset:offset+256]
++                bx, by = tensor_batch(x, y, ids)
++                old = teacher(bx) if teacher is not None else None
++                total += float(bic_loss(model(bx), by, old, n_old))*len(ids)
++        measured = total/len(stop)
++        if not math.isfinite(measured):
++            raise ValueError('Nonfinite stopping loss')
++        # Common fixed training uses the final iterate, not stopping-set selection.
++        best_loss, best = measured, deepcopy(model.state_dict())
++        done = steps == target
++        elapsed += time.perf_counter()-start
++        history.append(dict(epoch=epoch+1, validation_loss=measured, lr=.001, optimizer_steps=epoch_steps))
++        ps.checkpoint_save(progress, dict(identity=identity, model=model.state_dict(), optimizer=optimizer.state_dict(),
++            best=best, best_loss=best_loss, patience=patience, steps=steps, seconds=elapsed, history=history,
++            next_epoch=epoch+1, done=done))
++        print(f'BIC_BACKBONE epoch={epoch+1} steps={steps} validation_loss={measured:.8g} seconds={elapsed:.2f}', flush=True)
++        if done:
++            break
++    model.load_state_dict(best)
++    return dict(epochs=len(history), optimizer_steps=steps, seconds=elapsed, history=history)
+diff --git a/ncd/ecbrs_author_memory.py b/ncd/ecbrs_author_memory.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/ecbrs_author_memory.py
+@@ -0,0 +1,144 @@
++"""Separately identified author-memory sensitivity, not native training.
++
++Control flow follows memory_update and retrieve_replaysamples(local_store=False)
++at amalapuram/CLbasedNIDS commit 0fa7ac97ff441a865ed89aad69f05fc7e2eb7840,
++codebase/utils/buffermemory.py. UNSW minority_allocation=.1 is from that
++commit's codebase/utils/config/configurations.py. No paper-gamma substitution.
++
++Explicit adaptations: row IDs instead of feature arrays; no native task-0
++initialization/skip gate; growing matched-protocol capacity; corrected append
++index (len-1, whereas the upstream underfill branch stores len); RNGs isolated
++and checkpointed. Encounter counts are advanced for the whole incoming batch
++before replacement, as in the author's caller. Training remains separately
++specified and must not be called an exact native-binary reproduction.
++"""
++import copy
++import random
++import numpy as np
++
++
++SEMANTICS = dict(implementation='author_memory_control_flow_matched_protocol',
++    author_commit='0fa7ac97ff441a865ed89aad69f05fc7e2eb7840',
++    minority_allocation=0.1, full='persistent selected victims only',
++    victim='global majority above integer minority allocation; otherwise non-majority local max; upstream insertion-order ties',
++    retrieval='inverse local count with upstream global-majority-at-exact-allocation weight=1; cached priorities',
++    adaptations=['row-ID payload', 'corrected underfill append index',
++        'no native task-0 skip or prefill', 'monotone matched-protocol capacity',
++        'isolated Python Random and legacy NumPy RandomState'])
++
++
++class AuthorCodeMemory:
++    def __init__(self, capacity, seed=0):
++        if not isinstance(capacity, int) or capacity < 1:
++            raise ValueError('positive integer capacity required')
++        self.capacity = capacity
++        self.rows, self.labels = [], []
++        self.local_count, self.local_store, self.encounters = {}, {}, {}
++        self.full, self.global_priority = set(), {}
++        self.rng = random.Random(seed)
++        self.np_rng = np.random.RandomState(seed)
++
++    def counts(self):
++        return dict(self.local_count)
++
++    def threshold(self):
++        return dict(minority_allocation=.1, majority_count_floor=int(.1*self.capacity))
++
++    def grow(self, capacity):
++        if not isinstance(capacity, int) or capacity < self.capacity:
++            raise ValueError('capacity cannot decrease')
++        self.capacity = capacity
++
++    def offer_batch(self, rows, labels):
++        if len(rows) != len(labels):
++            raise ValueError('row/label size mismatch')
++        rows, labels = list(rows), list(labels)
++        if any(not isinstance(x, (int, np.integer)) or x < 0 for x in rows+labels):
++            raise ValueError('nonnegative integer row IDs and labels required')
++        rows, labels = list(map(int, rows)), list(map(int, labels))
++        for c in labels:
++            self.encounters[c] = self.encounters.get(c, 0)+1
++        for row, c in zip(rows, labels):
++            if len(self.rows) < self.capacity:
++                index = len(self.rows)
++                self.rows.append(row)
++                self.labels.append(c)
++                self.local_count[c] = self.local_count.get(c, 0)+1
++                self.local_store.setdefault(c, []).append(index)
++                continue
++            if c not in self.full:
++                total = sum(self.encounters.values())
++                # Match the integer-label set iteration used by classes_so_far.
++                for k in set(self.encounters):
++                    if k in self.local_count:
++                        self.global_priority[k] = self.encounters[k]/total
++                maximum = max(self.global_priority.values())
++                major = max(self.global_priority, key=self.global_priority.get)
++                others = [k for k in self.local_count if k != major]
++                victim = others[0] if others else c
++                for k in others:
++                    if self.local_count[k] >= self.local_count.get(victim, 0):
++                        victim = k
++                temp = min(self.global_priority.values())
++                for k, count in self.local_count.items():
++                    if self.global_priority[k] >= temp and self.global_priority[k] == maximum and count > int(.1*self.capacity):
++                        victim, temp = k, self.global_priority[k]
++                if self.global_priority[victim] != maximum:
++                    current_max = self.local_count[others[0]]
++                    for k in others:
++                        if self.local_count[k] > current_max:
++                            victim, current_max = k, self.local_count[k]
++                self.full.add(victim)
++                members = self.local_store[victim]
++                index = members[self.rng.randint(0, len(members)-1)]
++                self.local_count[victim] -= 1
++                self.local_count[c] = self.local_count.get(c, 0)+1
++                self.local_store[victim].remove(index)
++                self.local_store.setdefault(c, []).append(index)
++            else:
++                if self.rng.uniform(0, 1) > self.local_count[c]/self.encounters[c]:
++                    continue
++                # Upstream chooses the first stored slot, not a uniform slot.
++                index = self.local_store[c][0]
++            self.rows[index], self.labels[index] = row, c
++
++    def sample(self, size):
++        if not isinstance(size, int) or size < 0:
++            raise ValueError('nonnegative integer replay size required')
++        n = min(size, len(self.rows))
++        if not n:
++            return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
++        maximum = max(self.global_priority.values(), default=None)
++        weights = [1. if c in self.global_priority and self.global_priority[c] == maximum
++            and self.local_count[c] == .1*self.capacity else 1/self.local_count[c] for c in self.labels]
++        weights = np.asarray(weights, dtype=float)
++        indices = self.np_rng.choice(len(self.rows), n, replace=False, p=weights/weights.sum())
++        return np.asarray(self.rows, dtype=np.int64)[indices], np.asarray(self.labels, dtype=np.int64)[indices]
++
++    def state(self):
++        rng = self.np_rng.get_state()
++        return copy.deepcopy(dict(capacity=self.capacity, rows=self.rows, labels=self.labels,
++            local_count=self.local_count, local_store=self.local_store, encounters=self.encounters,
++            full=sorted(self.full), global_priority=self.global_priority,
++            rng=self.rng.getstate(), np_rng=[rng[0], rng[1].tolist(), rng[2], rng[3], rng[4]], semantics=SEMANTICS))
++
++    @classmethod
++    def restore(cls, state):
++        state = copy.deepcopy(state)
++        if state['semantics'] != SEMANTICS:
++            raise ValueError('memory semantics changed')
++        obj = cls(state['capacity'])
++        for k in ['rows', 'labels', 'local_count', 'local_store', 'encounters', 'global_priority']:
++            setattr(obj, k, state[k])
++        obj.full = set(state['full'])
++        obj.rng.setstate(state['rng'])
++        s = state['np_rng']
++        obj.np_rng.set_state((s[0], np.asarray(s[1], dtype=np.uint32), s[2], s[3], s[4]))
++        assert len(obj.rows) == len(obj.labels) <= obj.capacity
++        assert set(obj.local_count) <= set(obj.encounters)
++        assert obj.full <= set(obj.local_count)
++        for c, count in obj.local_count.items():
++            assert count == obj.labels.count(c) == len(obj.local_store[c])
++            assert all(obj.labels[i] == c for i in obj.local_store[c])
++        assert sorted(i for ids in obj.local_store.values() for i in ids) == list(range(len(obj.rows)))
++        return obj
+diff --git a/ncd/ecbrs_memory.py b/ncd/ecbrs_memory.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/ecbrs_memory.py
+@@ -0,0 +1,138 @@
++"""Literal-equation ECBRS memory component; not yet a validated training entry.
++
++Source: Amalapuram et al., NeurIPS 2023, Algorithm 1 / Equation 1 and
++supplement A.3/A.14. Paper URL:
++https://proceedings.neurips.cc/paper_files/paper/2023/file/3755a02b1035fbadd5f93a022170e46f-Paper-Conference.pdf
++
++This component uses raw encounter counts in softmax(-n), as stated by Eq. 1.
++It does not silently normalize counts to reproduce the illustrative gamma=262.
++Victims are ranked by global count among nonempty classes meeting gamma;
++this follows the repeated-majority replacement illustrated in supplement A.3.
++Full status is persistent and updated from local maxima after every arrival.
++Ties use ascending class ID. The inequality is the printed m_c >= gamma(c).
++
++The authors' code at 0fa7ac97ff441a865ed89aad69f05fc7e2eb7840 instead uses
++minority_allocation and different victim/full updates. That sensitivity variant
++must remain separately named. Neither this component nor its unit tests imply
++an exact end-to-end reproduction or a completed scientific experiment.
++"""
++import copy
++import numpy as np
++
++
++SEMANTICS = {
++    'implementation': 'paper_algorithm_literal_equation_component',
++    'gamma': 'capacity * softmax(-raw_stream_encounter_counts), observed classes only',
++    'victim': 'largest global encounter count among nonempty gamma-eligible classes; class-ID tie',
++    'full': 'persistent union of local-count maxima after every stream arrival',
++    'retrieval': 'inverse local class count per stored item, without replacement',
++    'native_task': 'binary supervised NIDS; this class stores original family labels only',
++    'status': 'component_only_not_training_validated',
++}
++
++
++class PaperECBRS:
++    """Store row identifiers, not references to an unrestricted historical pool."""
++
++    def __init__(self, capacity, seed=0):
++        if not isinstance(capacity, int) or capacity < 1:
++            raise ValueError('capacity must be a positive integer')
++        self.capacity = capacity
++        self.rng = np.random.default_rng(seed)
++        self.rows = []
++        self.labels = []
++        self.encounters = {}
++        self.full = set()
++
++    def counts(self):
++        return {c: self.labels.count(c) for c in self.encounters}
++
++    def gamma(self):
++        classes = sorted(self.encounters)
++        if not classes:
++            return {}
++        # Shift before float conversion: exact subtraction of arbitrarily large ints.
++        minimum = min(self.encounters.values())
++        weights = np.exp(-np.asarray([self.encounters[c] - minimum for c in classes], dtype=np.float64))
++        weights /= weights.sum()
++        return dict(zip(classes, (self.capacity * weights).tolist()))
++
++    def grow(self, capacity):
++        """Only grow the registered total budget; never replenish discarded rows."""
++        if not isinstance(capacity, int) or capacity < self.capacity:
++            raise ValueError('capacity cannot decrease')
++        self.capacity = capacity
++
++    def _mark_full(self):
++        counts = self.counts()
++        maximum = max(counts.values(), default=0)
++        if maximum:
++            self.full.update(c for c, count in counts.items() if count == maximum)
++
++    def offer(self, row_id, label):
++        if not isinstance(row_id, (int, np.integer)) or row_id < 0:
++            raise ValueError('row_id must be a nonnegative integer')
++        if not isinstance(label, (int, np.integer)) or label < 0:
++            raise ValueError('label must be a nonnegative integer')
++        row_id, label = int(row_id), int(label)
++        self.encounters[label] = self.encounters.get(label, 0) + 1
++        admitted, victim = False, None
++        if len(self.rows) < self.capacity:
++            self.rows.append(row_id)
++            self.labels.append(label)
++            admitted = True
++        else:
++            counts = self.counts()
++            if label in self.full:
++                local = counts[label]
++                if self.rng.random() <= local / self.encounters[label] and local:
++                    victim = label
++            else:
++                gamma = self.gamma()
++                eligible = [c for c in counts if counts[c] > 0 and counts[c] >= gamma[c]]
++                if not eligible:
++                    raise RuntimeError('No gamma-eligible victim; do not invent a fallback policy')
++                victim = min(eligible, key=lambda c: (-self.encounters[c], c))
++            if victim is not None:
++                indices = [i for i, c in enumerate(self.labels) if c == victim]
++                index = int(self.rng.choice(indices))
++                self.rows[index], self.labels[index] = row_id, label
++                admitted = True
++        self._mark_full()
++        return {'admitted': admitted, 'victim_class': victim}
++
++    def sample(self, size):
++        if not isinstance(size, int) or size < 0:
++            raise ValueError('size must be a nonnegative integer')
++        n = min(size, len(self.rows))
++        if not n:
++            return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
++        counts = self.counts()
++        weights = np.asarray([1.0 / counts[c] for c in self.labels])
++        indices = self.rng.choice(len(self.rows), n, replace=False, p=weights / weights.sum())
++        return np.asarray(self.rows, dtype=np.int64)[indices], np.asarray(self.labels, dtype=np.int64)[indices]
++
++    def state(self):
++        return copy.deepcopy(dict(capacity=self.capacity, rows=self.rows, labels=self.labels,
++            encounters=self.encounters, full=sorted(self.full), rng=self.rng.bit_generator.state,
++            semantics=SEMANTICS))
++
++    @classmethod
++    def restore(cls, state):
++        state = copy.deepcopy(state)
++        if state['semantics'] != SEMANTICS:
++            raise ValueError('memory semantics changed')
++        obj = cls(state['capacity'])
++        obj.rows, obj.labels = list(state['rows']), list(state['labels'])
++        obj.encounters = {int(c): int(n) for c, n in state['encounters'].items()}
++        obj.full = set(state['full'])
++        if len(obj.rows) != len(obj.labels) or len(obj.rows) > obj.capacity:
++            raise ValueError('invalid stored payload size')
++        if any(n < 1 for n in obj.encounters.values()):
++            raise ValueError('invalid encounter count')
++        if not set(obj.labels).issubset(obj.encounters) or not obj.full.issubset(obj.encounters):
++            raise ValueError('unknown stored/full class')
++        if any(n > obj.encounters[c] for c, n in obj.counts().items()):
++            raise ValueError('stored count exceeds encounters')
++        obj.rng.bit_generator.state = state['rng']
++        return obj
+diff --git a/ncd/run_section178_ecbrs.py b/ncd/run_section178_ecbrs.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/run_section178_ecbrs.py
+@@ -0,0 +1,180 @@
++"""Matched-protocol ECBRS paper-equation adaptation, with checkpoint resume.
++
++This does not reproduce the authors' binary training entry. The registered
++multiclass MLP, task schedule, permanent benign holdout and evaluation apply.
++The literal memory algorithm and all adaptation choices are saved in identity.
++"""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import sys
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++import numpy as np
++import torch
++from ncd import run_problem_scout as ps, run_replay_bs as bs
++from ncd.crr_benchmarks import training_epoch_batches, _class_balanced_cross_entropy
++from ncd.default_decision import evaluate_models
++from ncd.ecbrs_memory import PaperECBRS, SEMANTICS
++from ncd.model import MLP
++from ncd.prepare_problem_scout_data import prepare_setting
++from ncd.source_commit import source_commit
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--dataset', choices=['UNSW-NB15'], required=True)
++    p.add_argument('--seed', type=int, choices=range(10, 15), required=True)
++    p.add_argument('--data-root', type=Path, required=True)
++    p.add_argument('--output-dir', type=Path, required=True)
++    p.add_argument('--log-prefix', type=Path, required=True)
++    p.add_argument('--smoke', action='store_true')
++    p.add_argument('--resume', action='store_true')
++    a = p.parse_args()
++    wd = Path('@@EXPERIMENT_ROOT@@').resolve(strict=True)
++    if any(not path.is_relative_to(wd) for path in
++           (a.data_root.resolve(strict=True), a.output_dir.resolve(), a.log_prefix.resolve())):
++        p.error('Data and outputs must be on the existing WD workspace')
++    os.environ['TEMP'] = os.environ['TMP'] = str(wd/'tmp')
++    torch.set_num_threads(2)
++    torch.set_num_interop_threads(1)
++    selection = json.loads((ROOT/'paper_aacil/results/section123_schedule_selection.json').read_text(encoding='utf-8'))
++    if selection['selected_schedule'] != 'original_fixed':
++        p.error('Registered original_fixed schedule required')
++    config = json.loads((ROOT/'ncd/configs/problem_scout_section21.json').read_text(encoding='utf-8'))
++    config.update(problem_scout_data_root=str(a.data_root.resolve()), hidden=128, hidden_layers=2,
++        device='cpu', cpu_threads=2, epochs_per_task=1 if a.smoke else 8,
++        min_steps_per_task=0 if a.smoke else 2000, learning_rate=.001, batch_size=256,
++        smoke=a.smoke, buffer_per_class=200)
++    data, _, _, metadata = prepare_setting(a.dataset, config)
++    original_counts = np.bincount(data.y_train, minlength=len(data.class_order))
++    if a.smoke:
++        data, _, _ = ps.smoke_subset(data, None, None, limit=64)
++    train, valid = ps.section26_pools(data, a.seed)
++    source_files = ['ncd/run_section178_ecbrs.py', 'ncd/ecbrs_memory.py',
++        'ncd/run_problem_scout.py', 'ncd/run_replay_bs.py', 'ncd/crr_benchmarks.py',
++        'ncd/default_decision.py', 'ncd/model.py', 'ncd/prepare_problem_scout_data.py']
++    identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset, method='ecbrs-paper-literal',
++        seed=a.seed, smoke=a.smoke, effective_config=config, tasks=data.tasks,
++        class_order=data.class_order, data_binding=ps.binding(data, None, None),
++        data_metadata_sha256=ps.canonical_hash(metadata),
++        command=[v for v in sys.argv if v != '--resume'],
++        source_sha256={f: ps.digest(ROOT/f) for f in source_files},
++        original_train_counts=original_counts.tolist(), memory_semantics=SEMANTICS,
++        implementation_scope='Paper Algorithm 1 and literal Equation 1 memory, adapted to the registered multiclass protocol; not author-code execution or exact native binary reproduction.',
++        author_code='https://github.com/amalapuram/CLbasedNIDS/tree/0fa7ac97ff441a865ed89aad69f05fc7e2eb7840',
++        author_difference='Author memory_update uses minority_allocation and different full/victim updates; its UNSW sensitivity row remains pending.',
++        adaptations=['Same 2x128 MLP, Adam, eight epochs / minimum 2000 steps per task as the registered neural comparison.',
++            'A single class-balanced multiclass CE on concatenated stream and inverse-local-count replay; native binary BCE is not used.',
++            'Each current-task presentation is a stream encounter, including epoch repeats; replay is not re-counted or re-admitted.',
++            'Budget grows to 200 times seen classes including Normal; old discarded examples are never replenished.',
++            'Raw-count softmax gamma follows the printed equation; illustrative gamma=262 is not claimed reproduced.'],
++        holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
++            validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid},
++        log_paths=[str(a.log_prefix.resolve())+f'.{s}.log' for s in ('stdout','stderr')])
++    out = a.output_dir.resolve()
++    out.mkdir(parents=True, exist_ok=a.resume)
++    if (out/'identity.json').exists():
++        assert json.loads((out/'identity.json').read_text()) == identity, 'Resume identity mismatch'
++    else:
++        ps.save_json(out/'identity.json', identity)
++    if (out/'result.json').exists():
++        completed = json.loads((out/'result.json').read_text(encoding='utf-8'))
++        assert completed['completed'] and completed['identity'] == identity
++        assert len(completed['checkpoints']) == len(data.tasks)
++        for cp in completed['checkpoints']:
++            assert ps.digest(out/cp['checkpoint_file']) == cp['checkpoint_sha256']
++        assert json.loads((out/'summary.json').read_text())['completed']
++        print('CELL_RESUME_COMPLETE_VALIDATED_NO_OVERWRITE', flush=True)
++        return
++    started_all = time.perf_counter()
++    memory = PaperECBRS(200*len(data.tasks[0]), seed=a.seed)
++    ps.seed_everything(a.seed*10000)
++    model = MLP(data.x_train.shape[1], 128, len(data.class_order))
++    records, defaults, calibrated = [], [], []
++    cumulative = 0.
++    for t, task in enumerate(data.tasks):
++        seen = [c for part in data.tasks[:t+1] for c in part]
++        task_seed = a.seed*10000+t
++        ps.seed_everything(task_seed)
++        checkpoint = out/f'checkpoints/checkpoint_{t:03d}.pt'
++        if checkpoint.exists():
++            state = ps.checkpoint_load(checkpoint, identity)
++            assert state['task_index'] == t and state['seen_classes'] == seen
++            model.load_state_dict(state['model_state'])
++            memory = PaperECBRS.restore(state['memory'])
++            cumulative = state['training_seconds_cumulative']
++            print(f'CHECKPOINT_RESUME task={t}', flush=True)
++        else:
++            memory.grow(200*len(seen))
++            current = np.sort(np.concatenate([train[c] for c in task]))
++            optimizer = torch.optim.Adam(model.parameters(), lr=.001)
++            stats = {}
++            before = len(memory.rows)
++            start = time.perf_counter()
++            print(f'CHECKPOINT_TRAINING task={t} current_rows={len(current)} replay_rows={before}', flush=True)
++            for epoch, batches in training_epoch_batches(current[:, None], data.y_train[current], 256,
++                    task_seed, config['epochs_per_task'], config['min_steps_per_task'], stats):
++                model.train()
++                for ids, labels in batches:
++                    current_ids = ids[:, 0].numpy()
++                    replay_ids, replay_labels = memory.sample(256)
++                    assert np.array_equal(data.y_train[replay_ids], replay_labels)
++                    joined = np.concatenate([current_ids, replay_ids])
++                    x = torch.from_numpy(np.asarray(data.x_train[joined]))
++                    y = torch.from_numpy(np.asarray(data.y_train[joined]))
++                    optimizer.zero_grad(set_to_none=True)
++                    loss = _class_balanced_cross_entropy(model(x), y)
++                    if not torch.isfinite(loss):
++                        raise ValueError('Nonfinite loss')
++                    loss.backward()
++                    optimizer.step()
++                    for row, label in zip(current_ids, labels.numpy()):
++                        memory.offer(int(row), int(label))
++                print(f'EPOCH_DONE task={t} epoch={epoch+1} memory_rows={len(memory.rows)}', flush=True)
++            seconds = time.perf_counter()-start
++            cumulative += seconds
++            state = dict(identity=identity, task_index=t, seen_classes=seen,
++                model_state={k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
++                memory=memory.state(), training_seconds=seconds, training_seconds_cumulative=cumulative,
++                training_schedule=stats, replay_examples_before=before, replay_examples_after=len(memory.rows),
++                current_rows_sha256=hashlib.sha256(current.tobytes()).hexdigest(), current_rows=len(current),
++                memory_class_counts=memory.counts(), memory_gamma=memory.gamma())
++            ps.checkpoint_save(checkpoint, state)
++        # Explicitly validate permanent holdout exclusion and memory ownership.
++        rows = np.asarray(memory.rows, dtype=np.int64)
++        held = np.concatenate(list(valid.values()))
++        assert not np.intersect1d(rows, held).size and len(rows) <= 200*len(seen)
++        assert np.array_equal(data.y_train[rows], np.asarray(memory.labels))
++        assert set(memory.labels).issubset(seen)
++        model.eval()
++        default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, model)
++        calibration, points, cal_seconds, eval_seconds = bs.evaluate(model, data, seen,
++            valid[data.class_order.index('Normal')], original_counts, config, torch.device('cpu'))
++        cp_hash = ps.digest(checkpoint)
++        record = {k: state[k] for k in ('task_index', 'seen_classes', 'training_seconds',
++            'training_seconds_cumulative', 'training_schedule', 'replay_examples_before', 'replay_examples_after',
++            'current_rows_sha256', 'current_rows', 'memory_class_counts', 'memory_gamma')}
++        record.update(checkpoint_file=checkpoint.relative_to(out).as_posix(), checkpoint_sha256=cp_hash,
++            identity_hash=ps.canonical_hash(identity))
++        ps.save_json(checkpoint.with_suffix('.json'), record)
++        records.append(record)
++        defaults.append(dict(task_index=t, checkpoint_sha256=cp_hash, metrics=default))
++        calibrated.append(dict(task_index=t, checkpoint_sha256=cp_hash, calibration=calibration,
++            operating_points=points, calibration_seconds=cal_seconds, evaluation_seconds=eval_seconds))
++        print(f'CHECKPOINT_EVALUATED task={t}', flush=True)
++    ps.save_json(out/'result.json', dict(completed=True, scientific_result=not a.smoke,
++        identity=identity, checkpoints=records, default_stages=defaults, calibrated_stages=calibrated,
++        training_seconds_total=cumulative))
++    ps.save_json(out/'summary.json', dict(completed=True, scientific_result=not a.smoke,
++        method=identity['method'], seed=a.seed, smoke=a.smoke, checkpoints=len(records),
++        elapsed_seconds=time.perf_counter()-started_all, training_seconds_total=cumulative))
++    print('CELL_COMPLETE', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/ncd/run_section178_ecbrs_author.py b/ncd/run_section178_ecbrs_author.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/run_section178_ecbrs_author.py
+@@ -0,0 +1,181 @@
++"""Matched-protocol ECBRS author-memory sensitivity, with checkpoint resume.
++
++This does not reproduce the authors' binary training entry. The registered
++multiclass MLP, task schedule, permanent benign holdout and evaluation apply.
++Author-memory control flow and all adaptation choices are saved in identity.
++"""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import sys
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++import numpy as np
++import torch
++from ncd import run_problem_scout as ps, run_replay_bs as bs
++from ncd.crr_benchmarks import training_epoch_batches, _class_balanced_cross_entropy
++from ncd.default_decision import evaluate_models
++from ncd.ecbrs_author_memory import AuthorCodeMemory, SEMANTICS
++from ncd.model import MLP
++from ncd.prepare_problem_scout_data import prepare_setting
++from ncd.source_commit import source_commit
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--dataset', choices=['UNSW-NB15'], required=True)
++    p.add_argument('--seed', type=int, choices=range(10, 15), required=True)
++    p.add_argument('--data-root', type=Path, required=True)
++    p.add_argument('--output-dir', type=Path, required=True)
++    p.add_argument('--log-prefix', type=Path, required=True)
++    p.add_argument('--smoke', action='store_true')
++    p.add_argument('--resume', action='store_true')
++    a = p.parse_args()
++    wd = Path('@@EXPERIMENT_ROOT@@').resolve(strict=True)
++    if any(not path.is_relative_to(wd) for path in
++           (a.data_root.resolve(strict=True), a.output_dir.resolve(), a.log_prefix.resolve())):
++        p.error('Data and outputs must be on the existing WD workspace')
++    os.environ['TEMP'] = os.environ['TMP'] = str(wd/'tmp')
++    torch.set_num_threads(2)
++    torch.set_num_interop_threads(1)
++    selection = json.loads((ROOT/'paper_aacil/results/section123_schedule_selection.json').read_text(encoding='utf-8'))
++    if selection['selected_schedule'] != 'original_fixed':
++        p.error('Registered original_fixed schedule required')
++    config = json.loads((ROOT/'ncd/configs/problem_scout_section21.json').read_text(encoding='utf-8'))
++    config.update(problem_scout_data_root=str(a.data_root.resolve()), hidden=128, hidden_layers=2,
++        device='cpu', cpu_threads=2, epochs_per_task=1 if a.smoke else 8,
++        min_steps_per_task=0 if a.smoke else 2000, learning_rate=.001, batch_size=256,
++        smoke=a.smoke, buffer_per_class=200)
++    data, _, _, metadata = prepare_setting(a.dataset, config)
++    original_counts = np.bincount(data.y_train, minlength=len(data.class_order))
++    if a.smoke:
++        data, _, _ = ps.smoke_subset(data, None, None, limit=64)
++    train, valid = ps.section26_pools(data, a.seed)
++    source_files = ['ncd/run_section178_ecbrs_author.py', 'ncd/ecbrs_author_memory.py',
++        'ncd/run_problem_scout.py', 'ncd/run_replay_bs.py', 'ncd/crr_benchmarks.py',
++        'ncd/default_decision.py', 'ncd/model.py', 'ncd/prepare_problem_scout_data.py']
++    identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset, method='ecbrs-author-code-sensitivity',
++        seed=a.seed, smoke=a.smoke, effective_config=config, tasks=data.tasks,
++        class_order=data.class_order, data_binding=ps.binding(data, None, None),
++        data_metadata_sha256=ps.canonical_hash(metadata),
++        command=[v for v in sys.argv if v != '--resume'],
++        source_sha256={f: ps.digest(ROOT/f) for f in source_files},
++        original_train_counts=original_counts.tolist(), memory_semantics=SEMANTICS,
++        implementation_scope='Fixed-author memory control-flow port with declared underfill-index correction and matched-protocol initialization/growth, adapted to multiclass training; not native binary entry execution.',
++        author_code='https://github.com/amalapuram/CLbasedNIDS/tree/0fa7ac97ff441a865ed89aad69f05fc7e2eb7840',
++        author_difference='This separate sensitivity uses author minority_allocation=.1, selected-victim full updates, cached-priority retrieval and first-slot full replacement; paper-literal results remain unchanged.',
++        adaptations=['Same 2x128 MLP, Adam, eight epochs / minimum 2000 steps per task as the registered neural comparison.',
++            'A single class-balanced multiclass CE on concatenated stream and author-weighted replay; native binary BCE is not used.',
++            'Each current-task presentation is a stream encounter including epoch repeats; counts advance for the whole batch before memory replacement. Replay is not re-counted or re-admitted.',
++            'Budget grows to 200 times seen classes including Normal; old discarded examples are never replenished.',
++            'Author UNSW minority_allocation=.1 is retained; native mem6666/replay5000/five-epoch binary training is not reproduced.',
++            'Author underfill local_store append index is corrected to len-1. Native task-0 prefill/skip gate is replaced by empty matched-protocol initialization.',
++            'Parity against fixed upstream memory_update/retrieve functions covers full-buffer transitions; this is not end-to-end native-training equivalence.'],
++        holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
++            validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid},
++        log_paths=[str(a.log_prefix.resolve())+f'.{s}.log' for s in ('stdout','stderr')])
++    out = a.output_dir.resolve()
++    out.mkdir(parents=True, exist_ok=a.resume)
++    if (out/'identity.json').exists():
++        assert json.loads((out/'identity.json').read_text()) == identity, 'Resume identity mismatch'
++    else:
++        ps.save_json(out/'identity.json', identity)
++    if (out/'result.json').exists():
++        completed = json.loads((out/'result.json').read_text(encoding='utf-8'))
++        assert completed['completed'] and completed['identity'] == identity
++        assert len(completed['checkpoints']) == len(data.tasks)
++        for cp in completed['checkpoints']:
++            assert ps.digest(out/cp['checkpoint_file']) == cp['checkpoint_sha256']
++        assert json.loads((out/'summary.json').read_text())['completed']
++        print('CELL_RESUME_COMPLETE_VALIDATED_NO_OVERWRITE', flush=True)
++        return
++    started_all = time.perf_counter()
++    memory = AuthorCodeMemory(200*len(data.tasks[0]), seed=a.seed)
++    ps.seed_everything(a.seed*10000)
++    model = MLP(data.x_train.shape[1], 128, len(data.class_order))
++    records, defaults, calibrated = [], [], []
++    cumulative = 0.
++    for t, task in enumerate(data.tasks):
++        seen = [c for part in data.tasks[:t+1] for c in part]
++        task_seed = a.seed*10000+t
++        ps.seed_everything(task_seed)
++        checkpoint = out/f'checkpoints/checkpoint_{t:03d}.pt'
++        if checkpoint.exists():
++            state = ps.checkpoint_load(checkpoint, identity)
++            assert state['task_index'] == t and state['seen_classes'] == seen
++            model.load_state_dict(state['model_state'])
++            memory = AuthorCodeMemory.restore(state['memory'])
++            cumulative = state['training_seconds_cumulative']
++            print(f'CHECKPOINT_RESUME task={t}', flush=True)
++        else:
++            memory.grow(200*len(seen))
++            current = np.sort(np.concatenate([train[c] for c in task]))
++            optimizer = torch.optim.Adam(model.parameters(), lr=.001)
++            stats = {}
++            before = len(memory.rows)
++            start = time.perf_counter()
++            print(f'CHECKPOINT_TRAINING task={t} current_rows={len(current)} replay_rows={before}', flush=True)
++            for epoch, batches in training_epoch_batches(current[:, None], data.y_train[current], 256,
++                    task_seed, config['epochs_per_task'], config['min_steps_per_task'], stats):
++                model.train()
++                for ids, labels in batches:
++                    current_ids = ids[:, 0].numpy()
++                    replay_ids, replay_labels = memory.sample(256)
++                    assert np.array_equal(data.y_train[replay_ids], replay_labels)
++                    joined = np.concatenate([current_ids, replay_ids])
++                    x = torch.from_numpy(np.asarray(data.x_train[joined]))
++                    y = torch.from_numpy(np.asarray(data.y_train[joined]))
++                    optimizer.zero_grad(set_to_none=True)
++                    loss = _class_balanced_cross_entropy(model(x), y)
++                    if not torch.isfinite(loss):
++                        raise ValueError('Nonfinite loss')
++                    loss.backward()
++                    optimizer.step()
++                    memory.offer_batch(current_ids, labels.numpy())
++                print(f'EPOCH_DONE task={t} epoch={epoch+1} memory_rows={len(memory.rows)}', flush=True)
++            seconds = time.perf_counter()-start
++            cumulative += seconds
++            state = dict(identity=identity, task_index=t, seen_classes=seen,
++                model_state={k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
++                memory=memory.state(), training_seconds=seconds, training_seconds_cumulative=cumulative,
++                training_schedule=stats, replay_examples_before=before, replay_examples_after=len(memory.rows),
++                current_rows_sha256=hashlib.sha256(current.tobytes()).hexdigest(), current_rows=len(current),
++                memory_class_counts=memory.counts(), memory_threshold=memory.threshold())
++            ps.checkpoint_save(checkpoint, state)
++        # Explicitly validate permanent holdout exclusion and memory ownership.
++        rows = np.asarray(memory.rows, dtype=np.int64)
++        held = np.concatenate(list(valid.values()))
++        assert not np.intersect1d(rows, held).size and len(rows) <= 200*len(seen)
++        assert np.array_equal(data.y_train[rows], np.asarray(memory.labels))
++        assert set(memory.labels).issubset(seen)
++        model.eval()
++        default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, model)
++        calibration, points, cal_seconds, eval_seconds = bs.evaluate(model, data, seen,
++            valid[data.class_order.index('Normal')], original_counts, config, torch.device('cpu'))
++        cp_hash = ps.digest(checkpoint)
++        record = {k: state[k] for k in ('task_index', 'seen_classes', 'training_seconds',
++            'training_seconds_cumulative', 'training_schedule', 'replay_examples_before', 'replay_examples_after',
++            'current_rows_sha256', 'current_rows', 'memory_class_counts', 'memory_threshold')}
++        record.update(checkpoint_file=checkpoint.relative_to(out).as_posix(), checkpoint_sha256=cp_hash,
++            identity_hash=ps.canonical_hash(identity))
++        ps.save_json(checkpoint.with_suffix('.json'), record)
++        records.append(record)
++        defaults.append(dict(task_index=t, checkpoint_sha256=cp_hash, metrics=default))
++        calibrated.append(dict(task_index=t, checkpoint_sha256=cp_hash, calibration=calibration,
++            operating_points=points, calibration_seconds=cal_seconds, evaluation_seconds=eval_seconds))
++        print(f'CHECKPOINT_EVALUATED task={t}', flush=True)
++    ps.save_json(out/'result.json', dict(completed=True, scientific_result=not a.smoke,
++        identity=identity, checkpoints=records, default_stages=defaults, calibrated_stages=calibrated,
++        training_seconds_total=cumulative))
++    ps.save_json(out/'summary.json', dict(completed=True, scientific_result=not a.smoke,
++        method=identity['method'], seed=a.seed, smoke=a.smoke, checkpoints=len(records),
++        elapsed_seconds=time.perf_counter()-started_all, training_seconds_total=cumulative))
++    print('CELL_COMPLETE', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/ncd/run_section178_ecbrs_extended.py b/ncd/run_section178_ecbrs_extended.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/run_section178_ecbrs_extended.py
+@@ -0,0 +1,180 @@
++"""CIC/CSE entry for the unchanged matched-protocol ECBRS paper-memory adaptation.
++
++This does not reproduce the authors' binary training entry. The registered
++multiclass MLP, task schedule, permanent benign holdout and evaluation apply.
++The literal memory algorithm and all adaptation choices are saved in identity.
++"""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import sys
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++import numpy as np
++import torch
++from ncd import run_problem_scout as ps, run_replay_bs as bs
++from ncd.crr_benchmarks import training_epoch_batches, _class_balanced_cross_entropy
++from ncd.default_decision import evaluate_models
++from ncd.ecbrs_memory import PaperECBRS, SEMANTICS
++from ncd.model import MLP
++from ncd.prepare_problem_scout_data import prepare_setting
++from ncd.source_commit import source_commit
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--dataset', choices=['CIC-IDS-2017', 'CSE-CIC-IDS2018'], required=True)
++    p.add_argument('--seed', type=int, choices=range(10, 15), required=True)
++    p.add_argument('--data-root', type=Path, required=True)
++    p.add_argument('--output-dir', type=Path, required=True)
++    p.add_argument('--log-prefix', type=Path, required=True)
++    p.add_argument('--smoke', action='store_true')
++    p.add_argument('--resume', action='store_true')
++    a = p.parse_args()
++    wd = Path('@@EXPERIMENT_ROOT@@').resolve(strict=True)
++    if any(not path.is_relative_to(wd) for path in
++           (a.data_root.resolve(strict=True), a.output_dir.resolve(), a.log_prefix.resolve())):
++        p.error('Data and outputs must be on the existing WD workspace')
++    os.environ['TEMP'] = os.environ['TMP'] = str(wd/'tmp')
++    torch.set_num_threads(2)
++    torch.set_num_interop_threads(1)
++    selection = json.loads((ROOT/'paper_aacil/results/section123_schedule_selection.json').read_text(encoding='utf-8'))
++    if selection['selected_schedule'] != 'original_fixed':
++        p.error('Registered original_fixed schedule required')
++    config = json.loads((ROOT/'ncd/configs/problem_scout_section21.json').read_text(encoding='utf-8'))
++    config.update(problem_scout_data_root=str(a.data_root.resolve()), hidden=128, hidden_layers=2,
++        device='cpu', cpu_threads=2, epochs_per_task=1 if a.smoke else 8,
++        min_steps_per_task=0 if a.smoke else 2000, learning_rate=.001, batch_size=256,
++        smoke=a.smoke, buffer_per_class=200)
++    data, _, _, metadata = prepare_setting(a.dataset, config)
++    original_counts = np.bincount(data.y_train, minlength=len(data.class_order))
++    if a.smoke:
++        data, _, _ = ps.smoke_subset(data, None, None, limit=64)
++    train, valid = ps.section26_pools(data, a.seed)
++    source_files = ['ncd/run_section178_ecbrs_extended.py', 'ncd/run_section178_ecbrs.py', 'ncd/ecbrs_memory.py',
++        'ncd/run_problem_scout.py', 'ncd/run_replay_bs.py', 'ncd/crr_benchmarks.py',
++        'ncd/default_decision.py', 'ncd/model.py', 'ncd/prepare_problem_scout_data.py']
++    identity = dict(git_commit=source_commit(ROOT), dataset=a.dataset, method='ecbrs-paper-literal',
++        seed=a.seed, smoke=a.smoke, entry_adaptation='Dataset-generalized entry; training and paper-memory loop unchanged from the bound UNSW implementation.', effective_config=config, tasks=data.tasks,
++        class_order=data.class_order, data_binding=ps.binding(data, None, None),
++        data_metadata_sha256=ps.canonical_hash(metadata),
++        command=[v for v in sys.argv if v != '--resume'],
++        source_sha256={f: ps.digest(ROOT/f) for f in source_files},
++        original_train_counts=original_counts.tolist(), memory_semantics=SEMANTICS,
++        implementation_scope='Paper Algorithm 1 and literal Equation 1 memory, adapted to the registered multiclass protocol; not author-code execution or exact native binary reproduction.',
++        author_code='https://github.com/amalapuram/CLbasedNIDS/tree/0fa7ac97ff441a865ed89aad69f05fc7e2eb7840',
++        author_difference='Author memory_update uses minority_allocation and different full/victim/retrieval rules; the completed UNSW author-rule sensitivity is separate and is not executed here.',
++        adaptations=['Same 2x128 MLP, Adam, eight epochs / minimum 2000 steps per task as the registered neural comparison.',
++            'A single class-balanced multiclass CE on concatenated stream and inverse-local-count replay; native binary BCE is not used.',
++            'Each current-task presentation is a stream encounter, including epoch repeats; replay is not re-counted or re-admitted.',
++            'Budget grows to 200 times seen classes including Normal; old discarded examples are never replenished.',
++            'Raw-count softmax gamma follows the printed equation; illustrative gamma=262 is not claimed reproduced.'],
++        holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
++            validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid},
++        log_paths=[str(a.log_prefix.resolve())+f'.{s}.log' for s in ('stdout','stderr')])
++    out = a.output_dir.resolve()
++    out.mkdir(parents=True, exist_ok=a.resume)
++    if (out/'identity.json').exists():
++        assert json.loads((out/'identity.json').read_text()) == identity, 'Resume identity mismatch'
++    else:
++        ps.save_json(out/'identity.json', identity)
++    if (out/'result.json').exists():
++        completed = json.loads((out/'result.json').read_text(encoding='utf-8'))
++        assert completed['completed'] and completed['identity'] == identity
++        assert len(completed['checkpoints']) == len(data.tasks)
++        for cp in completed['checkpoints']:
++            assert ps.digest(out/cp['checkpoint_file']) == cp['checkpoint_sha256']
++        assert json.loads((out/'summary.json').read_text())['completed']
++        print('CELL_RESUME_COMPLETE_VALIDATED_NO_OVERWRITE', flush=True)
++        return
++    started_all = time.perf_counter()
++    memory = PaperECBRS(200*len(data.tasks[0]), seed=a.seed)
++    ps.seed_everything(a.seed*10000)
++    model = MLP(data.x_train.shape[1], 128, len(data.class_order))
++    records, defaults, calibrated = [], [], []
++    cumulative = 0.
++    for t, task in enumerate(data.tasks):
++        seen = [c for part in data.tasks[:t+1] for c in part]
++        task_seed = a.seed*10000+t
++        ps.seed_everything(task_seed)
++        checkpoint = out/f'checkpoints/checkpoint_{t:03d}.pt'
++        if checkpoint.exists():
++            state = ps.checkpoint_load(checkpoint, identity)
++            assert state['task_index'] == t and state['seen_classes'] == seen
++            model.load_state_dict(state['model_state'])
++            memory = PaperECBRS.restore(state['memory'])
++            cumulative = state['training_seconds_cumulative']
++            print(f'CHECKPOINT_RESUME task={t}', flush=True)
++        else:
++            memory.grow(200*len(seen))
++            current = np.sort(np.concatenate([train[c] for c in task]))
++            optimizer = torch.optim.Adam(model.parameters(), lr=.001)
++            stats = {}
++            before = len(memory.rows)
++            start = time.perf_counter()
++            print(f'CHECKPOINT_TRAINING task={t} current_rows={len(current)} replay_rows={before}', flush=True)
++            for epoch, batches in training_epoch_batches(current[:, None], data.y_train[current], 256,
++                    task_seed, config['epochs_per_task'], config['min_steps_per_task'], stats):
++                model.train()
++                for ids, labels in batches:
++                    current_ids = ids[:, 0].numpy()
++                    replay_ids, replay_labels = memory.sample(256)
++                    assert np.array_equal(data.y_train[replay_ids], replay_labels)
++                    joined = np.concatenate([current_ids, replay_ids])
++                    x = torch.from_numpy(np.asarray(data.x_train[joined]))
++                    y = torch.from_numpy(np.asarray(data.y_train[joined]))
++                    optimizer.zero_grad(set_to_none=True)
++                    loss = _class_balanced_cross_entropy(model(x), y)
++                    if not torch.isfinite(loss):
++                        raise ValueError('Nonfinite loss')
++                    loss.backward()
++                    optimizer.step()
++                    for row, label in zip(current_ids, labels.numpy()):
++                        memory.offer(int(row), int(label))
++                print(f'EPOCH_DONE task={t} epoch={epoch+1} memory_rows={len(memory.rows)}', flush=True)
++            seconds = time.perf_counter()-start
++            cumulative += seconds
++            state = dict(identity=identity, task_index=t, seen_classes=seen,
++                model_state={k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
++                memory=memory.state(), training_seconds=seconds, training_seconds_cumulative=cumulative,
++                training_schedule=stats, replay_examples_before=before, replay_examples_after=len(memory.rows),
++                current_rows_sha256=hashlib.sha256(current.tobytes()).hexdigest(), current_rows=len(current),
++                memory_class_counts=memory.counts(), memory_gamma=memory.gamma())
++            ps.checkpoint_save(checkpoint, state)
++        # Explicitly validate permanent holdout exclusion and memory ownership.
++        rows = np.asarray(memory.rows, dtype=np.int64)
++        held = np.concatenate(list(valid.values()))
++        assert not np.intersect1d(rows, held).size and len(rows) <= 200*len(seen)
++        assert np.array_equal(data.y_train[rows], np.asarray(memory.labels))
++        assert set(memory.labels).issubset(seen)
++        model.eval()
++        default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, model)
++        calibration, points, cal_seconds, eval_seconds = bs.evaluate(model, data, seen,
++            valid[data.class_order.index('Normal')], original_counts, config, torch.device('cpu'))
++        cp_hash = ps.digest(checkpoint)
++        record = {k: state[k] for k in ('task_index', 'seen_classes', 'training_seconds',
++            'training_seconds_cumulative', 'training_schedule', 'replay_examples_before', 'replay_examples_after',
++            'current_rows_sha256', 'current_rows', 'memory_class_counts', 'memory_gamma')}
++        record.update(checkpoint_file=checkpoint.relative_to(out).as_posix(), checkpoint_sha256=cp_hash,
++            identity_hash=ps.canonical_hash(identity))
++        ps.save_json(checkpoint.with_suffix('.json'), record)
++        records.append(record)
++        defaults.append(dict(task_index=t, checkpoint_sha256=cp_hash, metrics=default))
++        calibrated.append(dict(task_index=t, checkpoint_sha256=cp_hash, calibration=calibration,
++            operating_points=points, calibration_seconds=cal_seconds, evaluation_seconds=eval_seconds))
++        print(f'CHECKPOINT_EVALUATED task={t}', flush=True)
++    ps.save_json(out/'result.json', dict(completed=True, scientific_result=not a.smoke,
++        identity=identity, checkpoints=records, default_stages=defaults, calibrated_stages=calibrated,
++        training_seconds_total=cumulative))
++    ps.save_json(out/'summary.json', dict(completed=True, scientific_result=not a.smoke,
++        method=identity['method'], seed=a.seed, smoke=a.smoke, checkpoints=len(records),
++        elapsed_seconds=time.perf_counter()-started_all, training_seconds_total=cumulative))
++    print('CELL_COMPLETE', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/ncd/run_section181.py b/ncd/run_section181.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/run_section181.py
+@@ -0,0 +1,80 @@
++"""UNSW §181 post-hoc diagnostics; same model/evaluation entry as §165 C1."""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import sys
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--method', required=True,
++                   choices=('D1-joint', 'D2-matched', 'D3-memory2x', 'D3-memory4x'))
++    p.add_argument('--seed', required=True, type=int, choices=(1, 10, 11, 12, 13, 14))
++    p.add_argument('--data-root', required=True, type=Path)
++    p.add_argument('--output-root', required=True, type=Path)
++    p.add_argument('--smoke', action='store_true')
++    p.add_argument('--resume', action='store_true')
++    a = p.parse_args()
++    if (a.seed == 1) != a.smoke:
++        p.error('Smoke uses seed1; formal diagnostic uses seeds10-14')
++    wd = Path('@@EXPERIMENT_ROOT@@').resolve(strict=True)
++    for path in (a.data_root.resolve(strict=True), a.output_root.resolve()):
++        if not path.is_relative_to(wd):
++            p.error('Data and outputs must be inside the mounted WD workspace')
++    os.environ.update(OMP_NUM_THREADS='2', MKL_NUM_THREADS='2',
++                      TEMP=str(wd / 'tmp'), TMP=str(wd / 'tmp'))
++    import torch
++    from ncd.prepare_problem_scout_data import prepare_setting
++    from ncd.run_problem_scout import binding, save_json, smoke_subset
++    from ncd.section138_cell import run_cell
++    from ncd.section156_config import configurations
++    from ncd.section156_models import build_models, train_gate
++    from ncd.source_commit import source_commit
++    torch.set_num_threads(2)
++    torch.set_num_interop_threads(1)
++    cfg = next(c for c in configurations() if c.identifier == 'C1')
++    config = json.loads((ROOT / 'ncd/configs/problem_scout_section21.json').read_text())
++    config.update(problem_scout_data_root=str(a.data_root.resolve()), device='cpu',
++        cpu_threads=2, smoke=a.smoke, lambda_g=0., epochs_per_task=1 if a.smoke else 8,
++        min_steps_per_task=0 if a.smoke else 2000, batch_size=256, eval_batch_size=4096,
++        learning_rate=.001, derpp_alpha=1., derpp_beta=1., deadline_iso=None,
++        normal_training_rows=50000, ema_decay=.999, ema_consistency=1., hidden=128,
++        section156=cfg.switches(), section165_memory='exact_c1',
++        section181_diagnostic=a.method)
++    output = a.output_root.resolve() / ('smoke' if a.smoke else 'diagnostic') / a.method / f'seed{a.seed}'
++    output.mkdir(parents=True, exist_ok=a.resume)
++    started = time.perf_counter()
++    data, _, _, _ = prepare_setting('UNSW-NB15', config)
++    if a.smoke:
++        data, _, _ = smoke_subset(data, None, None, limit=64)
++    files = ('ncd/run_section181.py', 'ncd/section181_diagnostics.py', 'ncd/section138_cell.py',
++             'ncd/section156_config.py', 'ncd/section156_models.py', 'ncd/section81_exposure.py',
++             'ncd/run_aacil.py', 'ncd/run_problem_scout.py', 'ncd/prepare_problem_scout_data.py')
++    hashes = {f: hashlib.sha256((ROOT / f).read_bytes()).hexdigest() for f in files}
++    identity = dict(git_commit=source_commit(ROOT), dataset='UNSW-NB15', seed=a.seed,
++        method=a.method, effective_config=config, data_binding=binding(data, None, None),
++        command=[s for s in sys.argv if s != '--resume'], output_role='post_hoc_diagnostic',
++        smoke=a.smoke, source_sha256=hashes, post_hoc=True,
++        scope='RQ2 diagnostic only; no changes to S1/R1-R5 or locked RQ1/RQ3',
++        d2_semantics='Current attack quota includes optimization and stopping slots; both are subsampled',
++        d1_semantics='All seen optimization-eligible TRAIN; common stopping/calibration held out; offline reference',
++        log_paths=[str(wd / 'logs' / f'section181-{a.method}-seed{a.seed}{suffix}.log')
++                   for suffix in ('.stdout', '.stderr')])
++    def trainer(model, x, y, *, schedule, **kwargs):
++        return train_gate(model, x, y, kind='histgb', **kwargs)
++    result = run_cell(data, config, identity, output / 'cell', cfg,
++                      model_builder=build_models, gate_trainer=trainer)
++    save_json(output / 'summary.json', dict(completed=True, scientific_result=not a.smoke,
++        post_hoc=True, source_commit=identity['git_commit'], dataset='UNSW-NB15', seed=a.seed,
++        method=a.method, checkpoints=len(result['checkpoints']),
++        elapsed_seconds=time.perf_counter()-started))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/ncd/run_section191_cer.py b/ncd/run_section191_cer.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/run_section191_cer.py
+@@ -0,0 +1,179 @@
++"""Registered-data CER BiC flow-CNN adaptation; native-schedule entry.
++
++Smoke is software validation only. Old completed outputs are never overwritten.
++Checkpoint-boundary and stage-1 epoch-boundary resume are supported.
++"""
++import argparse
++from copy import deepcopy
++import hashlib
++import json
++import os
++from pathlib import Path
++import sys
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++import numpy as np
++import torch
++from ncd import run_problem_scout as ps, run_replay_bs as bs
++from ncd.cer_bic import FlowBiC, MAPPING, partition_current, fit_backbone, fit_bias
++from ncd.default_decision import evaluate_models
++from ncd.prepare_problem_scout_data import prepare_setting
++from ncd.source_commit import source_commit
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--dataset', choices=['UNSW-NB15', 'CIC-IDS-2017'], required=True)
++    p.add_argument('--seed', type=int, choices=range(10, 15), required=True)
++    p.add_argument('--data-root', type=Path, required=True)
++    p.add_argument('--output-dir', type=Path, required=True)
++    p.add_argument('--log-prefix', type=Path, required=True)
++    p.add_argument('--smoke', action='store_true')
++    p.add_argument('--resume', action='store_true')
++    a = p.parse_args()
++    wd = Path('@@EXPERIMENT_ROOT@@').resolve(strict=True)
++    for path in (a.data_root.resolve(strict=True), a.output_dir.resolve(), a.log_prefix.resolve()):
++        if not path.is_relative_to(wd):
++            p.error('All data, results and logs must remain on the mounted WD workspace')
++    os.environ['TEMP'] = os.environ['TMP'] = str(wd/'tmp')
++    torch.set_num_threads(2)
++    torch.set_num_interop_threads(1)
++    selected = json.loads((ROOT/'paper_aacil/results/section123_schedule_selection.json').read_text())
++    assert selected['selected_schedule'] == 'original_fixed'
++    config = json.loads((ROOT/'ncd/configs/problem_scout_section21.json').read_text())
++    config.update(problem_scout_data_root=str(a.data_root.resolve()), device='cpu', cpu_threads=2,
++        smoke=a.smoke, buffer_per_class=200, epochs_per_task=1 if a.smoke else 200,
++        min_steps_per_task=0, learning_rate=.1, batch_size=256, eval_batch_size=512,
++        schedule='cer_native_200_patience20_lr01_factor3_min1e-4', optimizer='SGD',
++        stage2_epochs=1 if a.smoke else 200)
++    data, _, _, metadata = prepare_setting(a.dataset, config)
++    original_counts = np.bincount(data.y_train, minlength=len(data.class_order))
++    if a.smoke:
++        data, _, _ = ps.smoke_subset(data, None, None, limit=64)
++    assert [c for task in data.tasks for c in task] == list(range(len(data.class_order)))
++    train, valid = ps.section26_pools(data, a.seed)
++    source_files = sorted(set(ROOT.glob('ncd/**/*.py')) | set(ROOT.glob('ncd/configs/*.json')) |
++        {ROOT/'src/methods/replay_dpmeans.py', ROOT/'paper_aacil/results/section123_schedule_selection.json'})
++    mapping = deepcopy(MAPPING)
++    mapping['actual_feature_count'] = data.x_train.shape[1]
++    mapping['actual_feature_names'] = data.feature_names
++    identity = dict(git_commit=source_commit(ROOT), method='cer-bic-flow-cnn', dataset=a.dataset,
++        seed=a.seed, smoke=a.smoke, effective_config=config, cer_mapping=mapping,
++        tasks=data.tasks, class_order=data.class_order, data_binding=ps.binding(data, None, None),
++        data_metadata_sha256=ps.canonical_hash(metadata), original_train_counts=original_counts.tolist(),
++        source_sha256={f.relative_to(ROOT).as_posix(): ps.digest(f) for f in source_files},
++        command=[v for v in sys.argv if v != '--resume'],
++        log_paths=[str(a.log_prefix.resolve())+f'.{s}.log' for s in ('stdout', 'stderr')],
++        holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
++            validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid})
++    out = a.output_dir.resolve()
++    out.mkdir(parents=True, exist_ok=a.resume)
++    if (out/'identity.json').exists():
++        assert json.loads((out/'identity.json').read_text()) == identity, 'Resume identity mismatch'
++    else:
++        ps.save_json(out/'identity.json', identity)
++    if (out/'result.json').exists():
++        done = json.loads((out/'result.json').read_text())
++        assert done['completed'] and done['identity'] == identity
++        assert len(done['checkpoints']) == len(data.tasks)
++        for cp in done['checkpoints']:
++            assert ps.digest(out/cp['checkpoint_file']) == cp['checkpoint_sha256']
++        assert json.loads((out/'summary.json').read_text())['completed']
++        print('COMPLETED_RESUME_VALIDATED_NO_OVERWRITE', flush=True)
++        return
++    all_start = time.perf_counter()
++    ps.seed_everything(a.seed*10000)
++    model = FlowBiC(data.x_train.shape[1])
++    replay, correction = {}, {}
++    records, defaults, calibrated = [], [], []
++    cumulative = 0.
++    held = np.concatenate(list(valid.values()))
++    for t, task in enumerate(data.tasks):
++        task_seed = a.seed*10000+t
++        ps.seed_everything(task_seed)
++        teacher = deepcopy(model).eval().requires_grad_(False) if t else None
++        model.expand(task)
++        seen = [c for part in data.tasks[:t+1] for c in part]
++        cp = out/f'checkpoints/checkpoint_{t:03d}.pt'
++        if cp.exists():
++            state = ps.checkpoint_load(cp, identity)
++            assert state['task_index'] == t and state['seen_classes'] == seen
++            model.load_state_dict(state['model_state'])
++            replay = {c: rows.numpy() for c, rows in state['replay'].items()}
++            correction = {c: rows.numpy() for c, rows in state['correction'].items()}
++            cumulative = state['training_seconds_cumulative']
++            print(f'CHECKPOINT_RESUMED task={t}', flush=True)
++        else:
++            current, stopping = {}, {}
++            old_replay = deepcopy(replay)
++            old_correction = deepcopy(correction)
++            for c in task:
++                current[c], stopping[c], correction[c] = partition_current(train[c], task_seed*1009+c)
++            fit = np.concatenate(list(current.values())+list(replay.values())).astype(np.int64)
++            stop = np.concatenate(list(stopping.values())).astype(np.int64)
++            # Equal correction count across seen classes, including rare-class underfill.
++            quota = min(len(rows) for rows in correction.values())
++            bias_rows = np.concatenate([correction[c][:quota] for c in seen]).astype(np.int64)
++            assert not np.intersect1d(fit, np.concatenate([held, stop, bias_rows])).size
++            assert not np.intersect1d(stop, np.concatenate([held, bias_rows])).size
++            print(f'BIC_TASK task={t} current={sum(map(len,current.values()))} replay={sum(map(len,replay.values()))} stopping={len(stop)} correction={len(bias_rows)}', flush=True)
++            schedule = fit_backbone(model, teacher, data.x_train, data.y_train, fit, stop,
++                task_seed, a.smoke, out/f'progress/backbone_{t:03d}.pt', identity, ps)
++            bias = fit_bias(model, data.x_train, data.y_train, bias_rows, task_seed, a.smoke)
++            selection_start = time.perf_counter()
++            for c in task:
++                candidates = current[c]
++                positions = ps.herding_select_indexed(model, data.x_train, candidates,
++                    min(180, len(candidates)), torch.device('cpu'), 512,
++                    mmap_threshold_bytes=64*1024**2, scratch_dir=wd/'tmp/cer-herding')
++                replay[c] = candidates[positions].copy()
++            selection_seconds = time.perf_counter()-selection_start
++            for c in old_replay:
++                assert np.array_equal(replay[c], old_replay[c])
++                assert np.array_equal(correction[c], old_correction[c])
++            elapsed = schedule['seconds']+bias['seconds']
++            cumulative += elapsed
++            state = dict(identity=identity, task_index=t, seen_classes=seen,
++                model_state=deepcopy(model.state_dict()),
++                replay={c: torch.from_numpy(rows.copy()) for c, rows in replay.items()},
++                correction={c: torch.from_numpy(rows.copy()) for c, rows in correction.items()},
++                current_rows={c: torch.from_numpy(rows.copy()) for c, rows in current.items()},
++                stopping_rows={c: torch.from_numpy(rows.copy()) for c, rows in stopping.items()},
++                backbone_fit_rows=torch.from_numpy(fit), bias_fit_rows=torch.from_numpy(bias_rows),
++                training_schedule=schedule, bias_schedule=bias,
++                selection_seconds=selection_seconds, training_seconds=elapsed,
++                training_seconds_cumulative=cumulative,
++                parameter_count=sum(p.numel() for p in model.parameters()))
++            ps.checkpoint_save(cp, state)
++        retained = np.concatenate(list(replay.values())+list(correction.values()))
++        assert len(retained) == len(np.unique(retained)) <= 200*len(seen)
++        assert not np.intersect1d(retained, held).size
++        model.eval()
++        default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, model, batch_size=512)
++        calibration, points, cal_seconds, eval_seconds = bs.evaluate(model, data, seen,
++            valid[data.class_order.index('Normal')], original_counts, config, torch.device('cpu'))
++        cp_hash = ps.digest(cp)
++        record = {k: state[k] for k in ['task_index', 'seen_classes', 'training_seconds',
++            'training_seconds_cumulative', 'training_schedule', 'bias_schedule', 'selection_seconds', 'parameter_count']}
++        record.update(checkpoint_file=cp.relative_to(out).as_posix(), checkpoint_sha256=cp_hash,
++            identity_hash=ps.canonical_hash(identity), memory_slots=len(retained), unique_row_ids=len(retained),
++            memory_per_class={str(c): dict(replay=len(replay[c]), correction=len(correction[c])) for c in seen})
++        ps.save_json(cp.with_suffix('.json'), record)
++        records.append(record)
++        defaults.append(dict(task_index=t, checkpoint_sha256=cp_hash, metrics=default))
++        calibrated.append(dict(task_index=t, checkpoint_sha256=cp_hash, calibration=calibration,
++            operating_points=points, calibration_seconds=cal_seconds, evaluation_seconds=eval_seconds))
++        print(f'BIC_TASK_COMPLETE task={t}', flush=True)
++    ps.save_json(out/'result.json', dict(completed=True, scientific_result=not a.smoke,
++        identity=identity, cer_mapping=mapping, checkpoints=records, default_stages=defaults,
++        calibrated_stages=calibrated, training_seconds_total=cumulative))
++    ps.save_json(out/'summary.json', dict(completed=True, scientific_result=not a.smoke,
++        smoke=a.smoke, method=identity['method'], seed=a.seed, checkpoints=len(records),
++        training_seconds_total=cumulative, elapsed_seconds=time.perf_counter()-all_start))
++    print('CELL_COMPLETE', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/ncd/run_section192_cer_common.py b/ncd/run_section192_cer_common.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/run_section192_cer_common.py
+@@ -0,0 +1,179 @@
++"""Registered-data CER BiC flow-CNN adaptation; common-budget override entry.
++
++Smoke is software validation only. Old completed outputs are never overwritten.
++Checkpoint-boundary and stage-1 epoch-boundary resume are supported.
++"""
++import argparse
++from copy import deepcopy
++import hashlib
++import json
++import os
++from pathlib import Path
++import sys
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++import numpy as np
++import torch
++from ncd import run_problem_scout as ps, run_replay_bs as bs
++from ncd.cer_bic_common import FlowBiC, MAPPING, partition_current, fit_backbone, fit_bias
++from ncd.default_decision import evaluate_models
++from ncd.prepare_problem_scout_data import prepare_setting
++from ncd.source_commit import source_commit
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--dataset', choices=['UNSW-NB15', 'CIC-IDS-2017'], required=True)
++    p.add_argument('--seed', type=int, choices=range(10, 15), required=True)
++    p.add_argument('--data-root', type=Path, required=True)
++    p.add_argument('--output-dir', type=Path, required=True)
++    p.add_argument('--log-prefix', type=Path, required=True)
++    p.add_argument('--smoke', action='store_true')
++    p.add_argument('--resume', action='store_true')
++    a = p.parse_args()
++    wd = Path('@@EXPERIMENT_ROOT@@').resolve(strict=True)
++    for path in (a.data_root.resolve(strict=True), a.output_dir.resolve(), a.log_prefix.resolve()):
++        if not path.is_relative_to(wd):
++            p.error('All data, results and logs must remain on the mounted WD workspace')
++    os.environ['TEMP'] = os.environ['TMP'] = str(wd/'tmp')
++    torch.set_num_threads(2)
++    torch.set_num_interop_threads(1)
++    selected = json.loads((ROOT/'paper_aacil/results/section123_schedule_selection.json').read_text())
++    assert selected['selected_schedule'] == 'original_fixed'
++    config = json.loads((ROOT/'ncd/configs/problem_scout_section21.json').read_text())
++    config.update(problem_scout_data_root=str(a.data_root.resolve()), device='cpu', cpu_threads=2,
++        smoke=a.smoke, buffer_per_class=200, epochs_per_task=1 if a.smoke else 8,
++        min_steps_per_task=0 if a.smoke else 2000, learning_rate=.001, batch_size=256, eval_batch_size=512,
++        schedule='cer_common_adam_8epochs_min2000', optimizer='Adam',
++        stage2_epochs=1 if a.smoke else 200)
++    data, _, _, metadata = prepare_setting(a.dataset, config)
++    original_counts = np.bincount(data.y_train, minlength=len(data.class_order))
++    if a.smoke:
++        data, _, _ = ps.smoke_subset(data, None, None, limit=64)
++    assert [c for task in data.tasks for c in task] == list(range(len(data.class_order)))
++    train, valid = ps.section26_pools(data, a.seed)
++    source_files = sorted(set(ROOT.glob('ncd/**/*.py')) | set(ROOT.glob('ncd/configs/*.json')) |
++        {ROOT/'src/methods/replay_dpmeans.py', ROOT/'paper_aacil/results/section123_schedule_selection.json'})
++    mapping = deepcopy(MAPPING)
++    mapping['actual_feature_count'] = data.x_train.shape[1]
++    mapping['actual_feature_names'] = data.feature_names
++    identity = dict(git_commit=source_commit(ROOT), method='cer-bic-flow-cnn-common', dataset=a.dataset,
++        seed=a.seed, smoke=a.smoke, effective_config=config, cer_mapping=mapping,
++        tasks=data.tasks, class_order=data.class_order, data_binding=ps.binding(data, None, None),
++        data_metadata_sha256=ps.canonical_hash(metadata), original_train_counts=original_counts.tolist(),
++        source_sha256={f.relative_to(ROOT).as_posix(): ps.digest(f) for f in source_files},
++        command=[v for v in sys.argv if v != '--resume'],
++        log_paths=[str(a.log_prefix.resolve())+f'.{s}.log' for s in ('stdout', 'stderr')],
++        holdout={str(c): dict(train_count=len(train[c]), validation_count=len(valid[c]),
++            validation_indices_sha256=hashlib.sha256(valid[c].tobytes()).hexdigest()) for c in valid})
++    out = a.output_dir.resolve()
++    out.mkdir(parents=True, exist_ok=a.resume)
++    if (out/'identity.json').exists():
++        assert json.loads((out/'identity.json').read_text()) == identity, 'Resume identity mismatch'
++    else:
++        ps.save_json(out/'identity.json', identity)
++    if (out/'result.json').exists():
++        done = json.loads((out/'result.json').read_text())
++        assert done['completed'] and done['identity'] == identity
++        assert len(done['checkpoints']) == len(data.tasks)
++        for cp in done['checkpoints']:
++            assert ps.digest(out/cp['checkpoint_file']) == cp['checkpoint_sha256']
++        assert json.loads((out/'summary.json').read_text())['completed']
++        print('COMPLETED_RESUME_VALIDATED_NO_OVERWRITE', flush=True)
++        return
++    all_start = time.perf_counter()
++    ps.seed_everything(a.seed*10000)
++    model = FlowBiC(data.x_train.shape[1])
++    replay, correction = {}, {}
++    records, defaults, calibrated = [], [], []
++    cumulative = 0.
++    held = np.concatenate(list(valid.values()))
++    for t, task in enumerate(data.tasks):
++        task_seed = a.seed*10000+t
++        ps.seed_everything(task_seed)
++        teacher = deepcopy(model).eval().requires_grad_(False) if t else None
++        model.expand(task)
++        seen = [c for part in data.tasks[:t+1] for c in part]
++        cp = out/f'checkpoints/checkpoint_{t:03d}.pt'
++        if cp.exists():
++            state = ps.checkpoint_load(cp, identity)
++            assert state['task_index'] == t and state['seen_classes'] == seen
++            model.load_state_dict(state['model_state'])
++            replay = {c: rows.numpy() for c, rows in state['replay'].items()}
++            correction = {c: rows.numpy() for c, rows in state['correction'].items()}
++            cumulative = state['training_seconds_cumulative']
++            print(f'CHECKPOINT_RESUMED task={t}', flush=True)
++        else:
++            current, stopping = {}, {}
++            old_replay = deepcopy(replay)
++            old_correction = deepcopy(correction)
++            for c in task:
++                current[c], stopping[c], correction[c] = partition_current(train[c], task_seed*1009+c)
++            fit = np.concatenate(list(current.values())+list(replay.values())).astype(np.int64)
++            stop = np.concatenate(list(stopping.values())).astype(np.int64)
++            # Equal correction count across seen classes, including rare-class underfill.
++            quota = min(len(rows) for rows in correction.values())
++            bias_rows = np.concatenate([correction[c][:quota] for c in seen]).astype(np.int64)
++            assert not np.intersect1d(fit, np.concatenate([held, stop, bias_rows])).size
++            assert not np.intersect1d(stop, np.concatenate([held, bias_rows])).size
++            print(f'BIC_TASK task={t} current={sum(map(len,current.values()))} replay={sum(map(len,replay.values()))} stopping={len(stop)} correction={len(bias_rows)}', flush=True)
++            schedule = fit_backbone(model, teacher, data.x_train, data.y_train, fit, stop,
++                task_seed, a.smoke, out/f'progress/backbone_{t:03d}.pt', identity, ps)
++            bias = fit_bias(model, data.x_train, data.y_train, bias_rows, task_seed, a.smoke)
++            selection_start = time.perf_counter()
++            for c in task:
++                candidates = current[c]
++                positions = ps.herding_select_indexed(model, data.x_train, candidates,
++                    min(180, len(candidates)), torch.device('cpu'), 512,
++                    mmap_threshold_bytes=64*1024**2, scratch_dir=wd/'tmp/cer-herding')
++                replay[c] = candidates[positions].copy()
++            selection_seconds = time.perf_counter()-selection_start
++            for c in old_replay:
++                assert np.array_equal(replay[c], old_replay[c])
++                assert np.array_equal(correction[c], old_correction[c])
++            elapsed = schedule['seconds']+bias['seconds']
++            cumulative += elapsed
++            state = dict(identity=identity, task_index=t, seen_classes=seen,
++                model_state=deepcopy(model.state_dict()),
++                replay={c: torch.from_numpy(rows.copy()) for c, rows in replay.items()},
++                correction={c: torch.from_numpy(rows.copy()) for c, rows in correction.items()},
++                current_rows={c: torch.from_numpy(rows.copy()) for c, rows in current.items()},
++                stopping_rows={c: torch.from_numpy(rows.copy()) for c, rows in stopping.items()},
++                backbone_fit_rows=torch.from_numpy(fit), bias_fit_rows=torch.from_numpy(bias_rows),
++                training_schedule=schedule, bias_schedule=bias,
++                selection_seconds=selection_seconds, training_seconds=elapsed,
++                training_seconds_cumulative=cumulative,
++                parameter_count=sum(p.numel() for p in model.parameters()))
++            ps.checkpoint_save(cp, state)
++        retained = np.concatenate(list(replay.values())+list(correction.values()))
++        assert len(retained) == len(np.unique(retained)) <= 200*len(seen)
++        assert not np.intersect1d(retained, held).size
++        model.eval()
++        default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, model, batch_size=512)
++        calibration, points, cal_seconds, eval_seconds = bs.evaluate(model, data, seen,
++            valid[data.class_order.index('Normal')], original_counts, config, torch.device('cpu'))
++        cp_hash = ps.digest(cp)
++        record = {k: state[k] for k in ['task_index', 'seen_classes', 'training_seconds',
++            'training_seconds_cumulative', 'training_schedule', 'bias_schedule', 'selection_seconds', 'parameter_count']}
++        record.update(checkpoint_file=cp.relative_to(out).as_posix(), checkpoint_sha256=cp_hash,
++            identity_hash=ps.canonical_hash(identity), memory_slots=len(retained), unique_row_ids=len(retained),
++            memory_per_class={str(c): dict(replay=len(replay[c]), correction=len(correction[c])) for c in seen})
++        ps.save_json(cp.with_suffix('.json'), record)
++        records.append(record)
++        defaults.append(dict(task_index=t, checkpoint_sha256=cp_hash, metrics=default))
++        calibrated.append(dict(task_index=t, checkpoint_sha256=cp_hash, calibration=calibration,
++            operating_points=points, calibration_seconds=cal_seconds, evaluation_seconds=eval_seconds))
++        print(f'BIC_TASK_COMPLETE task={t}', flush=True)
++    ps.save_json(out/'result.json', dict(completed=True, scientific_result=not a.smoke,
++        identity=identity, cer_mapping=mapping, checkpoints=records, default_stages=defaults,
++        calibrated_stages=calibrated, training_seconds_total=cumulative))
++    ps.save_json(out/'summary.json', dict(completed=True, scientific_result=not a.smoke,
++        smoke=a.smoke, method=identity['method'], seed=a.seed, checkpoints=len(records),
++        training_seconds_total=cumulative, elapsed_seconds=time.perf_counter()-all_start))
++    print('CELL_COMPLETE', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/ncd/section181_diagnostics.py b/ncd/section181_diagnostics.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/section181_diagnostics.py
+@@ -0,0 +1,48 @@
++"""Post-hoc §181 data-access interventions on exact-C1 AR-Stateless.
++
++D1 is an offline all-seen optimization-pool reference, not a deployment method
++or guaranteed numerical upper bound. TRAIN stopping/calibration roles stay held
++out. D2 caps new attack optimization AND stopping rows at the same split of the
++current attack-memory quota. D3 multiplies the total attack-only budget before
++integer allocation (including the transferred benign share).
++"""
++import numpy as np
++
++from ncd import run_aacil as aa
++
++METHODS = ("D1-joint", "D2-matched", "D3-memory2x", "D3-memory4x")
++
++
++def targets(method, seen, normal):
++    if method not in METHODS:
++        raise ValueError("Unknown section181 intervention")
++    multiplier = {"D3-memory2x": 2, "D3-memory4x": 4}.get(method, 1)
++    attacks = sorted(c for c in seen if c != normal)
++    base, remainder = divmod(200 * multiplier * len(seen), len(attacks))
++    return {c: base + int(j < remainder) for j, c in enumerate(attacks)}
++
++
++def slot(data, train_ids, validation_ids):
++    return {"train_ids": train_ids.copy(), "validation_ids": validation_ids.copy(),
++            "train_x": data.x_train[train_ids].copy(),
++            "validation_x": data.x_train[validation_ids].copy()}
++
++
++def intervene(method, data, exposure, current, slots, seen, new, task_seed):
++    normal = exposure.normal
++    quotas = targets(method, seen, normal)
++    if method == "D1-joint":
++        slots = {c: slot(data, exposure.train[c], exposure.valid[c])
++                 for c in seen if c != normal}
++        train = exposure.train[normal]
++        train = train[~np.isin(train, exposure.normal_stopping_ids)]
++        slots[normal] = slot(data, train, exposure.normal_stopping_ids)
++    elif method == "D2-matched":
++        slots = dict(slots)
++        for c in new:
++            nt, nv = aa.slot_split(quotas[c])
++            rng = task_seed * 10007 + c
++            slots[c] = slot(data,
++                aa.select_rows(current[c]["train_ids"], nt, rng),
++                aa.select_rows(current[c]["validation_ids"], nv, rng + 53))
++    return slots, quotas
+diff --git a/ncd/tests/test_ecbrs_memory.py b/ncd/tests/test_ecbrs_memory.py
+new file mode 100644
+--- /dev/null
++++ b/ncd/tests/test_ecbrs_memory.py
+@@ -0,0 +1,76 @@
++import json
++import unittest
++import numpy as np
++from ncd.ecbrs_memory import PaperECBRS
++
++
++class TestPaperECBRS(unittest.TestCase):
++    def test_literal_gamma_and_large_count_stability(self):
++        m = PaperECBRS(12)
++        m.encounters = {0: 10**12 + 2, 1: 10**12 + 1}
++        g = m.gamma()
++        self.assertAlmostEqual(sum(g.values()), 12)
++        self.assertAlmostEqual(g[1] / g[0], np.e)
++
++    def test_capacity_full_status_and_all_seen_counters(self):
++        m = PaperECBRS(4)
++        for i in range(100):
++            m.offer(i, 0 if i < 80 else 1)
++        self.assertEqual(len(m.rows), 4)
++        self.assertEqual(m.encounters, {0: 80, 1: 20})
++        self.assertIn(0, m.full)
++        self.assertIn(1, m.full)
++        self.assertEqual(len(set(m.rows)), 4)
++
++    def test_nonfull_global_majority_victim_not_local_maximum(self):
++        m = PaperECBRS(8, seed=1)
++        m.rows, m.labels = list(range(8)), [0]*3 + [1]*5
++        m.encounters, m.full = {0: 100, 1: 20}, {0, 1}
++        event = m.offer(8, 2)
++        self.assertEqual(event, {'admitted': True, 'victim_class': 0})
++        self.assertEqual(m.counts(), {0: 2, 1: 5, 2: 1})
++
++    def test_budget_growth_does_not_revisit_past_rows(self):
++        m = PaperECBRS(2, seed=3)
++        for i in range(10):
++            m.offer(i, 0)
++        old = list(m.rows)
++        m.grow(4)
++        self.assertEqual(m.rows, old)
++        m.offer(10, 1)
++        self.assertEqual(len(m.rows), 3)
++        with self.assertRaises(ValueError):
++            m.grow(3)
++
++    def test_resume_exact_rng_and_payload(self):
++        first = PaperECBRS(13, seed=15)
++        for i in range(100):
++            first.offer(i, i % 4)
++        resumed = PaperECBRS.restore(json.loads(json.dumps(first.state())))
++        for i in range(100, 200):
++            self.assertEqual(first.offer(i, i % 7), resumed.offer(i, i % 7))
++            a, b = first.sample(5), resumed.sample(5)
++            np.testing.assert_array_equal(a[0], b[0])
++            np.testing.assert_array_equal(a[1], b[1])
++        self.assertEqual(first.state(), resumed.state())
++
++    def test_sample_never_fabricates_or_duplicates_slots(self):
++        m = PaperECBRS(9)
++        for i in range(100):
++            m.offer(i, i % 3)
++        rows, labels = m.sample(100)
++        self.assertEqual(len(rows), 9)
++        self.assertEqual(len(set(rows)), 9)
++        self.assertEqual(set(zip(rows, labels)), set(zip(m.rows, m.labels)))
++
++    def test_invalid_restore_rejected(self):
++        m = PaperECBRS(2)
++        m.offer(1, 0)
++        state = m.state()
++        state['encounters'][0] = 0
++        with self.assertRaises(ValueError):
++            PaperECBRS.restore(state)
++
++
++if __name__ == '__main__':
++    unittest.main()

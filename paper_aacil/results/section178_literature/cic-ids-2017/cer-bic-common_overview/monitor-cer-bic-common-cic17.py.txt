@@ -1,0 +1,135 @@
+"""CIC17 common-budget BiC smoke or one guarded seed10; never queues/retries."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+BASE=Path('@@EXPERIMENT_ROOT@@')
+REPO=Path('@@SOURCE@@')
+PYTHON='@@PYTHON_ENV@@/python.exe'
+
+def read(path):
+    return json.loads(path.read_text(encoding='utf-8'))
+
+def records(path):
+    return [json.loads(s) for s in path.read_text(encoding='utf-8').splitlines() if s.startswith('{')]
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--smoke',action='store_true')
+    args=parser.parse_args()
+    volume=ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@RESULT_DRIVE@@/',volume,100)
+    assert volume.value.lower()=='\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    assert psutil.disk_usage('@@RESULT_DRIVE@@/').free>20*1024**3
+    assert psutil.virtual_memory().available>12*1024**3
+    for proc in psutil.process_iter(['pid','name','cmdline']):
+        if proc.info['pid']!=os.getpid() and (proc.info['name'] or '').lower()=='python.exe':
+            cmd=' '.join(proc.info['cmdline'] or [])
+            assert not any(s in cmd for s in ('run_section','monitor-','run-cer','verify-longpaths','queue-')),cmd
+    files=sorted(set(REPO.glob('ncd/**/*.py')) | set(REPO.glob('ncd/configs/*.json')) |
+        {REPO/'src/methods/replay_dpmeans.py',REPO/'paper_aacil/results/section123_schedule_selection.json'})
+    def hashes():
+        return {p.relative_to(REPO).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+    bound=hashes()
+    assert len(bound)==398
+    unsw=read(BASE/'runs/section178/unsw-nb15/cer-bic/seed10/result.json')
+    old_bound=unsw['identity']['source_sha256']
+    assert len(old_bound)==396
+    assert all(bound.get(k)==v for k,v in old_bound.items()), 'Native sources changed'
+    assert unsw['completed'] and unsw['scientific_result']
+    queue=records(BASE/'logs/cer-bic-common-unsw-queue-11-14.stdout.log')
+    assert any(e.get('event')=='ALL_COMPLETE' for e in queue)
+    assert not (BASE/'logs/cer-bic-common-unsw-queue-11-14.stderr.log').stat().st_size
+    for seed in range(10,15):
+        completed=read(BASE/f'runs/section178/unsw-nb15/cer-bic-common/seed{seed}/result.json')
+        assert completed['completed'] and completed['scientific_result']
+        assert completed['identity']['source_sha256']==bound
+        assert completed['identity']['effective_config']['schedule']=='cer_common_adam_8epochs_min2000'
+        history=records(BASE/f'logs/cer-bic-common-unsw-seed{seed}.monitor.stdout.log')
+        terminal=next(e for e in history if e.get('event')=='TERMINAL')
+        assert terminal['exit_code']==0 and terminal['reason'] is None and terminal['source_unchanged']
+        assert any(e.get('event')=='CELL_VALIDATED' for e in history)
+        checked=records(BASE/f'logs/cer-bic-common-unsw-seed{seed}.export-validation.stdout.log')[-1]
+        assert checked['validated'] and checked['checkpoints']==5 and checked['calibrations']==15
+    smoke_dir=BASE/'runs/section178/cic-ids-2017/cer-bic-common-smoke-seed10'
+    if not args.smoke:
+        smoke=read(smoke_dir/'result.json')
+        assert smoke['completed'] and not smoke['scientific_result'] and smoke['identity']['smoke']
+        assert smoke['identity']['dataset']=='CIC-IDS-2017' and smoke['identity']['source_sha256']==bound
+        assert len(smoke['checkpoints'])==4
+        old=records(BASE/'logs/cer-bic-common-cic17-smoke.monitor.stdout.log')
+        terminal=next(e for e in old if e.get('event')=='TERMINAL')
+        assert terminal['exit_code']==0 and terminal['reason'] is None and terminal['source_unchanged']
+        assert any(e.get('event')=='SMOKE_VALIDATED' for e in old)
+        verification=records(BASE/'logs/cer-bic-common-cic17-seed10.smoke.validation.stdout.log')[-1]
+        assert verification['validated'] and not verification['scientific_result']
+        assert verification['checkpoints']==4 and verification['calibrations']==12
+    prefix=BASE/('logs/cer-bic-common-cic17-seed10.smoke' if args.smoke else 'logs/cer-bic-common-cic17-seed10')
+    out=smoke_dir if args.smoke else BASE/'runs/section178/cic-ids-2017/cer-bic-common/seed10'
+    assert not out.exists(),'Existing results cannot be overwritten or implicitly resumed'
+    for suffix in ('stdout','stderr','validation.stdout','validation.stderr'):
+        assert not Path(str(prefix)+'.'+suffix+'.log').exists()
+    env=os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'),TMP=str(BASE/'tmp'),OMP_NUM_THREADS='2',MKL_NUM_THREADS='2',PYTHONDONTWRITEBYTECODE='1')
+    cmd=[PYTHON,'-I','-B','-u','ncd/run_section192_cer_common.py','--dataset','CIC-IDS-2017','--seed','10',
+        '--data-root',str(BASE/'data/derived/section21_clean_v1'),'--output-dir',str(out),'--log-prefix',str(prefix)]
+    if args.smoke: cmd.append('--smoke')
+    limit=600 if args.smoke else 3300
+    print(json.dumps(dict(event='START',command=cmd,source_sha256=bound,smoke=args.smoke,
+        work_order_commit='e9c11b95baf896fe3b31ec0fa6a47a33f473bf07',max_seconds=limit,
+        max_rss_bytes=10*1024**3,min_system_available_bytes=2*1024**3,min_wd_free_bytes=20*1024**3,
+        system_available_bytes=psutil.virtual_memory().available,wd_free_bytes=psutil.disk_usage('@@RESULT_DRIVE@@/').free)),flush=True)
+    started,peak,last,reason=time.monotonic(),0,0,None
+    with Path(str(prefix)+'.stdout.log').open('x') as stdout,Path(str(prefix)+'.stderr.log').open('x') as stderr:
+        child=subprocess.Popen(cmd,cwd=REPO,env=env,stdout=stdout,stderr=stderr,creationflags=subprocess.CREATE_NO_WINDOW)
+        tracked=psutil.Process(child.pid)
+        print(json.dumps(dict(event='CHILD_STARTED',pid=child.pid)),flush=True)
+        try:
+            while child.poll() is None:
+                try:
+                    rss=tracked.memory_info().rss
+                    cpu=sum(tracked.cpu_times()[:2])
+                except psutil.NoSuchProcess:
+                    break
+                elapsed=time.monotonic()-started
+                available=psutil.virtual_memory().available
+                free=psutil.disk_usage('@@RESULT_DRIVE@@/').free
+                peak=max(peak,rss)
+                if elapsed-last>=30 or last==0:
+                    print(json.dumps(dict(event='RESOURCE',elapsed_seconds=elapsed,rss_bytes=rss,
+                        cpu_seconds=cpu,system_available_bytes=available,wd_free_bytes=free)),flush=True)
+                    last=elapsed
+                if elapsed>limit or rss>10*1024**3 or available<2*1024**3 or free<20*1024**3:
+                    reason='Measured time/RSS/system-memory/WD-space budget exceeded'
+                    child.terminate()
+                    break
+                time.sleep(1 if args.smoke else 5)
+        finally:
+            if child.poll() is None: child.terminate()
+            try: code=child.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                code=child.wait()
+    unchanged=hashes()==bound
+    print(json.dumps(dict(event='TERMINAL',exit_code=code,reason=reason,wall_seconds=time.monotonic()-started,
+        sampled_peak_rss_bytes=peak,source_unchanged=unchanged)),flush=True)
+    assert code==0 and reason is None and unchanged,'Preserve partial/log; no automatic retry or schedule change'
+    checker=BASE/'admin/check-cer-bic-common.py'
+    with Path(str(prefix)+'.validation.stdout.log').open('x') as stdout,Path(str(prefix)+'.validation.stderr.log').open('x') as stderr:
+        subprocess.run([PYTHON,'-I','-B','-u',str(checker),str(out)],env=env,stdout=stdout,stderr=stderr,check=True)
+    result=read(out/'result.json')
+    assert result['identity']['dataset']=='CIC-IDS-2017' and len(result['checkpoints'])==4
+    verified=records(Path(str(prefix)+'.validation.stdout.log'))[-1]
+    assert verified['validated'] and verified['checkpoints']==4 and verified['calibrations']==12
+    assert verified['scientific_result']==(not args.smoke)
+    assert hashes()==bound
+    print(json.dumps(dict(event='SMOKE_VALIDATED' if args.smoke else 'CELL_VALIDATED',
+        scientific_result=not args.smoke,output=str(out))),flush=True)
+
+if __name__=='__main__': main()
