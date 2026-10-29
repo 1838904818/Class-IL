@@ -4,11 +4,11 @@
 
 摘要、默认对照与部署讨论中的旧AR比较现显式标为neural AR，避免与AR-Stateless的相反排序混读；复现说明区分历史lead汇总与后续已发布原始结果生成的确认/基线表。此次不改任何数值、检验或原始结果，不能据措辞澄清宣称获得新科学结论。
 
-正文方法章仅保留AR-Stateless及共享数据访问假设。历史AA-CIL双网络、算法、校准公式、KD/ISO和后续保持候选集中移至“Historical neural design-space study”附录，原公式、算法、选择规则与负面结果均保留，不能作为AR-Stateless的训练方法解读。本次仅结构整理，没有新增实验或重跑；全文历史叙述的一致性清理与视觉QA仍未完成，当前已完成35/60主格，RQ1/RQ3及实质创新门仍未关闭。
+正文方法章仅保留AR-Stateless及共享数据访问假设。历史AA-CIL双网络、算法、校准公式、KD/ISO和后续保持候选集中移至“Historical neural design-space study”附录，原公式、算法、选择规则与负面结果均保留，不能作为AR-Stateless的训练方法解读。本次仅结构整理，没有新增实验或重跑；全文历史叙述的一致性清理与视觉QA仍未完成，当前已完成40/60主格，RQ1/RQ3及实质创新门仍未关闭。
 
 ## §178：新增基线的已发布范围（2026-10-28）
 
-共同预算主矩阵已完成并双发布35/60：UNSW与CIC17的DER++、iCaRL适配、ECBRS论文语义均各5seed，另有新共同预算UNSW BiC flow适配5seed。UNSW作者-memory另5seed、原native-stage1 BiC另5seed均为额外敏感性，不计主60格或Holm族。剩余25格未完成，不是负面结果；UNSW四方法块已齐，但注册S1 Holm比较尚未报告，CIC17和CSE四方法块仍未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed或日程补空白。
+共同预算主矩阵已完成并双发布40/60：UNSW与CIC17的DER++、iCaRL适配、ECBRS论文语义均各5seed，另有共同预算UNSW与CIC17 BiC flow适配各5seed。UNSW作者-memory另5seed、原native-stage1 BiC另5seed均为额外敏感性，不计主60格或Holm族。剩余20格全为CSE且未完成，不是负面结果；UNSW和CIC17四方法块已齐，但注册S1 Holm比较尚未报告，CSE四方法块仍未齐，RQ1/RQ3和实质创新门未关闭。`export_published_baselines.py`从已发布原始混淆计数生成`generated/published_baselines.tex`，同时列默认Accuracy/BAcc/macro-F1/FPR/忘却和1%/2%/5%工作点；不混用历史seed或日程补空白。
 
 以下均为seeds10–14均值，BAcc/FPR为%，有符号忘却为pp（逐seed逐旧类取pre-final最大召回减最终召回，含Normal，不截断）：
 
@@ -23,6 +23,7 @@
 | CIC17 DER++ |92.35|10.87|2.84|35.75|0.99|24.15|
 | CIC17 iCaRL适配 |73.77|47.69|17.16|26.47|0.94|8.49|
 | CIC17 ECBRS论文语义 |70.79|81.09|31.86|19.11|0.98|14.52|
+| CIC17 BiC共同预算flow适配 |88.32|18.72|7.92|35.87|0.98|14.85|
 | CSE2018 AR-Stateless参考 |82.39|1.38|15.79|81.72|0.96|7.27|
 
 DER++在UNSW默认BAcc高于AR-Stateless（68.46对65.99），不能隐藏；但默认FPR为24.05对1.26，Accuracy为68.42对76.91，macro-F1为43.67对51.17。默认排名不等于同误报预算比较，校准目标也不保证测试FPR。CIC17两种神经基线从默认到1%视图的BAcc下降很大，两视图都必须保留。
@@ -31,11 +32,13 @@ DER++是classwise memory、task-boundary的表格适配，不是原始online vis
 
 ECBRS论文语义的global encounter ranking有supplement worked example依据，但与主算法local maximum措辞存在歧义，不能称唯一无歧义faithful。pre-decrement `m>=gamma`在gamma正但小于1时也能删掉最后槽，软件fixture无需浮点下溢；这不是整个性能损失的因果证明。UNSW默认FPR98.63%如实保留，seed10 Normal从task2起为空，不等于原native binary算法必然collapse。作者-memory敏感性保持其多条replacement/retrieval规则，同时明确underfill索引修补、rowID移植、M增长、无native task0预填/skip；不是原binary RMSprop/BCE入口。两组差异是规则组合敏感性，不能单归因gamma或Normal保留。
 
-B-CER按原文Table 6选择BiC：IoT-23、TON-IoT、IoT-NID、Edge-IIoT的全类macro-F1 Drop依次为10.92%、5.48%、18.16%、12.85%，均为该表八种CIL方法最低值。这些是原文数据集结果，不是我们的注册split结果。新实现明确为同一flow向量单通道Conv1D适配，不是原生packet 10×4复现；不换split或特征顺序。保留双卷积/池化/归一化、dense、扩展输出、蒸馏及冻结骨干的偏置校正阶段；32/64通道、kernel 3、pool 2、dense 128为工程默认，不冒称论文原值。原native骨干为最多200 epoch、patience 20、lr 0.1除3至1e-4；首个CIC17 cell在55分钟预算终止，monitor wall3304.72 s，未完成首task，属于执行不完整而非算法性能失败。按全CER族覆盖要求，共同stage1改为Adam lr0.001、batch256、至少8完整epoch且2000 optimizer steps、无earlystop/衰减、使用final iterate；TRAIN stopping行仅诊断loss，不选模型。stage2保留另行披露的工程默认：SGD lr0.1、momentum0.9、200epoch和0.05平方bias惩罚，成本单列。我们的memory为每个已见类最多200个唯一来源行，含Normal及校正子集、旧类不refresh，而非论文每类25。UNSW五seed已按新共同身份重新运行并独立验证；原native五seed完整保留为历史日程敏感性，不混入主族或Holm。软件smoke不计科学格，其他数据集块仍未完成；原生packet复现仍未完成。
+B-CER按原文Table 6选择BiC：IoT-23、TON-IoT、IoT-NID、Edge-IIoT的全类macro-F1 Drop依次为10.92%、5.48%、18.16%、12.85%，均为该表八种CIL方法最低值。这些是原文数据集结果，不是我们的注册split结果。新实现明确为同一flow向量单通道Conv1D适配，不是原生packet 10×4复现；不换split或特征顺序。保留双卷积/池化/归一化、dense、扩展输出、蒸馏及冻结骨干的偏置校正阶段；32/64通道、kernel 3、pool 2、dense 128为工程默认，不冒称论文原值。原native骨干为最多200 epoch、patience 20、lr 0.1除3至1e-4；首个CIC17 cell在55分钟预算终止，monitor wall3304.72 s，未完成首task，属于执行不完整而非算法性能失败。按全CER族覆盖要求，共同stage1改为Adam lr0.001、batch256、至少8完整epoch且2000 optimizer steps、无earlystop/衰减、使用final iterate；TRAIN stopping行仅诊断loss，不选模型。stage2保留另行披露的工程默认：SGD lr0.1、momentum0.9、200epoch和0.05平方bias惩罚，成本单列。我们的memory为每个已见类最多200个唯一来源行，含Normal及校正子集、旧类不refresh，而非论文每类25。UNSW与CIC17各五seed已按新共同身份运行并独立验证；原native五seed完整保留为历史日程敏感性，不混入主族或Holm。软件smoke不计科学格，CSE数据集块仍未完成；原生packet复现仍未完成。
 
 历史native-stage1 UNSW BiC flow适配五seed默认BAcc 68.50±1.11%、Accuracy 67.32%、macro-F1 44.04%、FPR 28.53%、signed forgetting 19.50 pp；1%校准下BAcc 17.28±2.75%、test FPR 0.84%、attack recall 33.11%、forgetting 12.04 pp。保留默认高误报与低FPR下弱识别，不据描述性结果宣称S1胜出。五seed stage1训练6933.52 s、bias拟合2.53 s（合计6936.04 s），herding另13.54 s；summary elapsed 7074.61 s、monitor wall 7115.61 s、采样峰值子进程RSS 0.680 GB（十进制）。重叠计时不能相加成总成本。历史发布组保留checkpoint哈希、真实retained rowID、native stage1日程及校正阶段工程默认。
 
 新共同stage1 UNSW BiC五seed默认BAcc 66.71±1.38%、Accuracy 65.93%、macro-F1 43.28%、FPR 28.45%、signed forgetting 18.48 pp；1%校准BAcc 15.44±2.38%、test FPR 1.03%、attack recall 21.02%、forgetting 13.97 pp。高默认误报和低FPR下弱识别均保留，不声称胜出或将差异归因于单一优化器设置。stage1训练972.71 s、bias拟合2.35 s（合计975.06 s）、herding另12.38 s；summary elapsed1063.35 s、monitor wall1098.00 s、采样峰值RSS0.690 GB（十进制），重叠计时不相加。新组附来源绑定checkpoint、真实rowID、四决策视图及触发覆盖的原CIC17预算失败证据。
+
+共同预算CIC17 BiC五seed默认BAcc 88.32±6.24%、Accuracy 83.31%、macro-F1 48.69%、FPR 18.72%、signed forgetting 7.92 pp；1%校准BAcc 35.87±3.31%、test FPR 0.98%、attack recall 59.64%、forgetting 14.85 pp。2%与5%下BAcc/FPR分别为44.41/1.99%与65.67/4.88%。默认高误报、低FPR下弱识别及seed波动均完整保留，不称S1胜出或原生packet复现。stage1训练5369.51 s、bias拟合1.76 s（合计5371.28 s）、herding另369.38 s；summary elapsed6352.63 s、monitor wall6397.98 s、采样峰值子进程RSS2.451 GB（十进制），重叠成本不相加。四决策视图、真实retained rowID、checkpoint/progress哈希及未变来源均随正式组发布。
 
 CIC17 ECBRS论文语义五seed默认Accuracy为25.55%，高FPR81.09%与1%校准后的低BAcc19.11%均须保留，不能解释成原native binary方法失败。checkpoint训练合计3151.76秒，summary elapsed合计3200.69秒，采样峰RSS2.32GB（decimal）。最终每seed均1600槽，真正unique来源rowID依次为1137/1127/1131/1132/1137；重复presentation可以占多个槽，不同于DER/iCaRL仅feature去重的口径。
 
@@ -84,7 +87,7 @@ D1在1%目标下最终Exploits/DoS召回为83.30%/45.54%，AR-Stateless为50.83%
 
 UNSW校准池6,825条良性样本，严格≤1%最多68次误报，≤0.1%最多6次（不是7次）；CIC-2017池181,176条。尾部样本数说明更低工作点的分辨率限制，不说明1%适用于真实部署。2%和5%作为敏感性工作点保留。历史§27主工作点2%，§48改为低FPR主张1%，§165在seeds10–14确认运行前注册R1–R5；这不把既往开发证据变成未暴露证据。
 
-共同预算比较覆盖ER-Bal-TabT（官方代码基础上的适配）、Freq、WACB、Replay-BS、R3-L和neural AR，保留各自数据访问差异。§178新增基线仅将完成并核验的35/60共同族主格加入，不提前称齐全；ECBRS论文主实现的UNSW/CIC17块及UNSW BiC common flow适配已完成，UNSW作者-memory和native-stage1 BiC另列历史敏感性，CSE块仍未运行，语义差异与弱结果按本页§178保留。本协议是评估选择而非创新机制；默认决策视图、precision/recall与预算视图并列保留。
+共同预算比较覆盖ER-Bal-TabT（官方代码基础上的适配）、Freq、WACB、Replay-BS、R3-L和neural AR，保留各自数据访问差异。§178新增基线仅将完成并核验的40/60共同族主格加入，不提前称齐全；ECBRS论文主实现的UNSW/CIC17块及UNSW/CIC17 BiC common flow适配已完成，UNSW作者-memory和native-stage1 BiC另列历史敏感性，CSE块仍未运行，语义差异与弱结果按本页§178保留。本协议是评估选择而非创新机制；默认决策视图、precision/recall与预算视图并列保留。
 
 ## AR-Stateless 确认结果补充（2026-10-27，§165–178）
 
