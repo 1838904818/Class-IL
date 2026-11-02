@@ -11,3 +11,5 @@ No completed seed was trained twice. Windows diagnostic reevaluation of Linux-tr
 S1 must not silently mix runtimes. Where both evaluation versions exist, use Linux evaluation for every seed of that baseline, retaining the Windows diagnostic provenance. A Linux-harmonized evaluation of locally completed seed10 (and BiC10-12) is pending, without retraining those seeds. These compatibility files alone do not assert a runtime-harmonized S1 comparison.
 
 Five iCaRL cells already have a separate, independently checked archive at icarl-scoped-npy_seed10-14 and icarl-scoped-npy_overview. Those180 published payloads are unchanged. Here the consumer names icarl and cer-bic-common match s178_check.py. BiC is common-budget, not renamed native CER.
+
+Canonical iCaRL evidence is `icarl-scoped-npy_seed10` through `icarl-scoped-npy_seed14`, with `icarl-scoped-npy_overview`. The `icarl_seedN/result.json` files are compatibility deliveries of the same cells, not an additional experiment or replicate. Use the canonical scope for analysis and never count both names in a statistical family. Both historical paths are retained; no immutable evidence is deleted.
