@@ -29,3 +29,26 @@ Completed original-runtime BiC scientific archive: canonical cer-bic-common-comp
 Five-seed default BAcc58.7230% (sampleSD13.1818pp) and FPR58.3855% must be read together. At the1% holdout target, BAcc34.5813% (sampleSD8.0443pp), measured TEST FPR0.9948% and attack recall23.9263% show weak low-FPR recognition, not broad superiority. Seed14 retains rng_restored=false and split-attempt cost accounting. Uniform same-score493707 evaluation is separate.
 
 Section344 completed read-only job493707:60 cells /260 checkpoints, all failures empty; independent list-CM, Student-t CDF, bitmask signflip, Holm and as-published R3-A paired differences verified. New same_score_calibration.json files are alongside unchanged original results. Full three-dataset comparisons,1/2/5% targets, class-wise signed forgetting, measured FPR, costs and sanitized logs: ../same-score-robustness-493707/README.md. Registered CSE original-prior4/4 paired-t/Holm PASS from section347 is reproduced. Same-score1% comparisons also retain4/4 rejection within each dataset, but baseline changes are not uniformly positive and R3-A references remain as published. Exact signflip cannot clear Holm4 with five pairs. No matched-actual-TEST-FPR, mechanism-causal, historical-runtime homogenization or overall research closure claim.
+
+### Related WACB distribution-evaluator startup limitation
+
+The WACB score-distribution attempt493796 was intentionally cancelled by its owner after17m11s with only2.513s TotalCPU and no completed cell. Earlier source/data/model/threshold/results were unchanged. This is an execution limitation, not a negative model result. No WACB CDF/KS completion is claimed.
+
+A single bounded CPU startup diagnosis493824 then completed0:0 in35s (TotalCPU9.427s, stepMaxRSS5860080KiB). Native phase60s/global90s guards and an outer95s timeout protect against repeated idle allocation. It ran immutable evaluator SHA736c77dc6a926a4c1591b1caf25b646c235e384237952dcbed960ae3e522296c through imports and full prepared-array hashes plus the first saved-cell data-binding assertion, stopping before checkpoint load or model inference. Torch import13.719323s and scipy.stats import6.963592s were observed; full startup reached its stop boundary at33.243910s. The earlier stall did not recur; these observations do not establish its original cause, node fault, or a permanent fix. Scheduler-selected placement was left unchanged; no idle-node probe or node selection was used.
+
+WACB score distributions remain0/5. A future evaluation must retain phase/progress diagnostics and promptly stop sustained low-CPU stalls; do not blindly rerun the original helper. Startup-only shared row/label artifacts are not scientific model results. The original CSE registered comparisons and all other archived groups remain unchanged. Trace source is in ncd/hpc/trace-cse-wacb-startup.py and its batch/helper. Completed trace and earlier stop streams are under section194_diagnostics/cic-ids-2018/wacb_startup_trace_493824/logs (relative to results). Owner account/path strings are redacted. Original unsanitized stream byte/SHA receipts follow; later publication streams stay local.
+
+|Stream|Original bytes|Original SHA256|
+|---|---:|---|
+|trace.stderr.log|118194|1c46fd25eca689776bbc0480de94dccd432b3112c4c361c16f7d63e5c5a0a739|
+|trace.stdout.log|4998|a27f191384cd397e5c60f11b5b6c401575370f892bb96a4af8b794cc5a2da202|
+|slurm-cse-wacb-startup-trace-493824.err|118194|1c46fd25eca689776bbc0480de94dccd432b3112c4c361c16f7d63e5c5a0a739|
+|slurm-cse-wacb-startup-trace-493824.out|5139|95b8ff79da354adcd4b5ec3b200992329c9d0030a2040a66389ec57cd767522a|
+|diagnosis.stderr.log|195|a8104ef3685eaf58d2a06948e83398879257bb3a19858ac3ae2c73009da39dea|
+|diagnosis.stdout.log|0|e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855|
+|slurm-cse-wacb-score-493796.err|80|55022f58c200d1ab57e0e8d279800faf9eb80709e893894fca035dc486c1a290|
+|slurm-cse-wacb-score-493796.out|107|c701ff91a7685d0a8cca00f849dbcf60a55b5506cd86cbe3d9b70ebf1546dc3f|
+|cse-wacb-score-lowutil-inspection-20261102.stdout.log|691|a1bb1705cb4341ec07d1cd38e9fbc9cede4aaad5ebd12036fd78c5d33979fbfc|
+|cse-wacb-score-lowutil-inspection-20261102.stderr.log|202|955de7ea63e0f0b07333847bf4e00307583a6d0d6dd154a8bbf8e89c2b27a8a6|
+|cse-wacb-score-lowutil-stop-20261102.stdout.log|810|2e39317c3af7c3450eb931b0b6ac48dfacef03d11e2a612305dcc2a6e68c2012|
+|cse-wacb-score-lowutil-stop-20261102.stderr.log|202|955de7ea63e0f0b07333847bf4e00307583a6d0d6dd154a8bbf8e89c2b27a8a6|
