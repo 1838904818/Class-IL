@@ -23,6 +23,9 @@ export TMPDIR="$NCD_CACHE_ROOT/tmp"
 export TEMP="$TMPDIR"
 export TMP="$TMPDIR"
 cd "$NCD_CODE_ROOT"
+: "${NCD_INPUT_ARCHIVE:?}" "${NCD_INPUT_ARCHIVE_SHA256:?}"
+# Fresh verified data are unpacked only inside the allocated compute session.
+srun --hint=nomultithread --cpu-bind=cores bash -c 'set -euo pipefail; printf "%s  %s\n" "$NCD_INPUT_ARCHIVE_SHA256" "$NCD_INPUT_ARCHIVE" | sha256sum -c -; zstd -dc "$NCD_INPUT_ARCHIVE" | tar -xf - -C "$NCD_DATA_ROOT"'
 # Six pending cells, two CPU threads each; local observed per-cell peaks 6-9 GiB.
 # Completed BiC11/12 and iCaRL10 never enter the training queue.
 srun --hint=nomultithread --cpu-bind=cores "$NCD_PYTHON" -I -B -u ncd/hpc/cse_job_a.py
