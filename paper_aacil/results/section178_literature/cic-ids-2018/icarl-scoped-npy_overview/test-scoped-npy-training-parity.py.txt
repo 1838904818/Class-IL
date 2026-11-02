@@ -1,0 +1,130 @@
+"""Tiny synthetic software parity, not a scientific cell or resource proof."""
+import copy
+import importlib.util
+import json
+import os
+from pathlib import Path
+import sys
+
+import numpy as np
+import psutil
+import torch
+
+ROOT = Path('@@WORKSPACE@@/work/section151_publish')
+BASE = Path('@@EXPERIMENT_ROOT@@')
+sys.path.insert(0, str(ROOT))
+from ncd.data import PreparedData
+from ncd import run_problem_scout as ps, run_replay_bs as bs
+from ncd.model import MLP
+from ncd.default_decision import evaluate_models
+from ncd.scoped_npy_rows import detach_feature_mappings
+
+
+def equal(a, b, path='root'):
+    if isinstance(a, torch.Tensor):
+        assert isinstance(b, torch.Tensor) and a.dtype == b.dtype and a.shape == b.shape, path
+        assert a.contiguous().numpy().tobytes() == b.contiguous().numpy().tobytes(), path
+    elif isinstance(a, dict):
+        assert a.keys() == b.keys(), path
+        for k in a:
+            equal(a[k], b[k], path+'.'+str(k))
+    elif isinstance(a, (list, tuple)):
+        assert type(a) is type(b) and len(a) == len(b), path
+        for i, (x, y) in enumerate(zip(a, b)):
+            equal(x, y, path+f'[{i}]')
+    else:
+        assert a == b, (path, a, b)
+
+
+def main():
+    spec = importlib.util.spec_from_file_location('guard', BASE/'admin/monitor-cse-icarl-first.py')
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    guard.volume_check()
+    assert psutil.virtual_memory().available > 12*1024**3
+    assert not [p for p in psutil.process_iter(['pid', 'name']) if p.pid != os.getpid()
+                and (p.info['name'] or '').lower() == 'python.exe']
+    bound = guard.hashes()
+    assert len(bound) == 400
+    old = next(e['source_sha256'] for e in guard.events(BASE/'logs/icarl-cse-seed10.monitor.stdout.log') if e.get('event') == 'START')
+    assert len(old) == 398 and all(bound.get(k) == v for k, v in old.items())
+    print(json.dumps({'event': 'PARITY_SOURCE_BOUND', 'source_sha256': bound}), flush=True)
+    torch.set_num_threads(2)
+    torch.set_num_interop_threads(1)
+    folder = BASE/'tmp/scoped-npy-training-parity-20261029-retry1'
+    folder.mkdir(exist_ok=False)
+    template = json.loads((BASE/'runs/section178/cic-ids-2018/icarl-smoke-seed10/cell/result.json').read_text())['identity']
+    rng = np.random.default_rng(193)
+    for split, n in [('train', 256), ('test', 32)]:
+        counts = np.array([2*n]+[n]*6)
+        y = np.repeat(np.arange(7), counts).astype(np.int64)
+        x = rng.normal(size=(len(y), 78)).astype(np.float32)
+        x[:, :7] += np.eye(7, dtype=np.float32)[y]
+        for start in np.r_[0, counts.cumsum()[:-1]]:
+            x[start:start+8] = x[start]
+        np.save(folder/f'{split}_x.npy', x, allow_pickle=False)
+        np.save(folder/f'{split}_y.npy', y, allow_pickle=False)
+    states_checked = 0
+    for threshold in (268435456, 1):
+        identity = copy.deepcopy(template)
+        config = identity['effective_config']
+        config.update(epochs_per_task=2, min_steps_per_task=12,
+                      herding_mmap_threshold_bytes=threshold, smoke=True,
+                      software_test='synthetic storage parity; not scientific evidence')
+        pair = []
+        for storage in ('original', 'scoped'):
+            data = PreparedData(np.load(folder/'train_x.npy', mmap_mode='r'),
+                np.load(folder/'train_y.npy'), np.load(folder/'test_x.npy', mmap_mode='r'),
+                np.load(folder/'test_y.npy'), template['class_order'], template['tasks'],
+                template['feature_names'], [])
+            binding = ps.binding(data, None, None)
+            identity['data_binding'] = binding
+            identity['command'] = ['software-parity-fixture']
+            identity['original_train_counts'] = [512]+[256]*6
+            train, valid = ps.section26_pools(data, 10)
+            if storage == 'scoped':
+                data = detach_feature_mappings(data)
+            out = folder/f'threshold-{threshold}'/storage/'cell'
+            result = ps.run_cell(data, None, None, {'synthetic_software_fixture': True}, config,
+                                 identity, out, torch.device('cpu'))
+            assert result['completed'] and len(result['checkpoints']) == 4
+            saved, evaluations = [], []
+            for cp in result['checkpoints']:
+                state = ps.checkpoint_load(out/cp['checkpoint_file'], identity)
+                saved.append(state)
+                model = MLP(78, 128, 7)
+                model.load_state_dict(state['model_state'], strict=True)
+                scorer = ps._scorer(model, 'icarl', state['buffer_x'], state['buffer_y'], 7,
+                                    torch.device('cpu'), 256)
+                seen = cp['seen_classes']
+                rows = np.flatnonzero(np.isin(data.y_test, seen))
+                logits = bs.logits_for(scorer, data.x_test, rows, seen, config, torch.device('cpu'))
+                calibration, points, _, _ = bs.evaluate(scorer, data, seen, valid[0],
+                    np.array([512]+[256]*6, dtype=np.int64), config, torch.device('cpu'))
+                default = evaluate_models(data.x_test, data.y_test, seen, data.class_order, scorer)
+                evaluations.append({'logits': logits, 'calibration': calibration, 'points': points, 'default': default})
+            pair.append((saved, evaluations))
+            if storage == 'original':
+                data.x_train._mmap.close()
+                data.x_test._mmap.close()
+        for index, (a, b) in enumerate(zip(pair[0][0], pair[1][0])):
+            # Only real timings differ; model, buffers, schedule and all other state must match exactly.
+            excluded = {'training_seconds', 'training_seconds_cumulative', 'buffer_selection_seconds'}
+            equal({k:v for k,v in a.items() if k not in excluded},
+                  {k:v for k,v in b.items() if k not in excluded}, f'checkpoint{index}')
+            if index:
+                previous = pair[0][0][index-1]
+                for j in range(len(previous['buffer_x'])):
+                    equal(previous['buffer_x'][j], a['buffer_x'][j], 'old_memory_preserved')
+            states_checked += 1
+        equal(pair[0][1], pair[1][1], 'predictions_and_calibration')
+        print(json.dumps({'event': 'PARITY_MODE_PASSED', 'herding_mmap_threshold_bytes': threshold,
+                          'checkpoint_pairs': 4, 'default_and_calibrated_stage_pairs': 4}), flush=True)
+    assert guard.hashes() == bound
+    print(json.dumps({'event': 'SCOPED_TRAINING_PARITY_PASSED', 'scientific_result': False,
+                      'checkpoint_pairs_bit_exact': states_checked, 'sources_unchanged': True,
+                      'full_scale_resource_feasibility': 'unverified', 'formal_training_started': False}), flush=True)
+
+
+if __name__ == '__main__':
+    main()

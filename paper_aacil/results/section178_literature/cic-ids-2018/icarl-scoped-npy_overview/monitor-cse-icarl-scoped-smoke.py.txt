@@ -1,0 +1,110 @@
+"""Only one new-identity CSE iCaRL software smoke; never starts formal training."""
+import argparse
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+import psutil
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+spec = importlib.util.spec_from_file_location('original_guard', BASE/'admin/monitor-cse-icarl-first.py')
+guard = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(guard)
+REPO, PYTHON, GIB = guard.REPO, guard.PYTHON, guard.GIB
+emit, events, hashes, volume_check = guard.emit, guard.events, guard.hashes, guard.volume_check
+PREFIX = BASE/'logs/icarl-cse-scoped-seed10.smoke'
+OUT = BASE/'runs/section178/cic-ids-2018/icarl-scoped-npy/smoke-seed10'
+
+def preflight():
+    free = volume_check()
+    available = psutil.virtual_memory().available
+    assert available > 12*GIB
+    assert not [p for p in psutil.process_iter(['pid', 'name']) if p.pid != os.getpid()
+                and (p.info['name'] or '').lower() == 'python.exe']
+    assert not OUT.exists(), 'Existing output protected'
+    for suffix in ('.stdout.log', '.stderr.log', '.validation.stdout.log', '.validation.stderr.log'):
+        assert not Path(str(PREFIX)+suffix).exists(), 'Existing evidence protected'
+    bound = hashes()
+    assert len(bound) == 400
+    old = events(BASE/'logs/icarl-cse-seed10.monitor.stdout.log')
+    original = next(e['source_sha256'] for e in old if e.get('event') == 'START')
+    assert len(original) == 398 and all(bound.get(k) == v for k,v in original.items())
+    terminal = next(e for e in old if e.get('event') == 'TERMINAL')
+    assert terminal['exit_code'] != 0 and terminal['source_unchanged']
+    assert terminal['peak_rss_bytes'] > 10*GIB
+    assert not list((BASE/'runs/section178/cic-ids-2018/icarl/seed10').rglob('*.pt'))
+    parity = events(BASE/'logs/scoped-npy-training-parity.retry1.stdout.log')
+    assert next(e['source_sha256'] for e in parity if e.get('event') == 'PARITY_SOURCE_BOUND') == bound
+    assert any(e.get('event') == 'SCOPED_TRAINING_PARITY_PASSED' and e['checkpoint_pairs_bit_exact'] == 8 for e in parity)
+    assert (BASE/'logs/scoped-npy-training-parity.retry1.stderr.log').stat().st_size == 0
+    assert (BASE/'logs/scoped-npy-rows-component.retry2.stderr.log').stat().st_size == 0
+    subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/test-scoped-npy-entry.py')], check=True)
+    receipt = BASE/'data/derived/section21_clean_v1/cic-ids-2018/data_quality.json'
+    assert guard.hashlib.sha256(receipt.read_bytes()).hexdigest() == '20e3ee25c337a4c9e9e680a4f29efe3108a8ec3f3591e4e5e233d2fb14d15d8d'
+    emit('PREFLIGHT_VALIDATED', source_files=400, original_sources_unchanged=398,
+         system_available_bytes=available, wd_free_bytes=free, scientific_result=False)
+    return bound
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--validate-only', action='store_true')
+    args = p.parse_args()
+    bound = preflight()
+    if args.validate_only:
+        return
+    command = [str(PYTHON), '-I', '-B', '-u', 'ncd/run_section193_icarl_scoped.py',
+               '--method', 'icarl', '--dataset', 'CSE-CIC-IDS2018', '--seed', '10', '--threads', '2',
+               '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(OUT), '--smoke']
+    env = os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'), TMP=str(BASE/'tmp'), PYTHONDONTWRITEBYTECODE='1', OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    emit('START', command=command, source_sha256=bound, max_wall_seconds=600,
+         max_rss_bytes=10*GIB, min_available_memory_bytes=2*GIB, min_wd_free_bytes=20*GIB,
+         scientific_result=False, formal_training_started=False)
+    child = None
+    reason = None
+    peak = 0
+    started = time.monotonic()
+    with Path(str(PREFIX)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+        try:
+            child = subprocess.Popen(command, cwd=REPO, env=env, stdout=stdout, stderr=stderr, creationflags=subprocess.CREATE_NO_WINDOW)
+            tracked = psutil.Process(child.pid)
+            emit('CHILD_STARTED', pid=child.pid)
+            samples = 0
+            while child.poll() is None:
+                try:
+                    rss = tracked.memory_info().rss
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak, rss)
+                elapsed = time.monotonic()-started
+                available = psutil.virtual_memory().available
+                free = psutil.disk_usage('@@LOCAL_DRIVE@@/').free
+                if samples % 5 == 0:
+                    emit('RESOURCE', elapsed_seconds=elapsed, rss_bytes=rss, peak_rss_bytes=peak,
+                         system_available_bytes=available, wd_free_bytes=free)
+                if elapsed > 600 or rss > 10*GIB or available < 2*GIB or free < 20*GIB:
+                    reason = 'Software smoke time or RAM/WD safety boundary; preserve evidence'
+                    break
+                samples += 1
+                time.sleep(1)
+        except BaseException as exc:
+            reason = 'Monitor exception: '+repr(exc)
+            raise
+        finally:
+            if child is not None:
+                if child.poll() is None:
+                    child.terminate()
+                exit_code = child.wait()
+                unchanged = hashes() == bound
+                emit('TERMINAL', exit_code=exit_code, elapsed_seconds=time.monotonic()-started,
+                     peak_rss_bytes=peak, reason=reason, source_unchanged=unchanged)
+    assert unchanged and exit_code == 0 and reason is None, 'Preserve partial/log; no automatic retry'
+    with Path(str(PREFIX)+'.validation.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.validation.stderr.log').open('x', encoding='utf-8') as stderr:
+        subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/check-cse-icarl-scoped-smoke.py')],
+                       cwd=REPO, env=env, stdout=stdout, stderr=stderr, check=True)
+    emit('SMOKE_VALIDATED', scientific_result=False, formal_training_started=False, output=str(OUT))
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,67 @@
+"""Software-only checks; no monitor/queue preflight, dataset or checkpoint loads."""
+import ast
+from pathlib import Path
+import runpy
+from types import SimpleNamespace
+from unittest.mock import patch
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+ADMIN = BASE/'admin'
+
+def tree(name):
+    return ast.parse((ADMIN/name).read_text(encoding='utf-8-sig'))
+
+def dump(node):
+    return ast.dump(node, include_attributes=False)
+
+def main():
+    old = tree('monitor-cse-icarl-scoped-first.py')
+    new = tree('monitor-cse-icarl-scoped-followup.py')
+    for name in ('hashes', 'volume_check', 'events', 'emit'):
+        a = next(n for n in old.body if isinstance(n, ast.FunctionDef) and n.name == name)
+        b = next(n for n in new.body if isinstance(n, ast.FunctionDef) and n.name == name)
+        assert dump(a) == dump(b), name
+    for kind in (ast.While, ast.Try):
+        a = [dump(n) for n in ast.walk(old) if isinstance(n, kind)]
+        b = [dump(n) for n in ast.walk(new) if isinstance(n, kind)]
+        assert a == b, kind.__name__
+    tree('queue-cse-icarl-scoped-11-14.py')
+    tree('cse-icarl-scoped-followup-state.py')
+    monitor = runpy.run_path(str(ADMIN/'monitor-cse-icarl-scoped-followup.py'))
+    guard = monitor['serial_process_guard']
+    g = guard.__globals__
+    parent = g['os'].getppid()
+    expected = [str(g['PYTHON']), '-I', '-B', '-u', str(ADMIN/'queue-cse-icarl-scoped-11-14.py')]
+    def check(pid, command, accept):
+        proc = SimpleNamespace(info=dict(pid=pid, name='python.exe', cmdline=command))
+        with patch.object(g['psutil'], 'process_iter', return_value=[proc]):
+            try:
+                guard()
+            except AssertionError:
+                assert not accept
+            else:
+                assert accept
+    check(parent, expected, True)
+    check(parent+100000, expected, False)
+    check(parent, expected+['--validate-only'], False)
+    check(parent, expected[:-1]+['unrelated.py'], False)
+    check(parent, expected[:1]+['-B', '-I', '-u']+expected[4:], False)
+    state = monitor['STATE']
+    bound = monitor['hashes']()
+    assert len(bound) == 403
+    state['source_binding'](bound)
+    state['validated'](10, bound)
+    assert not (ADMIN/'cse-bic-scoped-publication').exists()
+    # The real small-file gate must refuse incomplete BiC before any git call.
+    with patch('subprocess.check_output', side_effect=AssertionError('Unexpected git call')):
+        try:
+            state['bic_published'](bound)
+        except AssertionError as exc:
+            assert 'Unexpected git call' not in str(exc)
+        else:
+            raise AssertionError('Incomplete BiC accepted')
+    assert monitor['hashes']() == bound
+    print('SOFTWARE_PREPARATION_PASSED: exact resource/cleanup AST; four process negatives; original iCaRL10 small-file receipts; incomplete BiC rejected before git. No main/preflight/training/checkpoint loads.')
+
+if __name__ == '__main__':
+    main()

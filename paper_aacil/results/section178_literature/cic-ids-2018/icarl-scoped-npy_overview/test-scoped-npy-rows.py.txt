@@ -1,0 +1,114 @@
+"""Storage adapter checks only; never trains or resumes a scientific cell."""
+import ast
+import hashlib
+import importlib.util
+import json
+import os
+import sys
+from pathlib import Path
+from dataclasses import dataclass
+
+import numpy as np
+import psutil
+
+ROOT = Path('@@WORKSPACE@@/work/section151_publish')
+BASE = Path('@@EXPERIMENT_ROOT@@')
+
+
+def main():
+    assert psutil.disk_usage('@@LOCAL_DRIVE@@/').free > 20 * 1024**3
+    assert psutil.virtual_memory().available > 12 * 1024**3
+    assert not [p for p in psutil.process_iter(['pid', 'name'])
+                if p.info['pid'] != os.getpid() and (p.info['name'] or '').lower() == 'python.exe']
+    events = [json.loads(s) for s in (BASE/'logs/icarl-cse-seed10.monitor.stdout.log').read_text().splitlines() if s.startswith('{')]
+    bound = next(e['source_sha256'] for e in events if e.get('event') == 'START')
+    assert len(bound) == 398
+    for name, digest in bound.items():
+        assert hashlib.sha256((ROOT/name).read_bytes()).hexdigest() == digest, name
+    module_path = ROOT/'ncd/scoped_npy_rows.py'
+    ast.parse(module_path.read_text())
+    spec = importlib.util.spec_from_file_location('scoped_npy_rows', module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    attempt = sys.argv[1] if len(sys.argv) > 1 else 'initial'
+    assert attempt.isalnum()
+    folder = BASE/f'tmp/scoped-npy-rows-test-20261029-{attempt}'
+    folder.mkdir(exist_ok=False)
+    values = np.random.default_rng(391).normal(size=(65536, 78)).astype(np.float32)
+    values[1:5] = values[0]  # repeated rows and tie behavior remain intact
+    np.save(folder/'train.npy', values, allow_pickle=False)
+    np.save(folder/'test.npy', values[:1024], allow_pickle=False)
+    train = np.load(folder/'train.npy', mmap_mode='r', allow_pickle=False)
+    test = np.load(folder/'test.npy', mmap_mode='r', allow_pickle=False)
+
+    @dataclass(frozen=True)
+    class Data:
+        x_train: object
+        x_test: object
+        y_train: object
+
+    labels = np.arange(len(values), dtype=np.int64)
+    data = module.detach_feature_mappings(Data(train, test, labels))
+    assert train._mmap.closed and test._mmap.closed
+    assert data.y_train is labels
+    selectors = [slice(None), slice(2, 601, 3), 0, -1, [],
+                 np.array([7, 0, 7, 1, 65535], dtype=np.int64),
+                 np.arange(len(values)) % 131 == 0]
+    for selector in selectors:
+        actual = data.x_train[selector]
+        expected = values[selector]
+        assert actual.dtype == expected.dtype and actual.shape == expected.shape
+        assert actual.tobytes() == expected.tobytes()
+        assert not isinstance(actual, np.memmap)
+    gathered = data.x_train[np.array([4, 3, 2, 1, 0, 4])]
+    gathered[:] = 999
+    assert data.x_train[0].tobytes() == values[0].tobytes()
+    for operation in (lambda: np.asarray(data.x_train), lambda: module.ScopedNpyRows(values)):
+        try:
+            operation()
+        except TypeError:
+            pass
+        else:
+            raise AssertionError('Unsafe implicit materialization accepted')
+    # The historical herding function itself is executed, not a chunked rewrite.
+    tree = ast.parse((ROOT/'ncd/train_cil.py').read_text())
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'herding_select')
+    namespace = {'np': np}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), 'original-herding', 'exec'), namespace)
+    rows = np.random.default_rng(10).permutation(len(values))[:1024]
+    for count in (0, 1, 20, 200, 1024):
+        a = namespace['herding_select'](values[rows], count)
+        b = namespace['herding_select'](data.x_train[rows], count)
+        assert np.array_equal(a, b)
+    # Bounded read-only real-data row probes; this is NOT full receipt validation.
+    probes = {}
+    for split in ('train', 'test'):
+        source = np.load(BASE/f'data/derived/section21_clean_v1/cic-ids-2018/{split}_x.npy', mmap_mode='r', allow_pickle=False)
+        try:
+            adapter = module.ScopedNpyRows(source)
+            rows = np.array([0, 1, len(source)//2, len(source)-1, 0])
+            expected = source[rows]
+            actual = adapter[rows]
+            assert actual.tobytes() == expected.tobytes()
+            probes[split] = {'shape': list(source.shape), 'rows_compared': len(rows)}
+        finally:
+            source._mmap.close()
+    # Fail closed if the source is changed after adapter creation (own fixture).
+    with (folder/'train.npy').open('ab') as stream:
+        stream.write(b'changed')
+    try:
+        data.x_train[:1]
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('Changed source accepted')
+    for name, digest in bound.items():
+        assert hashlib.sha256((ROOT/name).read_bytes()).hexdigest() == digest, name
+    print(json.dumps({'event': 'SCOPED_ROW_COMPONENT_CHECKS_PASSED', 'scientific_result': False,
+                      'original_sources_unchanged': len(bound), 'row_selectors': len(selectors),
+                      'historical_herding_exact_comparisons': 5, 'real_read_only_probes': probes,
+                      'full_training_parity': 'not_run', 'full_cell_resource_feasibility': 'unverified'}))
+
+
+if __name__ == '__main__':
+    main()

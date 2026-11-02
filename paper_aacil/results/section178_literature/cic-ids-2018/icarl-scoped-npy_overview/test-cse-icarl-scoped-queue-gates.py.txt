@@ -1,0 +1,53 @@
+"""Queue gate software tests, without real preflight, git, output or child processes."""
+import ast
+from pathlib import Path
+import runpy
+import sys
+from types import SimpleNamespace
+from unittest.mock import patch
+
+ADMIN = Path('@@EXPERIMENT_ROOT@@/admin')
+
+def reject():
+    raise AssertionError('fixture: BiC publication not verified')
+
+def main():
+    source = (ADMIN/'queue-cse-icarl-scoped-11-14.py').read_text(encoding='utf-8')
+    tree = ast.parse(source)
+    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+    # The only runtime seed loop is 11..14, never the completed seed10.
+    loops = [n for n in function.body if isinstance(n, ast.For) and isinstance(n.target, ast.Name) and n.target.id == 'seed']
+    assert len(loops) == 2
+    assert all(ast.unparse(n.iter) == 'range(11, 15)' for n in loops)
+    gate_line = next(n.lineno for n in ast.walk(function) if isinstance(n, ast.Assign)
+                     and isinstance(n.value, ast.Call) and ast.unparse(n.value.func) == "followup.STATE['bic_published']")
+    start_line = next(n.lineno for n in ast.walk(function) if isinstance(n, ast.Call)
+                      and ast.unparse(n.func) == 'followup.emit' and n.args and isinstance(n.args[0], ast.Constant)
+                      and n.args[0].value == 'QUEUE_START')
+    assert gate_line < start_line < loops[-1].lineno
+    queue = runpy.run_path(str(ADMIN/'queue-cse-icarl-scoped-11-14.py'))
+    run = queue['main']
+    g = run.__globals__
+    calls = []
+    fake = SimpleNamespace(BASE=Path('@@EXPERIMENT_ROOT@@'), PYTHON=Path('unused-python.exe'),
+                           GIB=1024**3, volume_check=lambda: calls.append('volume'),
+                           hashes=lambda: {'fixture': 'bound'},
+                           validated=lambda seed, bound: calls.append(('validated', seed)),
+                           STATE={'source_binding': lambda bound: calls.append('source'),
+                                  'bic_published': lambda bound: reject()},
+                           psutil=SimpleNamespace(virtual_memory=lambda: SimpleNamespace(available=32*1024**3),
+                                                  process_iter=lambda fields: []))
+    g['followup'] = fake
+    for args in (['queue'], ['queue', '--validate-only']):
+        with patch.object(sys, 'argv', args), patch.object(g['subprocess'], 'run', side_effect=RuntimeError('child forbidden')):
+            try:
+                run()
+            except AssertionError as exc:
+                assert str(exc) == 'fixture: BiC publication not verified'
+            else:
+                raise AssertionError('Missing BiC publication accepted')
+    assert calls.count(('validated', 10)) == 2
+    print('QUEUE_GATE_TESTS_PASSED: main and validate-only reject missing publication before output/child; exact remaining seeds11..14 and gate-before-QUEUE_START AST. Synthetic fixtures only.')
+
+if __name__ == '__main__':
+    main()

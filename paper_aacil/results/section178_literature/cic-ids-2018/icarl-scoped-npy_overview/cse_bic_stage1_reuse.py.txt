@@ -1,0 +1,71 @@
+"""Explicit new-attempt provenance bridge; never alters the old run or identity."""
+from copy import deepcopy
+import json
+from pathlib import Path
+
+import torch
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+OLD = BASE/'runs/section178/cic-ids-2018/cer-bic-common/seed11'
+IDENTITY_SHA = '8310caf31db359b9edfe4804db52f37a34301e6edd4c46468c16b2b8443edc55'
+PROGRESS_SHA = 'abe1fa03b2a650e77deda673f432a97157d3c556c3b47eed47b7494a41172971'
+ADDITIONS = {'ncd/run_cse_bic_scoped.py', 'ncd/cse_bic_stage1_reuse.py'}
+
+
+def reuse_record():
+    return dict(kind='completed-stage1-only-new-storage-attempt-v1', task_index=0,
+        original_run=str(OLD), identity_sha256=IDENTITY_SHA, progress_sha256=PROGRESS_SHA,
+        original_optimizer_steps=315048, original_training_seconds=6053.611947000012,
+        old_evidence_immutable=True, reused_herding_features=False)
+
+
+def validate_identity(old, new):
+    assert old['seed'] == new['seed'] == 11 and not old['smoke'] and not new['smoke']
+    assert old['dataset'] == new['dataset'] == 'CSE-CIC-IDS2018'
+    assert old['entry_adaptation'] == 'cse-dataset-support-only-v1; original common training, herding and evaluation unchanged'
+    assert new['entry_adaptation'] == 'cse-scoped-npy-v1; original common training, herding and evaluation unchanged'
+    assert new['input_mapping_lifetime'] == 'scoped-npy-row-gather-v1'
+    assert new['stage1_reuse'] == reuse_record()
+    assert len(old['source_sha256']) == 401 and len(new['source_sha256']) == 403
+    assert set(new['source_sha256'])-set(old['source_sha256']) == ADDITIONS
+    assert all(new['source_sha256'][k] == v for k, v in old['source_sha256'].items())
+    excluded = {'entry_adaptation', 'input_mapping_lifetime', 'stage1_reuse',
+                'source_sha256', 'command', 'log_paths'}
+    assert {k:v for k,v in old.items() if k not in excluded} == {k:v for k,v in new.items() if k not in excluded}
+    # Dataset/config/splits/holdout/counts/mapping/git revision must all be equal.
+    assert old['command'] == ['ncd/run_cse_bic_common.py', '--dataset', 'CSE-CIC-IDS2018',
+        '--seed', '11', '--data-root', str(BASE/'data/derived/section21_clean_v1'),
+        '--output-dir', str(OLD), '--log-prefix', str(BASE/'logs/cer-bic-common-cse-seed11')]
+    assert old['log_paths'] == [str(BASE/'logs/cer-bic-common-cse-seed11')+f'.{s}.log' for s in ('stdout','stderr')]
+
+
+def load_original(ps):
+    assert ps.digest(OLD/'identity.json') == IDENTITY_SHA
+    assert ps.digest(OLD/'progress/backbone_000.pt') == PROGRESS_SHA
+    assert sorted(p.relative_to(OLD).as_posix() for p in OLD.rglob('*') if p.is_file()) == ['identity.json','progress/backbone_000.pt']
+    old = json.loads((OLD/'identity.json').read_text())
+    state = ps.checkpoint_load(OLD/'progress/backbone_000.pt', old)
+    assert state['done'] is True and state['next_epoch'] == 8
+    assert state['steps'] == 315048 and state['seconds'] == 6053.611947000012
+    assert len(state['history']) == 8
+    for n, h in enumerate(state['history'], 1):
+        assert h['epoch'] == n and h['lr'] == .001 and h['optimizer_steps'] == 39381
+    assert state['model'].keys() == state['best'].keys()
+    assert all(torch.equal(v, state['best'][k]) for k,v in state['model'].items())
+    return old, state
+
+
+def import_completed_stage1(identity, destination, ps):
+    old, original = load_original(ps)
+    validate_identity(old, identity)
+    assert not destination.exists() and not destination.with_suffix('.pt.tmp').exists()
+    assert destination.resolve().is_relative_to(BASE/'runs/section178/cic-ids-2018/cer-bic-common-scoped/seed11')
+    imported = deepcopy(original)
+    imported['identity'] = identity
+    imported['imported_from'] = dict(record=reuse_record(), original_identity=old)
+    ps.checkpoint_save(destination, imported)
+    check = ps.checkpoint_load(destination, identity)
+    for name in ('model', 'best'):
+        assert all(torch.equal(v, check[name][k]) for k,v in original[name].items())
+    assert ps.digest(OLD/'identity.json') == IDENTITY_SHA and ps.digest(OLD/'progress/backbone_000.pt') == PROGRESS_SHA
+    print(json.dumps(dict(event='COMPLETED_STAGE1_IMPORTED', **reuse_record())), flush=True)

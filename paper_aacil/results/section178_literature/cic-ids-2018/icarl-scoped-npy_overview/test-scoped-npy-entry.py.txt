@@ -1,0 +1,46 @@
+"""Exact source transform check: scoped input storage only, no training."""
+import ast
+import hashlib
+import json
+from pathlib import Path
+
+ROOT = Path('@@WORKSPACE@@/work/section151_publish')
+BASE = Path('@@EXPERIMENT_ROOT@@')
+original = (ROOT/'ncd/run_section123_fixed.py').read_text()
+current = (ROOT/'ncd/run_section193_icarl_scoped.py').read_text()
+changes = [
+    ('"""Fresh-seed fixed 2x128 confirmation cells with saved-checkpoint default views."""',
+     '"""CSE iCaRL fixed schedule with scoped read-only input-map lifetimes.\n\nStorage-only recovery entry; original failed cell and original sources stay intact.\nAll training, feature extraction, herding arithmetic and evaluation remain original.\n"""'),
+    ('from ncd.source_commit import source_commit',
+     'from ncd.source_commit import source_commit\nfrom ncd.scoped_npy_rows import detach_feature_mappings'),
+    ('choices=("UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018")', 'choices=("CSE-CIC-IDS2018",)'),
+    ('choices=("ar", "replay_bs", "freq", "wacb", "derpp", "icarl")', 'choices=("icarl",)'),
+    ('    output = a.output_dir.resolve()\n',
+     '    config["input_mapping_lifetime"] = "scoped-npy-row-gather-v1; exact row values; original herding arithmetic"\n'
+     '    output = a.output_dir.resolve()\n'
+     '    safe_root = Path("@@EXPERIMENT_ROOT@@/runs/section178/cic-ids-2018/icarl-scoped-npy").resolve(strict=False)\n'
+     '    if output.parent != safe_root or output.name != (f"smoke-seed{a.seed}" if a.smoke else f"seed{a.seed}"):\n'
+     '        p.error("Use the new scoped-NPY output identity; original/other outputs are protected")\n'),
+    ('    if a.smoke:\n        data, _, _ = ps.smoke_subset',
+     '    if a.smoke:\n        data = detach_feature_mappings(data)\n        data, _, _ = ps.smoke_subset'),
+    ('    cell = output / "cell"\n',
+     '    if not a.smoke:\n'
+     '        # Full receipt validation and identity array hashes above are unchanged.\n'
+     '        # Entry owns these two maps; all current-task rows are gathered as exact copies.\n'
+     '        data = detach_feature_mappings(data)\n'
+     '    cell = output / "cell"\n'),
+]
+expected = original
+for before, after in changes:
+    assert expected.count(before) == 1, before
+    expected = expected.replace(before, after)
+assert current == expected
+ast.parse(current)
+ast.parse((ROOT/'ncd/scoped_npy_rows.py').read_text())
+events = [json.loads(line) for line in (BASE/'logs/icarl-cse-seed10.monitor.stdout.log').read_text().splitlines() if line.startswith('{')]
+bound = next(e['source_sha256'] for e in events if e.get('event') == 'START')
+for name, digest in bound.items():
+    assert hashlib.sha256((ROOT/name).read_bytes()).hexdigest() == digest, name
+print(json.dumps({'event': 'SCOPED_ENTRY_EXACT_STORAGE_ONLY_TRANSFORM', 'original_sources_unchanged': len(bound),
+                  'scientific_result': False, 'same_entry_smoke': 'not_run',
+                  'full_cell_resource_feasibility': 'unverified', 'formal_training_started': False}))

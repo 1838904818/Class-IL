@@ -1,0 +1,59 @@
+"""Independent scoped-entry smoke integrity and bit-exact historical-state parity."""
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import sys
+import torch
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@WORKSPACE@@/work/section151_publish')
+ROOT = BASE/'runs/section178/cic-ids-2018/icarl-scoped-npy/smoke-seed10'
+OLD = BASE/'runs/section178/cic-ids-2018/icarl-smoke-seed10'
+spec = importlib.util.spec_from_file_location('parity', BASE/'admin/test-scoped-npy-training-parity.py')
+parity = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(parity)
+equal = parity.equal
+
+def read(root, name):
+    return json.loads((root/name).read_text(encoding='utf-8'))
+
+for root in (ROOT, OLD):
+    subprocess.run([sys.executable, '-I', '-B', '-u', str(BASE/'admin/check-cse-literature-smoke.py'), str(root)], check=True)
+r, old = read(ROOT, 'cell/result.json'), read(OLD, 'cell/result.json')
+i, oi = r['identity'], old['identity']
+assert i['method'] == 'icarl' and i['seed'] == 10
+config = dict(i['effective_config'])
+assert config.pop('input_mapping_lifetime') == 'scoped-npy-row-gather-v1; exact row values; original herding arithmetic'
+equal(config, oi['effective_config'])
+equal({k:v for k,v in i.items() if k not in ('command', 'effective_config')},
+      {k:v for k,v in oi.items() if k not in ('command', 'effective_config')})
+assert i['command'][0] == 'ncd/run_section193_icarl_scoped.py'
+assert '--smoke' in i['command'] and '--resume' not in i['command']
+events = [json.loads(s) for s in (BASE/'logs/icarl-cse-scoped-seed10.smoke.monitor.stdout.log').read_text().splitlines() if s.startswith('{')]
+starts = [e for e in events if e.get('event') == 'START']
+terminals = [e for e in events if e.get('event') == 'TERMINAL']
+assert len(starts) == len(terminals) == 1
+start, terminal = starts[0], terminals[0]
+assert len(start['source_sha256']) == 400
+assert terminal['exit_code'] == 0 and terminal['reason'] is None and terminal['source_unchanged']
+assert 0 < terminal['peak_rss_bytes'] < 10*1024**3
+for name, digest in start['source_sha256'].items():
+    assert hashlib.sha256((REPO/name).read_bytes()).hexdigest() == digest, name
+for cp, ocp in zip(r['checkpoints'], old['checkpoints']):
+    state = torch.load(ROOT/'cell'/cp['checkpoint_file'], weights_only=False, map_location='cpu')
+    oldstate = torch.load(OLD/'cell'/ocp['checkpoint_file'], weights_only=False, map_location='cpu')
+    assert state['identity'] == i and oldstate['identity'] == oi
+    exclude = {'identity', 'training_seconds', 'training_seconds_cumulative', 'buffer_selection_seconds'}
+    equal({k:v for k,v in state.items() if k not in exclude},
+          {k:v for k,v in oldstate.items() if k not in exclude}, 'checkpoint_state')
+for filename in ('default_stages.json', 'calibrated_stages.json'):
+    new, previous = read(ROOT, filename), read(OLD, filename)
+    for a, b in zip(new, previous):
+        exclude = {'checkpoint_sha256', 'calibration_seconds', 'evaluation_seconds'}
+        equal({k:v for k,v in a.items() if k not in exclude},
+              {k:v for k,v in b.items() if k not in exclude}, filename)
+print(json.dumps({'event': 'SCOPED_SMOKE_INDEPENDENTLY_VALIDATED', 'verified_source_files': 400,
+                  'checkpoint_state_pairs_bit_exact': 4, 'calibration_points': 12,
+                  'scientific_result': False, 'full_cell_resource_feasibility': 'unverified'}))

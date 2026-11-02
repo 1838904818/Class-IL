@@ -1,0 +1,157 @@
+"""Frozen403 CSE iCaRL seeds11-14, strictly serial after verified BiC dual publication."""
+import argparse
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+import psutil
+import runpy
+
+STATE = runpy.run_path('@@EXPERIMENT_ROOT@@/admin/cse-icarl-scoped-followup-state.py')
+validated = STATE['validated']
+protected_evidence = STATE['protected_evidence']
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@WORKSPACE@@/work/section151_publish')
+PYTHON = Path('@@LOCAL_HOME@@/miniconda3/envs/research/python.exe')
+SEED = None
+PREFIX = None
+OUT = None
+PUBLICATION = None
+GIB = 1024**3
+
+def emit(event, **fields):
+    print(json.dumps(dict(event=event, time=time.strftime('%Y-%m-%dT%H:%M:%S%z'), **fields)), flush=True)
+
+def events(path):
+    return [json.loads(s) for s in path.read_text(encoding='utf-8').splitlines() if s.startswith('{')]
+
+def hashes():
+    files = sorted(set(REPO.glob('ncd/**/*.py')) | set(REPO.glob('ncd/configs/*.json')) |
+                   {REPO/'src/methods/replay_dpmeans.py', REPO/'paper_aacil/results/section123_schedule_selection.json'})
+    return {f.relative_to(REPO).as_posix(): hashlib.sha256(f.read_bytes()).hexdigest() for f in files}
+
+def volume_check():
+    volume = ctypes.create_unicode_buffer(100)
+    assert ctypes.windll.kernel32.GetVolumeNameForVolumeMountPointW('@@LOCAL_DRIVE@@/\', volume, 100)
+    assert volume.value.lower() == '\\\\?\\volume{d5ede140-354b-40b6-9bb9-8769e4828c62}\\'
+    free = psutil.disk_usage('@@LOCAL_DRIVE@@/').free
+    assert free > 20*GIB
+    return free
+
+def serial_process_guard():
+    expected = [str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/queue-cse-icarl-scoped-11-14.py')]
+    def canonical(command):
+        command = list(command or [])
+        if len(command) == 5:
+            for index in (0, 4):
+                command[index] = os.path.normcase(os.path.abspath(command[index]))
+        return command
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        if proc.info['pid'] == os.getpid() or (proc.info['name'] or '').lower() not in ('python.exe', 'pythonw.exe'):
+            continue
+        assert proc.info['pid'] == os.getppid() and canonical(proc.info['cmdline']) == canonical(expected), 'Unexpected Python process'
+
+
+def preflight():
+    global PUBLICATION
+    free = volume_check()
+    available = psutil.virtual_memory().available
+    assert available > 12*GIB, 'Insufficient initial system memory'
+    serial_process_guard()
+    assert not OUT.exists(), 'Preserve existing cell; no automatic retry'
+    for suffix in ('.stdout.log', '.stderr.log', '.validation.stdout.log', '.validation.stderr.log'):
+        assert not Path(str(PREFIX)+suffix).exists(), 'Preserve existing evidence'
+    bound = hashes()
+    STATE['source_binding'](bound)
+    for previous in range(10, SEED):
+        validated(previous, bound)
+    PUBLICATION = STATE['bic_published'](bound)
+    emit('PREFLIGHT_VALIDATED', seed=SEED, source_files=len(bound), historical_source_files=400,
+         system_available_bytes=available, wd_free_bytes=free, bic_publication=PUBLICATION,
+         strictly_serial=True, automatic_retry=False)
+    return bound
+
+
+def main():
+    global SEED, PREFIX, OUT
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--validate-only', action='store_true')
+    parser.add_argument('--seed', type=int, choices=range(11, 15), required=True)
+    args = parser.parse_args()
+    SEED = args.seed
+    PREFIX = BASE/f'logs/icarl-cse-scoped-seed{SEED}'
+    OUT = BASE/f'runs/section178/cic-ids-2018/icarl-scoped-npy/seed{SEED}'
+    bound = preflight()
+    if args.validate_only:
+        return
+    protected = protected_evidence()
+    command = [str(PYTHON), '-I', '-B', '-u', 'ncd/run_section193_icarl_scoped.py', '--method', 'icarl',
+               '--dataset', 'CSE-CIC-IDS2018', '--seed', str(SEED), '--threads', '2',
+               '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(OUT)]
+    env = os.environ.copy()
+    env.update(TEMP=str(BASE/'tmp'), TMP=str(BASE/'tmp'), PYTHONDONTWRITEBYTECODE='1', OMP_NUM_THREADS='2', MKL_NUM_THREADS='2')
+    emit('START', command=command, source_sha256=bound, protected_old_evidence=protected, bic_publication=PUBLICATION,
+         git_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=REPO, text=True).strip(),
+         max_wall_seconds=None, report_wall_seconds=21600, max_rss_bytes=10*GIB,
+         min_available_memory_bytes=2*GIB, min_wd_free_bytes=20*GIB,
+         authority='Sections204-205: remaining CSE iCaRL seeds11-14 after complete BiC dual publication; frozen403 and historical400 subset, original limits, no completed seed reruns or parallel NSL/HPC')
+    child = None
+    peak = 0
+    samples = 0
+    reported = False
+    reason = None
+    started = time.monotonic()
+    with Path(str(PREFIX)+'.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.stderr.log').open('x', encoding='utf-8') as stderr:
+        try:
+            child = subprocess.Popen(command, cwd=REPO, env=env, stdout=stdout, stderr=stderr, creationflags=subprocess.CREATE_NO_WINDOW)
+            tracked = psutil.Process(child.pid)
+            emit('CHILD_STARTED', pid=child.pid)
+            while child.poll() is None:
+                try:
+                    rss = tracked.memory_info().rss
+                    cpu = tracked.cpu_times()
+                except psutil.NoSuchProcess:
+                    break
+                peak = max(peak, rss)
+                elapsed = time.monotonic()-started
+                available = psutil.virtual_memory().available
+                free = psutil.disk_usage('@@LOCAL_DRIVE@@/').free
+                if samples % 6 == 0:
+                    emit('RESOURCE', pid=child.pid, elapsed_seconds=elapsed, rss_bytes=rss, peak_rss_bytes=peak,
+                         cpu_seconds=cpu.user+cpu.system, system_available_bytes=available, wd_free_bytes=free)
+                if elapsed > 21600 and not reported:
+                    emit('SIX_HOUR_REPORT_CONTINUING', elapsed_seconds=elapsed, peak_rss_bytes=peak)
+                    reported = True
+                if rss > 10*GIB or available < 2*GIB or free < 20*GIB:
+                    reason = 'RAM or WD safety boundary; preserve partial and logs; diagnose before checkpoint resume'
+                    break
+                samples += 1
+                time.sleep(5)
+        except BaseException as exc:
+            reason = 'Monitor exception: '+repr(exc)
+            raise
+        finally:
+            if child is not None:
+                if child.poll() is None:
+                    child.terminate()
+                exit_code = child.wait()
+                unchanged = hashes() == bound
+                emit('TERMINAL', exit_code=exit_code, elapsed_seconds=time.monotonic()-started,
+                     peak_rss_bytes=peak, reason=reason, source_unchanged=unchanged)
+    assert protected_evidence() == protected
+    assert unchanged and exit_code == 0 and reason is None, 'Preserve partial/log; no automatic retry'
+    summary = json.loads((OUT/'summary.json').read_text(encoding='utf-8'))
+    assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+    with Path(str(PREFIX)+'.validation.stdout.log').open('x', encoding='utf-8') as stdout, Path(str(PREFIX)+'.validation.stderr.log').open('x', encoding='utf-8') as stderr:
+        subprocess.run([str(PYTHON), '-I', '-B', '-u', str(BASE/'admin/check-cse-icarl-scoped-followup.py'), str(OUT)],
+                       cwd=REPO, env=env, stdout=stdout, stderr=stderr, check=True)
+    assert hashes() == bound and protected_evidence() == protected
+    emit('CELL_VALIDATED', dataset='CSE-CIC-IDS2018', method='icarl', seed=SEED, output=str(OUT))
+
+if __name__ == '__main__':
+    main()

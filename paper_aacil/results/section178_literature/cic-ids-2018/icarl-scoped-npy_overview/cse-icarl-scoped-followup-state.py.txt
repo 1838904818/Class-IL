@@ -1,0 +1,152 @@
+"""Small-file guards for future CSE iCaRL serial continuation; never launches work."""
+import hashlib
+import json
+from pathlib import Path
+import runpy
+import subprocess
+
+BASE = Path('@@EXPERIMENT_ROOT@@')
+REPO = Path('@@WORKSPACE@@/work/section151_publish')
+PYTHON = Path('@@LOCAL_HOME@@/miniconda3/envs/research/python.exe')
+ADDED = {'ncd/run_cse_bic_common.py', 'ncd/run_cse_bic_scoped.py',
+         'ncd/cse_bic_stage1_reuse.py'}
+GIB = 1024**3
+
+
+def events(path):
+    return [json.loads(s) for s in path.read_text(encoding='utf-8').splitlines()
+            if s.startswith('{')]
+
+
+def one(rows, name):
+    matches = [row for row in rows if row.get('event') == name]
+    assert len(matches) == 1, name
+    return matches[0]
+
+
+def source_binding(bound):
+    """Bind current403 to accepted original400 and unchanged historical smoke."""
+    original = one(events(BASE/'logs/icarl-cse-scoped-seed10.monitor.stdout.log'), 'START')['source_sha256']
+    assert len(original) == 400 and len(bound) == 403
+    assert set(bound)-set(original) == ADDED
+    assert all(bound.get(k) == v for k, v in original.items())
+    for name, expected in bound.items():
+        assert hashlib.sha256((REPO/name).read_bytes()).hexdigest() == expected, name
+    smoke = events(BASE/'logs/icarl-cse-scoped-seed10.smoke.monitor.stdout.log')
+    assert one(smoke, 'START')['source_sha256'] == original
+    one(smoke, 'SMOKE_VALIDATED')
+    parity = events(BASE/'logs/scoped-npy-training-parity.retry1.stdout.log')
+    assert one(parity, 'PARITY_SOURCE_BOUND')['source_sha256'] == original
+    assert one(parity, 'SCOPED_TRAINING_PARITY_PASSED')['checkpoint_pairs_bit_exact'] == 8
+    for suffix in ('stderr', 'monitor.stderr', 'validation.stderr'):
+        assert (BASE/f'logs/icarl-cse-scoped-seed10.smoke.{suffix}.log').stat().st_size == 0
+    assert (BASE/'logs/scoped-npy-training-parity.retry1.stderr.log').stat().st_size == 0
+    return original
+
+
+def protected_evidence():
+    """Preserve failed original seed10 and its logs, without inventing a checkpoint."""
+    root = BASE/'runs/section178/cic-ids-2018/icarl/seed10'
+    assert not list(root.rglob('*.pt'))
+    paths = list(root.rglob('*'))
+    paths = [p for p in paths if p.is_file() and p.name != 'features.dat']
+    paths += [BASE/f'logs/icarl-cse-seed10{suffix}' for suffix in
+              ('.stdout.log', '.stderr.log', '.monitor.stdout.log', '.monitor.stderr.log')]
+    return {p.relative_to(BASE).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(paths)}
+
+
+def bic_published(bound):
+    """Require all five accepted BiC cells and independently matching dual remote blobs."""
+    bic = runpy.run_path(str(BASE/'admin/monitor-cse-bic-scoped-followup.py'))
+    assert bic['hashes']() == bound
+    for seed in range(10, 15):
+        bic['validated'](seed, bound)
+    done = one(events(BASE/'logs/cer-bic-common-cse-scoped-queue-12-14.stdout.log'), 'ALL_COMPLETE')
+    assert done['seeds'] == list(range(10, 15)) and done['dataset'] == 'CSE-CIC-IDS2018'
+    assert (BASE/'logs/cer-bic-common-cse-scoped-queue-12-14.stderr.log').stat().st_size == 0
+    publog = BASE/'logs/cse-bic-scoped-publish.stdout.log'
+    assert 'DUAL_REMOTE_HEAD_AND_ALL_CSE_BIC_ARTIFACT_BLOBS_VERIFIED' in publog.read_text(encoding='utf-8')
+    assert (BASE/'logs/cse-bic-scoped-publish.stderr.log').stat().st_size == 0
+    source = BASE/'admin/cse-bic-scoped-publication'
+    names = [f'cer-bic-common_seed{s}' for s in range(10, 15)]+['cer-bic-common_overview']
+    assert sorted(p.name for p in source.iterdir()) == sorted(names[:-1]+['overview'])
+    rel = 'paper_aacil/results/section178_literature/cic-ids-2018'
+    payload = {}
+    for name in names:
+        folder = source/('overview' if name.endswith('_overview') else name)
+        for path in folder.rglob('*'):
+            if path.is_file():
+                raw = path.read_bytes()
+                blob = hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+                payload[rel+'/'+name+'/'+path.relative_to(folder).as_posix()] = blob
+    assert payload
+    root = REPO.parent.parent
+    repositories = [(root/'work/section165_paper_publish', 'https://github.com/1838904818/Class-IL-in-IDS.git', ''),
+                    (root/'work/github_supervisor_sync_20261010', 'https://github.com/1838904818/Class-IL.git', 'main')]
+    heads = []
+    def git(repo, *args):
+        return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.STDOUT)
+    scopes = [rel+'/'+name for name in names]
+    for repo, url, branch in repositories:
+        assert git(repo, 'remote', 'get-url', 'origin').decode().strip() == url
+        assert git(repo, 'branch', '--show-current').decode().strip() == branch
+        git(repo, 'fetch', 'origin')
+        head = git(repo, 'ls-remote', 'origin', 'refs/heads/main').decode().split()[0]
+        assert git(repo, 'rev-parse', 'origin/main').decode().strip() == head
+        entries = git(repo, 'ls-tree', '-rz', head, '--', *scopes).split(b'\0')
+        blobs = {}
+        for entry in entries:
+            if not entry:
+                continue
+            metadata, path = entry.split(b'\t', 1)
+            mode, kind, sha = metadata.decode().split()
+            assert kind == 'blob' and mode == '100644'
+            blobs[path.decode('utf-8')] = sha
+        assert blobs == payload, 'BiC dual-publication content differs from exact exported payload'
+        heads.append(head)
+    assert bic['hashes']() == bound
+    return dict(remote_heads=heads, artifact_blobs=len(payload), all_five_bic_cells_accepted=True)
+
+
+def validated(seed, bound):
+    """No dataset or checkpoint loads: require already completed independent checks."""
+    assert seed in range(10, 15)
+    original = source_binding(bound)
+    expected_source = original if seed == 10 else bound
+    prefix = BASE/f'logs/icarl-cse-scoped-seed{seed}'
+    root = BASE/f'runs/section178/cic-ids-2018/icarl-scoped-npy/seed{seed}'
+    monitor = events(Path(str(prefix)+'.monitor.stdout.log'))
+    start, terminal, done = (one(monitor, key) for key in ('START', 'TERMINAL', 'CELL_VALIDATED'))
+    command = [str(PYTHON), '-I', '-B', '-u', 'ncd/run_section193_icarl_scoped.py', '--method', 'icarl',
+               '--dataset', 'CSE-CIC-IDS2018', '--seed', str(seed), '--threads', '2',
+               '--data-root', str(BASE/'data/derived/section21_clean_v1'), '--output-dir', str(root)]
+    assert start['command'] == command and start['source_sha256'] == expected_source
+    assert start['max_wall_seconds'] is None and start['report_wall_seconds'] == 21600
+    assert start['max_rss_bytes'] == 10*GIB
+    assert start['min_available_memory_bytes'] == 2*GIB and start['min_wd_free_bytes'] == 20*GIB
+    assert terminal['exit_code'] == 0 and terminal['reason'] is None and terminal['source_unchanged']
+    assert 0 < terminal['peak_rss_bytes'] < 10*GIB and terminal['elapsed_seconds'] > 0
+    assert done['dataset'] == 'CSE-CIC-IDS2018' and done['method'] == 'icarl' and done['seed'] == seed
+    result = json.loads((root/'cell/result.json').read_text(encoding='utf-8'))
+    summary = json.loads((root/'summary.json').read_text(encoding='utf-8'))
+    identity = result['identity']
+    assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
+    assert result['completed'] and len(result['checkpoints']) == 4
+    assert identity['command'] == command[4:]
+    assert identity['seed'] == seed and identity['dataset'] == 'CSE-CIC-IDS2018'
+    assert identity['method'] == 'icarl' and identity['inference'] == 'nme'
+    assert identity['tasks'] == [[0, 1], [2, 3], [4, 5], [6]]
+    assert identity['effective_config']['input_mapping_lifetime'] == 'scoped-npy-row-gather-v1; exact row values; original herding arithmetic'
+    for suffix in ('.stderr.log', '.monitor.stderr.log', '.validation.stderr.log'):
+        assert Path(str(prefix)+suffix).stat().st_size == 0
+    checks = events(Path(str(prefix)+'.validation.stdout.log'))
+    assert any(e.get('method') == 'icarl' and e.get('verified_checkpoints') == 4
+               and e.get('verified_calibration_points') == 12
+               and e.get('scientific_result') is True for e in checks)
+    assert any(e.get('verified_source_files') == len(expected_source)
+               and e.get('verified_checkpoint_states') == 4
+               and e.get('verified_final_memory_feature_memberships') == 1400
+               and e.get('monitor_elapsed_seconds') == terminal['elapsed_seconds']
+               and e.get('sampled_peak_rss_bytes') == terminal['peak_rss_bytes'] for e in checks)
+    return terminal
