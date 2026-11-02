@@ -50,7 +50,13 @@ def sha256(path):
 
 
 def relative(path):
-    return os.path.relpath(Path(path).resolve(), ROOT).replace("\\", "/")
+    resolved = Path(path).resolve()
+    try:
+        return os.path.relpath(resolved, ROOT).replace("\\", "/")
+    except ValueError:
+        # Windows cannot express a relative path across drives. Keep the real
+        # cache location rather than moving inputs or falling back to C:.
+        return resolved.as_posix()
 
 
 def counts(y, classes):

@@ -23,7 +23,7 @@ from ncd.source_commit import source_commit
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--dataset", choices=("UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018"), required=True)
+    p.add_argument("--dataset", choices=("NSL-KDD", "UNSW-NB15", "CIC-IDS-2017", "CSE-CIC-IDS2018"), required=True)
     p.add_argument("--method", choices=("ar", "replay_bs", "freq", "wacb", "derpp"), required=True)
     p.add_argument("--seed", type=int, choices=range(10, 15), required=True)
     p.add_argument("--data-root", type=Path, required=True)

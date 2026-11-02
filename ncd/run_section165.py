@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dataset', required=True,
-                   choices=('UNSW-NB15', 'CIC-IDS-2017', 'CSE-CIC-IDS2018'))
+                   choices=('NSL-KDD', 'UNSW-NB15', 'CIC-IDS-2017', 'CSE-CIC-IDS2018'))
     p.add_argument('--method', choices=('R3-L', 'R3-A'), default='R3-L')
     p.add_argument('--seed', required=True, type=int, choices=(1, 10, 11, 12, 13, 14))
     p.add_argument('--data-root', required=True, type=Path)

@@ -71,7 +71,11 @@ def canonical_hash(value) -> str:
 
 
 def path_label(path: Path) -> str:
-    return Path(os.path.relpath(path.resolve(), ROOT)).as_posix()
+    resolved = path.resolve()
+    try:
+        return Path(os.path.relpath(resolved, ROOT)).as_posix()
+    except ValueError:
+        return resolved.as_posix()
 
 
 def save_json(path: Path, value) -> None:
