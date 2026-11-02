@@ -36,7 +36,7 @@ def main():
     cells=[('bic',10),('icarl',10)] if a.smoke else [('bic',13),('bic',14)]+[('icarl',s) for s in range(11,15)]
     output.mkdir(parents=True,exist_ok=True)
     logs=output/'logs'; logs.mkdir(exist_ok=True)
-    active=[]; stopping=False
+    active=[]; stopping=False; failures=[]
     def stop(*_):
         nonlocal stopping
         stopping=True
@@ -71,7 +71,10 @@ def main():
                 if rc is None: continue
                 out.close();err.close();active.remove(item)
                 print(json.dumps(dict(event='CELL_EXIT',method=method,seed=seed,exit_code=rc)),flush=True)
-                assert rc==0, f'{method} seed{seed} failed; preserve logs and checkpoint'
+                if rc != 0:
+                    failures.append((method,seed,rc))
+                    print(json.dumps(dict(event='CELL_FAILED',method=method,seed=seed,exit_code=rc,traceback_log=err.name)),flush=True)
+                    continue
                 value=json.loads(summary.read_text());assert value['completed']
                 if not a.smoke:
                     protected=Path(os.environ['NCD_PROTECTED_ROOT'])/method/f'seed{seed}'
@@ -83,6 +86,7 @@ def main():
             if stopping:
                 raise RuntimeError('Allocation stopping; preserve task/epoch checkpoints, no automatic resubmission')
             time.sleep(.25 if a.smoke else 5)
+        if failures:raise RuntimeError(f'Cells failed after all other work was preserved: {failures}')
         print('SMOKE_COMPLETE' if a.smoke else 'JOB_A_ALL_COMPLETE',flush=True)
     finally:
         for child,out,err,*_ in active:

@@ -18,7 +18,7 @@ def main():
     data=Path(os.environ['NCD_DATA_ROOT']); logs=root/'logs';logs.mkdir(parents=True,exist_ok=True)
     cells=[('NSL-KDD',m,s) for m in METHODS for s in ((10,) if a.smoke else range(10,15))]
     cells += [('CSE-CIC-IDS2018',m,s) for m in ('freq','wacb') for s in ((10,) if a.smoke else range(10,15))]
-    active=[];stopping=False
+    active=[];stopping=False;failures=[]
     def stop(*_):
         nonlocal stopping
         stopping=True
@@ -73,7 +73,10 @@ def main():
                 if rc is None:continue
                 out.close();err.close();active.remove(item)
                 print(json.dumps(dict(event='CELL_EXIT',dataset=dataset,method=method,seed=seed,exit_code=rc)),flush=True)
-                assert rc==0,f'{dataset}/{method}/{seed} failed; preserve logs and checkpoints'
+                if rc != 0:
+                    failures.append((dataset,method,seed,rc))
+                    print(json.dumps(dict(event='CELL_FAILED',dataset=dataset,method=method,seed=seed,exit_code=rc,traceback_log=err.name)),flush=True)
+                    continue
                 value=json.loads(summary.read_text());assert value['completed'] and value['scientific_result']==(not a.smoke)
                 if not a.smoke:
                     protected=Path(os.environ['NCD_PROTECTED_ROOT'])/target.relative_to(root)
@@ -82,6 +85,7 @@ def main():
                 print(f'CELL_COMPLETE {dataset} {method} {seed}',flush=True)
             if stopping:raise RuntimeError('Allocation stopping: retain checkpoints, no automatic submission')
             time.sleep(.25 if a.smoke else 5)
+        if failures:raise RuntimeError(f'Cells failed after all other work was preserved: {failures}')
         print('SMOKE_COMPLETE' if a.smoke else 'JOB_B_ALL_COMPLETE',flush=True)
     finally:
         for child,*_ in active:

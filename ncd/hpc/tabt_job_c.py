@@ -19,7 +19,7 @@ def main():
         assert os.environ.get('SLURM_JOB_PARTITION') in ('gpu-v100s','gpu-titan')
         assert len(gpus)==2 and int(os.environ['SLURM_CPUS_PER_TASK'])>=12
     cells=[(d,s) for d in ('CSE-CIC-IDS2018','NSL-KDD') for s in ((10,) if a.smoke else range(10,15))]
-    active=[];stopping=False;sampled=0.
+    active=[];stopping=False;sampled=0.;failures=[]
     def stop(*_):
         nonlocal stopping
         stopping=True
@@ -53,7 +53,10 @@ def main():
                 if rc is None:continue
                 active.remove(item);out.close();err.close()
                 print(json.dumps(dict(event='CELL_EXIT',dataset=dataset,seed=seed,exit_code=rc)),flush=True)
-                assert rc==0,f'{dataset}/{seed} failed; preserve all evidence'
+                if rc != 0:
+                    failures.append((dataset,seed,rc))
+                    print(json.dumps(dict(event='CELL_FAILED',dataset=dataset,seed=seed,exit_code=rc,traceback_log=err.name)),flush=True)
+                    continue
                 value=json.loads(summary.read_text());assert value['completed'] and value['scientific_result']==(not a.smoke)
                 if not a.smoke:
                     protected=Path(os.environ['NCD_PROTECTED_ROOT'])/target.relative_to(root)
@@ -66,6 +69,7 @@ def main():
                 sampled=time.monotonic()
             if stopping:raise RuntimeError('Allocation stopping: preserve task checkpoints; no automatic submission')
             time.sleep(.25 if a.smoke else 5)
+        if failures:raise RuntimeError(f'Cells failed after all other work was preserved: {failures}')
         print('SMOKE_COMPLETE' if a.smoke else 'JOB_C_ALL_COMPLETE',flush=True)
     finally:
         for child,*_ in active:
