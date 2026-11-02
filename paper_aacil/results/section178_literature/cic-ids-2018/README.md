@@ -52,3 +52,9 @@ WACB score distributions remain0/5. A future evaluation must retain phase/progre
 |cse-wacb-score-lowutil-inspection-20261102.stderr.log|202|955de7ea63e0f0b07333847bf4e00307583a6d0d6dd154a8bbf8e89c2b27a8a6|
 |cse-wacb-score-lowutil-stop-20261102.stdout.log|810|2e39317c3af7c3450eb931b0b6ac48dfacef03d11e2a612305dcc2a6e68c2012|
 |cse-wacb-score-lowutil-stop-20261102.stderr.log|202|955de7ea63e0f0b07333847bf4e00307583a6d0d6dd154a8bbf8e89c2b27a8a6|
+
+### WACB final score distributions completed (493836)
+
+Five final saved models,20 original TEST CM and15 holdout FP counts independently agree exactly. Raw logits/scores/rowIDs/labels, source bindings, CDF/KS/quantiles/per-class recall and Normal absorption are delivered under ../../section194_diagnostics/cic-ids-2018/wacb_score_distributions_493836. Benign KS0.00678361–0.01040315 and TEST FPR approximately1% coexist with BAcc21.40–72.65%; this is descriptive evidence, not a proven feature/training cause or bisection failure. Diagnostic batch4096 differs from original config2048; CM/FP exactness does not establish original logits bitexactness. No training or old threshold/result mutation.
+
+Original large NPZ bytes are delivered as45MiB parts with full/part SHA and actual restore code; shared row-label NPZ is unchanged. All six NPZ were reassembled and every array loaded. Job493836 COMPLETED0:0,87s wall/87.914s CPU/6823588KiB stepRSS; expected import-time stderr is nonempty. Earlier owner-cancelled493796 and startup-only493824 costs remain separately visible, not erased or counted as model results. Old slowdown was not reproduced; cause unproved. Manuscript RNG footnote/current-source visual QA, RQ1/RQ3, innovation and backup gates remain open.
