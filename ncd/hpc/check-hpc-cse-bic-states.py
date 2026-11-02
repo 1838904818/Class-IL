@@ -16,6 +16,7 @@ p.add_argument('--original',type=Path,required=True)
 p.add_argument('--data',type=Path,required=True)
 p.add_argument('--entry',type=Path,required=True)
 p.add_argument('--reference-result',type=Path,required=True)
+p.add_argument('--resume-snapshot',type=Path,help='Immutable epoch6 snapshot for seed14 only')
 a=p.parse_args()
 torch.set_num_threads(2)
 read=lambda path:json.loads(path.read_text(encoding='utf-8'))
@@ -32,7 +33,7 @@ def equal(x,y):
 r=read(a.directory/'result.json')
 i=r['identity']
 assert r['completed'] and r['scientific_result'] and not i['smoke']
-assert i['dataset']=='CSE-CIC-IDS2018' and i['seed']==13 and len(i['source_sha256'])==403
+assert i['dataset']=='CSE-CIC-IDS2018' and i['seed'] in (13,14) and len(i['source_sha256'])==403
 assert i['method']=='cer-bic-flow-cnn-common' and i['portable_entry_sha256']==digest(a.entry)
 reference=read(a.reference_result)['identity']
 assert i['data_binding']==reference['data_binding'] and i['data_metadata_sha256']==reference['data_metadata_sha256']
@@ -43,6 +44,13 @@ cfg=i['effective_config']
 assert cfg['schedule']=='cer_common_adam_8epochs_min2000' and cfg['optimizer']=='Adam'
 assert cfg['epochs_per_task']==8 and cfg['min_steps_per_task']==2000 and cfg['learning_rate']==.001
 assert cfg['stage2_epochs']==200 and cfg['batch_size']==256
+resume=None
+if i['seed']==14:
+    assert a.resume_snapshot and digest(a.resume_snapshot)=='bd2e9b692c9fd7f91203e52670412fe51f585efceb968a3aaaedad09591d3c36'
+    resume=torch.load(a.resume_snapshot,map_location='cpu',weights_only=True)
+    assert resume['identity']==i and resume['next_epoch']==6 and resume['steps']==236286
+    assert len(resume['history'])==6 and not resume['done']
+    assert not any(any(term in k.lower() for term in ('rng','random','generator')) for k in resume)
 y=np.load(a.data/'train_y.npy')
 yt=np.load(a.data/'test_y.npy')
 train,valid={},{}
@@ -68,7 +76,7 @@ for t,task in enumerate(i['tasks']):
         target=a.directory/folder/name
         payload=torch.load(target,map_location='cpu',weights_only=True)
         assert payload['identity']==i
-        if t<3:
+        if i['seed']==13 and t<3:
             source=a.original/folder/name
             old=torch.load(source,map_location='cpu',weights_only=True)
             assert old['identity']==original
@@ -119,6 +127,9 @@ for t,task in enumerate(i['tasks']):
     for epoch,h in enumerate(schedule['history'],1):
         assert h['epoch']==epoch and math.isfinite(h['validation_loss']) and h['lr']==.001
         assert h['optimizer_steps']==min(batches,target-(epoch-1)*batches)
+    if resume is not None and t==0:
+        assert schedule['history'][:6]==resume['history']
+        assert sum(h['optimizer_steps'] for h in schedule['history'][:6])==resume['steps']
     epochs=200 if t else 0
     assert s['bias_schedule']['epochs']==epochs
     assert s['bias_schedule']['optimizer_steps']==epochs*math.ceil(len(biases)/256)
@@ -137,12 +148,12 @@ for t,task in enumerate(i['tasks']):
         assert int(cm.sum())==int(np.isin(yt,seen).sum())
     seconds=s['training_seconds']
     assert seconds==cp['training_seconds'] and seconds>=0
-    if t<3:imported_seconds+=seconds
+    if i['seed']==13 and t<3:imported_seconds+=seconds
     else:new_seconds+=seconds
     prior=s
-    print(json.dumps(dict(event='BIC_STATE_CHECKED',task=t,true_row_ids=len(retained),imported=t<3,training_seconds=seconds,predictions_recomputed=False)),flush=True)
-assert imports==6
+    print(json.dumps(dict(event='BIC_STATE_CHECKED',task=t,true_row_ids=len(retained),imported=i['seed']==13 and t<3,training_seconds=seconds,predictions_recomputed=False)),flush=True)
+assert imports==(6 if i['seed']==13 else 0)
 assert abs(imported_seconds+new_seconds-r['training_seconds_total'])<1e-8
 summary=read(a.directory/'summary.json')
 assert summary['completed'] and summary['scientific_result'] and not summary['smoke']
-print(json.dumps(dict(event='BIC_STATES_COMPLETE',seed=13,checkpoints=4,exact_imported_payloads=imports,imported_training_seconds=imported_seconds,new_training_seconds=new_seconds,new_attempt_summary_elapsed_seconds=summary['elapsed_seconds'],predictions_recomputed=False,accepted=False)),flush=True)
+print(json.dumps(dict(event='BIC_STATES_COMPLETE',seed=i['seed'],checkpoints=4,exact_imported_payloads=imports,imported_training_seconds=imported_seconds,new_training_seconds=new_seconds if resume is None else None,recorded_training_seconds_total=imported_seconds+new_seconds,resume_preexisting_training_seconds=resume['seconds'] if resume is not None else None,recorded_post_resume_boundary_seconds=new_seconds-resume['seconds'] if resume is not None else None,new_attempt_summary_elapsed_seconds=summary['elapsed_seconds'],resume_completed_epochs_preserved=6 if resume is not None else None,rng_restored=False if resume is not None else None,predictions_recomputed=False,accepted=False)),flush=True)
