@@ -97,11 +97,70 @@ def fmt(value, sd=False):
     return f'{100*m:.2f}' + (rf' $\pm$ {100*s:.2f}' if sd else '')
 
 
+def completed_diagnostics(ref, output):
+    """Format already published analyses; no new tests or model evaluation."""
+    base = 'paper_aacil/results/'
+    score = read_result(base+'section178_literature/same-score-robustness-493707/aggregate.json', ref)
+    nsl = read_result(base+'section194_diagnostics/nsl-kdd/score_shift_remaining_eight/aggregate.json', ref)
+    wacb = read_result(base+'section194_diagnostics/cic-ids-2018/wacb_score_distributions_493836/aggregate.json', ref)
+    assert score and nsl and wacb
+    out = ['% Formatting immutable published analyses, not new experiments or tests.',
+           '% Evidence revision: '+str(ref),
+           r'\begin{table}[htbp]\centering\small',
+           r'\caption{Completed CSE-2018 registered S1 companion to Table~\ref{tab:section178-s1}. Original prior-shift rule, five paired seeds, one-sided $t$ and Holm over four baselines. Differences are pp; exact sign-flip sensitivity remains unadjusted.}',
+           r'\label{tab:cse-completed-s1}',
+           r'\scriptsize\setlength{\tabcolsep}{3pt}',
+           r'\begin{tabular}{lrrrr}\toprule',
+           r'Baseline & Difference & $t$ & Holm $p$ & Sign-flip $p$\\\midrule']
+    cse = score['section344']['cic-ids-2018']['0.01']['rules']['original_prior_shift']
+    for method, label in METHODS:
+        q = cse[method]['final_bacc_comparison']
+        assert q['n'] == 5 and q['paired_t_reject_at_0_05']
+        out.append(f"{label} & {100*q['mean_paired_difference']:.2f} & {q['paired_t_statistic']:.2f} & {q['paired_t_holm_p']:.3g} & {q['exact_signflip_one_sided_p']:.5f}"+r'\\')
+    out += [r'\bottomrule\end{tabular}\end{table}',
+            r'\begin{table*}[t]\centering\small',
+            r'\caption{Post-hoc common-score robustness at the 1\% holdout target. Each entry is original prior-shift $\rightarrow$ common-score final BAcc (five-seed mean, percent). This does not replace the registered primary or match measured TEST FPR. New baseline forward evaluations use Linux; historical reference/prior results remain as published.}',
+            r'\label{tab:same-score-completed}',
+            r'\begin{tabular}{lrrrr}\toprule',
+            r'Dataset & DER++ & iCaRL & ECBRS & BiC common\\\midrule']
+    for ds,label in [('unsw-nb15','UNSW'),('cic-ids-2017','CIC-2017'),('cic-ids-2018','CSE-2018')]:
+        rules = score['section344'][ds]['0.01']['rules']
+        values = []
+        for method,_ in METHODS:
+            old,new = [rules[rule][method]['aggregate']['balanced_accuracy']['mean'] for rule in ('original_prior_shift','same_score_holdout')]
+            values.append(f'{100*old:.2f}'+r'$\rightarrow$'+f'{100*new:.2f}')
+        out.append(' & '.join([label]+values)+r'\\')
+    out += [r'\bottomrule\end{tabular}\end{table*}',
+            r'\begin{table}[htbp]\centering\small',
+            r'\caption{Unregistered NSL-KDD TEST-label-informed post-hoc operating points, five-seed means (percent). At 2\% all methods have 194/9711 false positives per seed. At 5\%, AR-Stateless has a lower actual FPR, so that column is not strictly matched. No new significance decision is attached.}',
+            r'\label{tab:nsl-completed-posthoc}',
+            r'\begin{tabular}{lrrr}\toprule',
+            r'Method & 2\% BAcc & 5\% BAcc & 5\% actual FPR\\\midrule']
+    for method in ('R3-A','R3-L','ar','replay_bs','freq','wacb','derpp','icarl','ecbrs','bic'):
+        q = nsl['methods'][method]['posthoc']
+        assert all(row['posthoc']['0.02']['false_positives'] == 194 for row in nsl['methods'][method]['seeds'])
+        label = {'R3-A':'AR-Stateless','ar':'Neural AR','replay_bs':'Replay-BS'}.get(method,method.replace('_',r'\_'))
+        out.append(' & '.join([label]+[f'{100*x:.2f}' for x in (q['0.02']['balanced_accuracy']['mean'],q['0.05']['balanced_accuracy']['mean'],q['0.05']['measured_test_fpr']['mean'])])+r'\\')
+    out += [r'\bottomrule\end{tabular}\end{table}',
+            r'\begin{table}[htbp]\centering\small',
+            r'\caption{CSE-2018 WACB saved-model score diagnosis. Original 1\% prior-shift rule; BAcc/FPR are percent. KS compares benign holdout and TEST scores within each model, not across models.}',
+            r'\label{tab:wacb-completed-score}',
+            r'\begin{tabular}{rrrr}\toprule',
+            r'Seed & BAcc & TEST FPR & Benign KS\\\midrule']
+    for row in wacb['independent']['seeds']:
+        q = row['original_views']['0.01']
+        out.append(f"{row['seed']} & {100*q['balanced_accuracy']:.2f} & {100*q['measured_test_fpr']:.4f} & {row['ks_statistic']:.6f}"+r'\\')
+    out += [r'\bottomrule\end{tabular}\end{table}', '']
+    output.parent.mkdir(parents=True,exist_ok=True)
+    output.write_text('\n'.join(out),encoding='utf-8',newline='\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--git-ref')
     parser.add_argument('--output', type=Path,
                         default=ROOT/'paper_aacil/generated/published_baselines.tex')
+    parser.add_argument('--completed-diagnostics-output', type=Path)
     args = parser.parse_args()
     ref = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', args.git_ref],
                                   text=True).strip() if args.git_ref else None
@@ -162,6 +221,8 @@ def main():
     out += [r'\bottomrule\end{tabular}\end{table}', '']
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text('\n'.join(out), encoding='utf-8', newline='\n')
+    if args.completed_diagnostics_output:
+        completed_diagnostics(ref, args.completed_diagnostics_output)
     print(json.dumps(dict(completed_primary=completed, remaining_primary=60-completed,
                           evidence_revision=ref, rows=len(rows)), sort_keys=True))
 

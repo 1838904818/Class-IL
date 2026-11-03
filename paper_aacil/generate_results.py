@@ -114,11 +114,11 @@ def paired(a,b,key,alternative='greater',alpha='0.02'):
     return out
 
 
-def table(name,caption,header,rows,cols=None,wide=True,note=''):
+def table(name,caption,header,rows,cols=None,wide=True,note='',label=None):
     env='table*' if wide else 'table'
     cols=cols or 'l'*len(header)
     text=[r'\begin{'+env+r'}[t]',r'\centering\scriptsize',r'\setlength{\tabcolsep}{3.8pt}',
-          r'\caption{'+caption+r'}\label{tab:'+name.replace('_','-')+'}',r'\begin{tabular}{'+cols+'}',r'\toprule',
+          r'\caption{'+caption+r'}\label{tab:'+(label or name.replace('_','-'))+'}',r'\begin{tabular}{'+cols+'}',r'\toprule',
           ' & '.join(header)+r' \\',r'\midrule']
     text += [' & '.join(map(str,r))+r' \\' for r in rows]
     text += [r'\bottomrule',r'\end{tabular}']
@@ -585,7 +585,7 @@ def compact_outputs(evidence):
         str(r['optimizer_parameters']),str(r['inference_parameters']),str(r['extra_components'])]
         for r in evidence['capacity']]
     table('compact_capacity','Fixed family-model capacity of the selected per-candidate configurations.',
-        ['Data','Candidate','Training-resident','Optimizer','Inference','Extra components'],capacity,cols='llrrrr',
+        ['Data','Candidate','Training-resident','Optimizer','Inference','Extra components'],capacity,cols='llrrrr',label='fixed-compact-capacity',
         note=('F only; the common G and transient previous-task gate teacher are separate. Counts come from saved development architectures '
         'and remain fixed across tasks. EMA training-resident count includes its slow copy; only EMA is used at inference. '
         'DUAL uses two fixed encoders and one joint head within a single F.'))
