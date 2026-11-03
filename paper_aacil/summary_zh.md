@@ -1,5 +1,15 @@
 # AR-Stateless 与历史设计空间：中文摘要
 
+## 当前证据同步（2026-11-03，当前PDF编译与版面已核）
+
+共同预算三数据集×四方法×五seed的60/60主格均已完成并双仓发布。当前生成表固定读取私仓提交6d5a95cca69dfa4f38d99c968063410b29b67e48中的原始混淆计数；另一个生成表仅格式化既有已发布统计，不新增训练、推理或显著性检验。原prior-shift 1%主端点的三数据集各四项配对单侧t/Holm均通过；CSE差值为47.14–67.37pp，最大Holm p为9.40×10⁻⁵。五配对精确sign-flip最小单侧p为1/32，四项Holm敏感性仍不通过，不能替换primary或声称非参数族通过。
+
+共同score稳健性保留原primary，基线BAcc有升有降，不泛称提升；新baseline统一Linux前向不等全部历史runtime已统一，holdout同目标不等TEST实际FPR严格matched。NSL十方法TEST-label-informed后验2%点每seed均194/9711误报：neural AR BAcc51.27%高于AR-Stateless47.44%，R3-L47.45%接近；不是AR-Stateless全方法clean win，不算注册S1。5%预算AR-Stateless实际FPR4.6298%，其余方法4.9943%，不严格matched。
+
+CSE WACB的良性holdout/TEST KS为0.006784–0.010403，TEST FPR约1%，但五seed BAcc21.40–72.65%（均值42.19%、样本SD22.33pp）。原20CM及15holdout FP独立完全一致，不从分布关联推出二分故障或feature/memory因果。诊断batch4096不同于原config2048；CM/FP一致不证明原logits bit-exact。成功只读诊断87s wall/87.914sCPU，含旧取消及启动定位为1153s/99.854s，非训练加速。原始数组按原字节分块发布并提供SHA/恢复程序，不重复发布旧科学组。
+
+CSE BiC的RNG恢复限制见文末及当前PDF第11页脚注。2026-11-03使用Tectonic 0.17.0从当前源编译39页PDF，编译退出码0；日志无未定义引用、重复标签、缺失字形或超宽框。已用Poppler渲染全部39页并逐页目视检查图表、页边和脚注，最终改动页另行复查。修正三处超宽表（UNSW逐类忘却、UNSW保持诊断、CSE注册S1）、固定容量表重复标签及词与数字粘连，生成器同步保持数值不变。第20页保留共同score稳健性及未登记NSL扩展，第21页列对应表；共同打分三数据集各四项t/Holm通过不替换primary，NSL默认口径AR-Stateless最低BAcc、后验同实际FPR并非赢家的限制均保留。数字检查复用已核固定证据，并核对17组85个独立输入格的默认/校准表字段、12组同score变化、4项CSE S1、10项NSL和5个WACB行；这不冒称对所有历史结果重新独立审计。RQ1/RQ3、实质创新、41项及backup仍开放。以下2026-10-28/29覆盖数和“当时未完成”叙述是历史状态，不代表当前完成状态。
+
 ## 文稿结构更新（2026-10-28）
 
 摘要中的历史neural AR数值段完整移入既有“Design-space study and negative variants”小节，原数值、方向及双侧精确符号翻转限制均保留，避免与AR-Stateless的相反排序混读。摘要现在明确新增基线仅UNSW与CIC块完成：注册低FPR端点通过配对单侧检验及数据集内Holm校正，但多重校正后的精确符号翻转敏感性不通过；CSE新增基线块仍未完成。骨干与良性访问差异不支持把结果单独归因于良性refresh。默认对照与部署讨论继续区分历史neural AR，复现说明区分历史lead汇总与后续已发布原始结果生成的确认/基线表。此次不改任何数值、检验或原始结果，不是新科学结论，全文清稿与视觉QA仍待完成。
@@ -251,6 +261,10 @@ G1（联合报告缺口）：六篇中五篇主结果未单列固定工作点良
 G2（条件性的良性回放竞争）：共享缓冲是若干方法的设定，不是普遍事实或已证遗忘根因。ComNet每类25样本不是固定总M的证据；RTSI已有memory外新良性与旧攻击专属memory的先例，CND-IDS另有Normal参考集。
 G3（类别偏差到良性告警控制）：BiC、WA、SS-IL、EEIL及logit adjustment为相关但不同的控制，并未直接提供本文的持续良性刷新、独立门和良性校准协议；不据此断言它们不可适配或门结构新颖。KD+WA借用蒸馏、DER式回放和WA，不声称组件创新；其联合准确率/遗忘收益仍须实证，CSE失败保持。
 G1–G3仅组织锁定RQ2下的预测/保持子研究；原RQ1静默解释漂移、RQ3非抑制治理及全部RO不替换，未完成边界保持。
+
+### CSE BiC恢复与历史运行环境限制
+
+CSE共同预算BiC seed14从六个已完成epoch的模型、优化器及epoch记录恢复，但原checkpoint未保存或恢复全局PyTorch CPU、NumPy、Python及DataLoader RNG状态。逐epoch确定性shuffle不等于完整随机训练轨迹恢复，不能声称与不中断训练bit-exact等价。原seed10–12保留Windows评估，13–14保留Linux评估，不是统一历史runtime重评估；恢复attempt、复用已完成工作与中断partial成本需保留各自范围，重叠elapsed不能相加。当前PDF第11页包含rng_restored=false脚注；本页顶部记录当前编译与版面核验范围，不因这一脚注关闭整体研究要求。
 
 ### CSE18 九方法完整描述汇总（45/45，非注册判定）
 
