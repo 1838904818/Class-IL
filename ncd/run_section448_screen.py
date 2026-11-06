@@ -66,7 +66,7 @@ def main():
 
     cfg = next(c for c in configurations() if c.identifier == "C1")
     output = a.output_root.resolve() / ("smoke" if a.smoke else "screen") / a.dataset.lower() / a.arm / f"seed{a.seed}"
-    output.mkdir(parents=True, exist_ok=False)
+    output.mkdir(parents=True, exist_ok=True)
     source_paths = ("ncd/run_section448_screen.py", "ncd/section138_cell.py",
                     "ncd/section448_variants.py", "ncd/section156_models.py",
                     "ncd/section156_config.py", "ncd/section81_exposure.py",
