@@ -175,11 +175,22 @@ def run_er_cell(data, config, identity, output, device, *, calibration_ids,
             record = {k: state[k] for k in ("task_index", "seen_classes", "schedule",
                       "buffer_selection_seconds", "memory_targets", "memory_counts",
                       "memory_bytes", "parameters")}
+            # Section118's default-decision evaluator is intentionally CPU-only.
+            # Formal ER runs train on CUDA, so move the already-trained model
+            # for this bounded TEST-only pass and restore its training device
+            # before the next task. No weights or decision semantics change.
+            model.to(torch.device("cpu"))
+            try:
+                default_decision = evaluate_models(
+                    data.x_test, data.y_test, seen, data.class_order, model,
+                    batch_size=256)
+            finally:
+                model.to(device)
             record.update(identity_hash=canonical_hash(identity),
                           checkpoint_file=checkpoint.relative_to(output).as_posix(),
                           checkpoint_sha256=checkpoint_sha, calibration=calibration,
                           operating_points={k: points[k] for k in ("0.01", "0.02", "0.05")},
-                          default_decision=evaluate_models(data.x_test,data.y_test,seen,data.class_order,model,batch_size=256),
+                          default_decision=default_decision,
                           calibration_seconds=calibration_seconds,
                           evaluation_seconds=evaluation_seconds)
             if "recovered_from" in state:

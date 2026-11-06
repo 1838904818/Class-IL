@@ -16,7 +16,7 @@ from ncd.train_cil import seed_everything
 
 
 def run_cell(data, config, identity, output, configuration, *, model_builder=None,
-             gate_trainer=None):
+             gate_trainer=None, variant=None):
     output.mkdir(parents=True, exist_ok=True)
     final = output / "result.json"
     if final.exists():
@@ -34,6 +34,10 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
     attacks = [c for c in range(len(data.class_order)) if c != normal]
     mapping = {c: i for i, c in enumerate(attacks)}
     switches = configuration.switches()
+    if variant is not None:
+        from ncd.section448_variants import VARIANTS
+        if variant not in VARIANTS or not switches.get("control", False):
+            raise ValueError("§448 variants require a registered C1 HistGB control and a known variant")
     literature_memory = config.get("section165_memory") == "literature"
     if literature_memory and not switches.get("control", False):
         raise ValueError("Literature-memory ablation requires the joint tree control")
@@ -62,9 +66,21 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             gate.load_state_dict(state["gate_state"], strict=True)
             family.load_state_dict(state["family_state"], strict=True)
             memory = aa.memory_from_tensors(state["attack_memory"])
+            variant_metadata = state.get("variant_metadata")
         else:
             current = exposure(index, include_normal=not literature_memory or index == 0)
             slots = {c: current[c] if c in current else memory[c] for c in seen}
+            variant_caps = {}
+            variant_targets = aa.attack_targets("aacil", seen, normal) if variant else {}
+            if variant is not None:
+                from ncd.section448_variants import cap_new_class_rows
+                for c in new:
+                    selected, cap_record = cap_new_class_rows(
+                        slots[c]["train_ids"], variant_targets[c], variant,
+                        task_seed * 10007 + c + 448)
+                    slots[c]["train_ids"] = selected
+                    slots[c]["train_x"] = data.x_train[selected].copy()
+                    variant_caps[str(c)] = cap_record
             normal_pool = exposure.train[normal]
             if config.get("section156") and switches["normal_training_rows"] == 500000:
                 # n2 is capped after excluding held-out roles, not before.
@@ -120,8 +136,23 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
                     new + ([normal] if index == 0 else []),
                     {c: 200 for c in seen}, seed, index)
             else:
-                next_memory = aa.refresh_attack_memory(data, exposure.train, exposure.valid, memory, new,
-                    aa.attack_targets("aacil", seen, normal), seed, index)
+                train_pools, valid_pools = dict(exposure.train), dict(exposure.valid)
+                if variant is not None and variant in ("V1a", "V1b", "V3"):
+                    # Memory admission cannot recover rows excluded by the exposure cap.
+                    for c in new:
+                        train_pools[c] = slots[c]["train_ids"]
+                if variant in ("V2", "V3"):
+                    from ncd.section448_variants import refresh_diverse_attack_memory
+                    next_memory, memory_details = refresh_diverse_attack_memory(
+                        data, train_pools, valid_pools, memory, new, variant_targets, seed, index)
+                else:
+                    next_memory = aa.refresh_attack_memory(data, train_pools, valid_pools, memory, new,
+                        variant_targets if variant else aa.attack_targets("aacil", seen, normal), seed, index)
+                    memory_details = None
+                variant_metadata = ({"variant": variant, "class_exposure_caps": variant_caps,
+                                     "attack_memory": memory_details,
+                                     "quota_semantics": "per-class attack capacity from aa.attack_targets(aacil); train/validation split unchanged"}
+                                    if variant else None)
             if tree_family:
                 post = dict(operations=[], logits_stored=False, weight_alignment=False, cbf=False)
             else:
@@ -135,7 +166,8 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
                 attack_memory=aa.memory_to_tensors(memory), gate_training_seconds=gate_seconds,
                 family_training_seconds=family_seconds, gate_schedule=gate_stats,
                 family_schedule=family_stats, postprocessing=post,
-                optimization_ids=torch.from_numpy(ids), stopping_ids=torch.from_numpy(stop_ids))
+                optimization_ids=torch.from_numpy(ids), stopping_ids=torch.from_numpy(stop_ids),
+                variant_metadata=variant_metadata)
             checkpoint_save(checkpoint, state)
         calibration = aa.calibrate_gate(gate, data.x_train[exposure.calibration_ids],
                                         exposure.calibration_ids, device, 4096)
@@ -153,7 +185,8 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             gate_training_seconds=state["gate_training_seconds"],
             family_training_seconds=state["family_training_seconds"], postprocessing=state["postprocessing"],
             calibration=calibration, operating_points=points, default_decision=default,
-            stage_attempt_seconds=time.perf_counter() - started)
+            stage_attempt_seconds=time.perf_counter() - started,
+            variant_metadata=state.get("variant_metadata"))
         save_json(checkpoint.with_suffix(".json"), record)
         records.append(record)
         print(f"STAGE_COMPLETE task={index}", flush=True)
