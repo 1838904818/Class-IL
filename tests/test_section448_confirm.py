@@ -1,8 +1,11 @@
+import hashlib
+import tempfile
 import unittest
 from pathlib import Path
 
 from ncd.run_section448_confirm import (
     ARMS, DATASETS, DATASET_DIRS, SEEDS, THREADS, planned_cells, result_directory,
+    sha256_normalized_worktree,
 )
 from ncd.section156_config import configurations
 
@@ -42,6 +45,15 @@ class TestSection448Confirm(unittest.TestCase):
             "weight_alignment": True, "last_layer_cbf_epochs": 1,
             "store_logits": False,
         })
+
+    def test_source_hash_is_independent_of_windows_newline_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.py"
+            path.write_bytes(b"first\r\nsecond\r\n")
+            self.assertEqual(
+                sha256_normalized_worktree(path),
+                hashlib.sha256(b"first\nsecond\n").hexdigest(),
+            )
 
 
 if __name__ == "__main__":

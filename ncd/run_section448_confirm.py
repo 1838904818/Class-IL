@@ -41,6 +41,12 @@ def sha256_at_commit(commit: str, relative_path: str) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def sha256_normalized_worktree(path: Path) -> str:
+    """Hash Git-style text content independent of Windows CRLF checkout conversion."""
+    content = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()
+
+
 def planned_cells(dataset: str) -> tuple[tuple[str, int], ...]:
     if dataset not in DATASETS:
         raise ValueError(f"Unsupported confirmation dataset: {dataset}")
@@ -117,9 +123,12 @@ def main() -> None:
     paths = source_paths()
     hashes = {name: sha256_at_commit(args.source_commit, name) for name in paths}
     for name in paths:
-        if name != "ncd/run_section448_confirm.py" and sha256(ROOT / name) != hashes[name]:
+        if (name != "ncd/run_section448_confirm.py"
+                and sha256_normalized_worktree(ROOT / name) != hashes[name]):
             raise ValueError(f"Working source differs from pinned commit: {name}")
-    provenance_entrypoint_sha256 = sha256(ROOT / "ncd/run_section448_confirm.py")
+    provenance_entrypoint_sha256 = sha256_normalized_worktree(
+        ROOT / "ncd/run_section448_confirm.py"
+    )
 
     def trainer(model, x, y, *, schedule, **kwargs):
         return train_gate(model, x, y, kind="histgb", **kwargs)
