@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import platform
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -30,6 +31,14 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def sha256_at_commit(commit: str, relative_path: str) -> str:
+    content = subprocess.run(
+        ["git", "show", f"{commit}:{relative_path}"], cwd=ROOT,
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ).stdout
+    return hashlib.sha256(content).hexdigest()
 
 
 def planned_cells(dataset: str) -> tuple[tuple[str, int], ...]:
@@ -106,7 +115,11 @@ def main() -> None:
     configuration = next(item for item in configurations() if item.identifier == "C1")
 
     paths = source_paths()
-    hashes = {name: sha256(ROOT / name) for name in paths}
+    hashes = {name: sha256_at_commit(args.source_commit, name) for name in paths}
+    for name in paths:
+        if name != "ncd/run_section448_confirm.py" and sha256(ROOT / name) != hashes[name]:
+            raise ValueError(f"Working source differs from pinned commit: {name}")
+    provenance_entrypoint_sha256 = sha256(ROOT / "ncd/run_section448_confirm.py")
 
     def trainer(model, x, y, *, schedule, **kwargs):
         return train_gate(model, x, y, kind="histgb", **kwargs)
@@ -120,6 +133,12 @@ def main() -> None:
             "seed": seed,
             "method": arm,
             "reference_configuration": "C1" if arm == "AR-Stateless" else "C1+Section448",
+            "effective_switches": configuration.switches(),
+            "section156_config_role": (
+                "descriptive-only for C1 switches; run_cell behavior is governed by "
+                "configuration.switches() (the existing truthiness guard is retained)"
+            ),
+            "provenance_entrypoint_sha256": provenance_entrypoint_sha256,
             "effective_config": {**config, "problem_scout_data_root": "<DATA_ROOT>"},
             "engineering_defaults": {
                 "kmeans_n_init": "auto",
@@ -146,6 +165,7 @@ def main() -> None:
                 "V1_cap": "new-class optimization rows capped at class capacity for V1a and 4x capacity for V1b; validation slots unchanged",
                 "kmeans_n_init": "auto",
                 "selection_basis": "V1a and V1b advanced by the fixed Section 448 screening rule; AR-Stateless retained as comparator",
+                "section156_config_role": "descriptive-only for C1 switches",
             },
         }
 
@@ -175,6 +195,9 @@ def main() -> None:
                 "completed": True, "scientific_result": True,
                 "source_commit": identity["git_commit"], "dataset": args.dataset,
                 "seed": seed, "method": arm,
+                "effective_switches": identity["effective_switches"],
+                "section156_config_role": identity["section156_config_role"],
+                "provenance_entrypoint_sha256": identity["provenance_entrypoint_sha256"],
                 "checkpoints": len(result["checkpoints"]), "runtime": runtime,
             })
 
