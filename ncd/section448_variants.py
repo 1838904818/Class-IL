@@ -9,6 +9,7 @@ from sklearn.cluster import KMeans
 from ncd import run_aacil as aa
 
 VARIANTS = ("V1a", "V1b", "V2", "V3")
+KMEANS_N_INIT = "auto"
 
 
 def row_ids_sha256(ids):
@@ -41,7 +42,8 @@ def _cluster_rows(ids, x, count, seed):
         picked = np.sort(ids.copy())
         return picked, {"clusters": k, "candidate_rows": int(len(ids)),
                         "selected_rows": int(len(picked)), "selection": "all candidates retained"}
-    fitted = KMeans(n_clusters=k, random_state=int(seed), n_init=10, algorithm="lloyd").fit(x)
+    fitted = KMeans(n_clusters=k, random_state=int(seed), n_init=KMEANS_N_INIT,
+                    algorithm="lloyd").fit(x)
     picked = []
     for cluster in range(k):
         members = np.flatnonzero(fitted.labels_ == cluster)

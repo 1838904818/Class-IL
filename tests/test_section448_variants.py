@@ -4,6 +4,7 @@ import unittest
 import numpy as np
 
 from ncd.section448_variants import (
+    KMEANS_N_INIT,
     _cluster_rows,
     cap_new_class_rows,
     refresh_diverse_attack_memory,
@@ -11,6 +12,9 @@ from ncd.section448_variants import (
 
 
 class TestSection448Variants(unittest.TestCase):
+    def test_kmeans_n_init_is_recorded_engineering_default(self):
+        self.assertEqual(KMEANS_N_INIT, "auto")
+
     def test_caps_are_deterministic_and_v1b_uses_four_times_quota(self):
         ids = np.arange(40, dtype=np.int64)
         a, meta = cap_new_class_rows(ids, 8, "V1a", 17)

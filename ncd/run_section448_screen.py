@@ -76,6 +76,8 @@ def main():
         git_commit=source_commit(ROOT), dataset=a.dataset, seed=a.seed,
         method=a.arm, reference_configuration="C1" if a.arm == "AR-Stateless" else "C1+Section448",
         effective_config={**config, "problem_scout_data_root": "<DATA_ROOT>"},
+        engineering_defaults={"kmeans_n_init": "auto",
+                              "kmeans_n_init_scope": "engineering_default_not_method_hyperparameter"},
         data_binding=binding(data, None, None),
         source_sha256={name: sha256(ROOT / name) for name in source_paths},
         command=[Path(sys.argv[0]).name, "--arm", a.arm, "--dataset", a.dataset,
