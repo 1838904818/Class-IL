@@ -27,7 +27,25 @@ export TMP="$TMPDIR"
 cd "$NCD_CODE_ROOT"
 : "${NCD_INPUT_ARCHIVE:?}" "${NCD_INPUT_ARCHIVE_SHA256:?}"
 # Fresh verified data are unpacked only inside the allocated compute session.
-srun --hint=nomultithread --cpu-bind=cores bash -c 'set -euo pipefail; printf "%s  %s\n" "$NCD_INPUT_ARCHIVE_SHA256" "$NCD_INPUT_ARCHIVE" | sha256sum -c -; zstd -dc "$NCD_INPUT_ARCHIVE" | tar -xf - -C "$NCD_DATA_ROOT"'
+# Some compute images do not expose the zstd executable even when libzstd is
+# available. Prefer the executable when present; otherwise use the bounded
+# stdlib/ctypes streaming decoder, without installing software or staging a
+# second copy of the archive.
+srun --hint=nomultithread --cpu-bind=cores bash -c 'set -euo pipefail
+printf "%s  %s\n" "$NCD_INPUT_ARCHIVE_SHA256" "$NCD_INPUT_ARCHIVE" | sha256sum -c -
+zstd_bin="$(command -v zstd || true)"
+if [[ -z "$zstd_bin" ]]; then
+  for candidate in /usr/bin/zstd /bin/zstd; do
+    if [[ -x "$candidate" ]]; then zstd_bin="$candidate"; break; fi
+  done
+fi
+if [[ -n "$zstd_bin" ]]; then
+  echo "ARCHIVE_DECODER=$zstd_bin" >&2
+  "$zstd_bin" -dc "$NCD_INPUT_ARCHIVE" | tar -xf - -C "$NCD_DATA_ROOT"
+else
+  echo "ARCHIVE_DECODER=python-ctypes-libzstd" >&2
+  "$NCD_PYTHON" -I -B ncd/hpc/extract_zstd_stream.py "$NCD_INPUT_ARCHIVE" | tar -xf - -C "$NCD_DATA_ROOT"
+fi'
 # Five large CSE seeds share two GPUs, at most three workers on each GPU.
 # Task checkpoints survive an allocation limit; no automatic scheduler retry.
 srun --hint=nomultithread --cpu-bind=cores "$NCD_PYTHON" -I -B -u ncd/hpc/tabt_job_c.py
