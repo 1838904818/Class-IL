@@ -29,7 +29,20 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
         return result
     seed = identity["seed"]
     device = torch.device("cpu")
-    exposure = ERExposure(data, seed)
+    volume_sensitivity = config.get("section489_benign_volume", False)
+    hybrid_memory = config.get("section165_benign_refresh", False)
+    literature_memory = config.get("section165_memory") == "literature"
+    section489 = volume_sensitivity or hybrid_memory
+    if section489 and (configuration.identifier != "C1" or variant is not None):
+        raise ValueError("Section 489 requires unmodified C1 outside its registered switches")
+    if (volume_sensitivity and literature_memory) or (hybrid_memory and not literature_memory):
+        raise ValueError("Section 489 benign-volume and hybrid-memory settings do not match")
+    normal_cap = config["normal_training_rows"] if section489 else 50000
+    if (volume_sensitivity and normal_cap not in (5000, 10000, 20000)) or (
+        hybrid_memory and normal_cap != 50000
+    ):
+        raise ValueError("Unregistered Section 489 benign exposure cap")
+    exposure = ERExposure(data, seed, normal_training_rows=normal_cap)
     normal = exposure.normal
     attacks = [c for c in range(len(data.class_order)) if c != normal]
     mapping = {c: i for i, c in enumerate(attacks)}
@@ -38,7 +51,6 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
         from ncd.section448_variants import VARIANTS
         if variant not in VARIANTS or not switches.get("control", False):
             raise ValueError("§448 variants require a registered C1 HistGB control and a known variant")
-    literature_memory = config.get("section165_memory") == "literature"
     if literature_memory and not switches.get("control", False):
         raise ValueError("Literature-memory ablation requires the joint tree control")
     first = exposure(0)
@@ -69,7 +81,7 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             variant_metadata = state.get("variant_metadata")
         else:
             variant_metadata = None
-            current = exposure(index, include_normal=not literature_memory or index == 0)
+            current = exposure(index, include_normal=not literature_memory or hybrid_memory or index == 0)
             slots = {c: current[c] if c in current else memory[c] for c in seen}
             variant_caps = {}
             variant_targets = aa.attack_targets("aacil", seen, normal) if variant else {}
@@ -87,16 +99,19 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
                 # n2 is capped after excluding held-out roles, not before.
                 excluded = np.union1d(exposure.normal_stopping_ids, exposure.calibration_ids)
                 normal_pool = normal_pool[~np.isin(normal_pool, excluded)]
-            normal_ids = aa.select_rows(normal_pool, switches["normal_training_rows"], task_seed * 10007 + normal)
+            optimization_cap = normal_cap if section489 else switches["normal_training_rows"]
+            normal_ids = aa.select_rows(normal_pool, optimization_cap, task_seed * 10007 + normal)
             if configuration.gate_schedule == 2:
                 normal_ids = normal_ids[~np.isin(normal_ids, exposure.normal_stopping_ids)]
-            if literature_memory:
+            if literature_memory and not hybrid_memory:
                 normal_ids = slots[normal]["train_ids"]
             ids = np.concatenate([normal_ids, *[slots[c]["train_ids"] for c in seen if c != normal]])
             gx = data.x_train[ids].copy()
             control = switches.get("control", False)
             gy = (data.y_train[ids] != normal).astype(np.int64)
             stop_ids = np.concatenate([slots[c]["validation_ids"] for c in seen])
+            if section489 and not np.array_equal(normal_ids, current[normal]["train_ids"]):
+                raise ValueError("Benign optimization differs from the fixed TRAIN-only exposure")
             stop_y = (data.y_train[stop_ids] != normal).astype(np.int64)
             if control:
                 gy = np.asarray([0 if c == normal else mapping[int(c)] + 1 for c in data.y_train[ids]])
@@ -169,6 +184,16 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
                 family_schedule=family_stats, postprocessing=post,
                 optimization_ids=torch.from_numpy(ids), stopping_ids=torch.from_numpy(stop_ids),
                 variant_metadata=variant_metadata)
+            if section489:
+                state["benign_exposure"] = {
+                    "requested_rows": normal_cap,
+                    "optimization_rows": len(normal_ids),
+                    "stopping_rows": len(current[normal]["validation_ids"]),
+                    "retained_normal_rows": (
+                        len(memory[normal]["train_ids"]) + len(memory[normal]["validation_ids"])
+                        if normal in memory else 0
+                    ),
+                }
             checkpoint_save(checkpoint, state)
         calibration = aa.calibrate_gate(gate, data.x_train[exposure.calibration_ids],
                                         exposure.calibration_ids, device, 4096)
@@ -188,6 +213,8 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             calibration=calibration, operating_points=points, default_decision=default,
             stage_attempt_seconds=time.perf_counter() - started,
             variant_metadata=state.get("variant_metadata"))
+        if section489:
+            record["benign_exposure"] = state["benign_exposure"]
         save_json(checkpoint.with_suffix(".json"), record)
         records.append(record)
         print(f"STAGE_COMPLETE task={index}", flush=True)

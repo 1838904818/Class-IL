@@ -14,7 +14,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--dataset', required=True,
                    choices=('NSL-KDD', 'UNSW-NB15', 'CIC-IDS-2017', 'CSE-CIC-IDS2018'))
-    p.add_argument('--method', choices=('R3-L', 'R3-A'), default='R3-L')
+    p.add_argument('--method', choices=('R3-L', 'R3-A', 'R3-H'), default='R3-L')
+    p.add_argument('--normal-training-rows', type=int, choices=(5000, 10000, 20000),
+                   help='Section 489 B1 total fresh Normal exposure before splitting roles')
     p.add_argument('--seed', required=True, type=int, choices=(1, 10, 11, 12, 13, 14))
     p.add_argument('--data-root', required=True, type=Path)
     p.add_argument('--output-root', required=True, type=Path)
@@ -23,6 +25,8 @@ def main():
     a = p.parse_args()
     if (a.seed == 1) != a.smoke:
         p.error('Smoke uses seed 1; confirmation uses seeds 10-14')
+    if a.normal_training_rows is not None and a.method != 'R3-A':
+        p.error('--normal-training-rows is only for the R3-A B1 sensitivity')
     os.environ['OMP_NUM_THREADS'] = str(a.threads)
     os.environ['MKL_NUM_THREADS'] = str(a.threads)
     import torch
@@ -43,8 +47,13 @@ def main():
         derpp_alpha=1., derpp_beta=1., deadline_iso=None,
         normal_training_rows=50000, ema_decay=.999, ema_consistency=1., hidden=128,
         section156=cfg.switches(),
-        section165_memory='literature' if a.method == 'R3-L' else 'exact_c1')
-    output = a.output_root.resolve() / ('smoke' if a.smoke else 'confirmation') / a.dataset.lower() / a.method / f'seed{a.seed}'
+        section165_memory='literature' if a.method in ('R3-L', 'R3-H') else 'exact_c1')
+    if a.normal_training_rows is not None:
+        config.update(normal_training_rows=a.normal_training_rows, section489_benign_volume=True)
+    if a.method == 'R3-H':
+        config.update(section165_benign_refresh=True)
+    arm = a.method if a.normal_training_rows is None else f'{a.method}-B1-{a.normal_training_rows}'
+    output = a.output_root.resolve() / ('smoke' if a.smoke else 'confirmation') / a.dataset.lower() / arm / f'seed{a.seed}'
     output.mkdir(parents=True, exist_ok=False)
     started = time.perf_counter()
     data, _, _, _ = prepare_setting(a.dataset, config)

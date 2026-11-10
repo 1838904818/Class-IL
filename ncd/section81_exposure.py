@@ -19,8 +19,11 @@ class ERExposure:
     Permanent Normal calibration is excluded from both roles.
     """
 
-    def __init__(self, data, seed):
+    def __init__(self, data, seed, *, normal_training_rows=50000):
         self.data, self.seed = data, int(seed)
+        if type(normal_training_rows) is not int or normal_training_rows <= 0:
+            raise ValueError("Expected a positive benign exposure cap")
+        self.normal_training_rows = normal_training_rows
         self.normal = data.class_order.index("Normal")
         self.train, self.valid = section26_pools(data, self.seed)
         self.calibration_ids = self.valid[self.normal].copy()
@@ -47,7 +50,7 @@ class ERExposure:
         task_seed = self.seed * 10000 + task_index
         pairs = {}
         if include_normal:
-            normal_ids = select_rows(self.train[self.normal], 50000,
+            normal_ids = select_rows(self.train[self.normal], self.normal_training_rows,
                                      task_seed * 10007 + self.normal)
             stopping = np.isin(normal_ids, self.normal_stopping_ids)
             pairs[self.normal] = (normal_ids[~stopping], normal_ids[stopping])
