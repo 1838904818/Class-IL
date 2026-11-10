@@ -68,6 +68,7 @@ def run_cell(data, config, identity, output, configuration, *, model_builder=Non
             memory = aa.memory_from_tensors(state["attack_memory"])
             variant_metadata = state.get("variant_metadata")
         else:
+            variant_metadata = None
             current = exposure(index, include_normal=not literature_memory or index == 0)
             slots = {c: current[c] if c in current else memory[c] for c in seen}
             variant_caps = {}
