@@ -11,14 +11,17 @@ import time
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--smoke',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--smoke',action='store_true')
+    p.add_argument('--datasets', nargs='+', choices=('CSE-CIC-IDS2018','NSL-KDD'),
+                   default=('CSE-CIC-IDS2018','NSL-KDD'))
+    a=p.parse_args()
     root=Path(os.environ['NCD_OUTPUT_ROOT']);code=Path(__file__).resolve().parent
     logs=root/'logs';logs.mkdir(parents=True,exist_ok=True)
     gpus=os.environ.get('CUDA_VISIBLE_DEVICES','0,1').split(',')
     if not a.smoke:
         assert os.environ.get('SLURM_JOB_PARTITION') in ('gpu-v100s','gpu-titan')
         assert len(gpus)==2 and int(os.environ['SLURM_CPUS_PER_TASK'])>=12
-    cells=[(d,s) for d in ('CSE-CIC-IDS2018','NSL-KDD') for s in ((10,) if a.smoke else range(10,15))]
+    cells=[(d,s) for d in a.datasets for s in ((10,) if a.smoke else range(10,15))]
     active=[];stopping=False;sampled=0.;failures=[]
     def stop(*_):
         nonlocal stopping
