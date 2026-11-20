@@ -14,6 +14,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--smoke',action='store_true')
     p.add_argument('--datasets', nargs='+', choices=('CSE-CIC-IDS2018','NSL-KDD'),
                    default=('CSE-CIC-IDS2018','NSL-KDD'))
+    p.add_argument('--repair-from', type=Path)
     a=p.parse_args()
     root=Path(os.environ['NCD_OUTPUT_ROOT']);code=Path(__file__).resolve().parent
     logs=root/'logs';logs.mkdir(parents=True,exist_ok=True)
@@ -48,6 +49,9 @@ def main():
                     '--dependency-root',os.environ['NCD_TABT_DEPENDENCY_ROOT'],
                     '--data-root',os.environ['NCD_DATA_ROOT'],'--output-dir',str(target),'--resume']
                 if a.smoke:command+=['--smoke']
+                if a.repair_from:
+                    assert not a.smoke and dataset == 'CSE-CIC-IDS2018'
+                    command += ['--repair-from', str(a.repair_from/dataset.lower()/f'seed{seed}')]
                 child=subprocess.Popen(command,stdout=out,stderr=err,env=env)
                 active.append((child,out,err,lane,dataset,seed,summary,target))
                 print(json.dumps(dict(event='CELL_STARTED',dataset=dataset,seed=seed,gpu=gpus[lane],pid=child.pid,command=command)),flush=True)

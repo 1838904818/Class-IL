@@ -28,6 +28,8 @@ def main():
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--repair-from", type=Path,
+                        help="Fresh CSE-only output; preserve and verify original failed task-0 checkpoint")
     parser.add_argument("--recover-smoke-from", type=Path,
                         help="Diagnosed failed CPU smoke: reuse Task 0, preserve original output")
     args = parser.parse_args()
@@ -106,6 +108,7 @@ def main():
                "scientific_result": not args.smoke, "pid": os.getpid(), "provenance": provenance,
                "dataset": args.dataset, "seed": args.seed,
                "memory_setting": args.memory_setting, "command": sys.argv}
+    attempt["execution_source_commit"] = os.environ.get("NCD_EXECUTION_SOURCE_COMMIT", provenance["git_commit"])
     if recovery:
         attempt["prior_attempt"] = prior_attempt
         attempt["reused_checkpoint_sha256"] = recovery["checkpoint_sha256"]
@@ -122,7 +125,7 @@ def main():
                     data, _, _ = smoke_subset(data, None, None, limit=64)
                 exposure = ERExposure(data, args.seed)
                 identity = provenance | {
-                    "portable_sources": {p.name:digest(p) for p in (Path(__file__),Path(__file__).parent/"tabt_extension_cell.py",Path(__file__).parent/"tabt_feature_extension.py")},
+                    "portable_sources": {p.name:digest(p) for p in (Path(__file__),Path(__file__).parent/"tabt_extension_cell.py",Path(__file__).parent/"tabt_feature_extension.py",Path(__file__).parent/"tabt_checkpoint_repair.py")},
                     "extension_scope":"Unregistered NSL/CSE extension; feature handling recorded explicitly",
                     "section": 81, "method": "er_bal_tabt", "dataset": args.dataset,
                     "seed": args.seed, "memory_setting": args.memory_setting,
@@ -137,12 +140,18 @@ def main():
                     "calibration_prior_scope": "Full TRAIN labels before non-scientific smoke subsampling; no TEST",
                     "scientific_result": not args.smoke,
                 }
+                if args.repair_from:
+                    from tabt_checkpoint_repair import prepare
+                    repair = prepare(args.repair_from, output, identity, args.seed)
+                    print(json.dumps(dict(event="CHECKPOINT_REPAIR_VERIFIED", **repair)), flush=True)
                 result = run_er_cell(
                     data, config, identity, output / "cell", torch.device(config["device"]),
                     calibration_ids=exposure.calibration_ids,
                     original_counts=population_counts,
                     admission_training_counts=exposure.admission_training_counts,
                     current_exposure=exposure, smoke_recovery=recovery)
+                result["execution_source_commit"] = attempt["execution_source_commit"]
+                save_json(output / "cell/result.json", result)
                 save_json(output/"summary.json",dict(completed=True,scientific_result=not args.smoke,dataset=args.dataset,seed=args.seed,checkpoints=len(result["checkpoints"]),source_commit=provenance["git_commit"]))
                 attempt.update(status="complete", checkpoints=len(result["checkpoints"]),
                                result_sha256=digest(output / "cell/result.json"))
